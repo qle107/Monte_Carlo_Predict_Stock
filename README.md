@@ -91,7 +91,16 @@ Add a cron job (Mac/Linux):
 # Run at 9:30 AM ET on weekdays
 30 9 * * 1-5 cd /path/to/mc_trader && python server.py >> trader.log 2>&1
 ```
-![img.png](img.png)
+### QQQ Stimulation
+![img_1.png](resource_image/img_1.png)
+
+### Result
+![img.png](resource_image/QQQ_result_img.png)
+### Oil stimulation
+![img.png](resource_image/img.png)
+
+### Result
+![img.png](resource_image/oil_result_img.png)
 ---
 
 ## Disclaimer
