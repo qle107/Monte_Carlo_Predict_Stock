@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MC Trader</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:#0e1117; --surface:#161b22; --surface2:#1c2128;
+  --border:rgba(255,255,255,0.08); --text:#e6edf3; --muted:#8b949e;
+  --green:#3fb950; --red:#f85149; --amber:#d29922;
+  --blue:#58a6ff; --purple:#bc8cff; --radius:8px;
+}
+body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:14px; }
+
+/* header */
+header { display:flex; align-items:center; gap:10px; padding:12px 20px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+header h1 { font-size:15px; font-weight:600; }
+.dot { width:8px; height:8px; border-radius:50%; background:var(--muted); flex-shrink:0; }
+.dot.live { background:var(--green); animation:pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+.badge { font-size:11px; font-weight:600; padding:3px 10px; border-radius:20px; }
+.badge.buy    { background:rgba(63,185,80,.15);   color:var(--green); }
+.badge.sell   { background:rgba(248,81,73,.15);   color:var(--red); }
+.badge.neutral{ background:rgba(139,148,158,.15); color:var(--muted); }
+#updated { font-size:12px; color:var(--muted); }
+#hdr-right { margin-left:auto; display:flex; align-items:center; gap:8px; }
+.hdr-btn { background:transparent; border:1px solid rgba(255,255,255,.15); color:var(--text); border-radius:6px; padding:5px 13px; font-size:12px; cursor:pointer; display:flex; align-items:center; gap:6px; }
+.hdr-btn:hover { background:rgba(255,255,255,.07); }
+.hdr-btn:disabled { opacity:.4; cursor:not-allowed; }
+.hdr-btn.active { border-color:var(--blue); color:var(--blue); }
+.spinner { display:none; width:10px; height:10px; border:2px solid rgba(255,255,255,.15); border-top-color:var(--blue); border-radius:50%; animation:spin .7s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* warning banner */
+#warning-banner { display:none; background:rgba(210,153,34,.12); border-bottom:1px solid rgba(210,153,34,.3); padding:10px 20px; font-size:13px; color:var(--amber); line-height:1.5; }
+#warning-banner.show { display:block; }
+
+/* settings */
+#settings-panel { display:none; background:var(--surface); border-bottom:1px solid var(--border); padding:16px 20px; }
+#settings-panel.open { display:block; }
+.settings-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(175px,1fr)); gap:14px; margin-bottom:14px; }
+.field { display:flex; flex-direction:column; gap:5px; }
+.field label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; }
+.field input, .field select { background:var(--surface2); border:1px solid rgba(255,255,255,.1); color:var(--text); border-radius:6px; padding:7px 10px; font-size:13px; outline:none; width:100%; }
+.field input:focus, .field select:focus { border-color:var(--blue); }
+.field .hint { font-size:11px; color:var(--muted); }
+.settings-actions { display:flex; gap:8px; align-items:center; }
+.btn-apply { background:var(--blue); color:#0e1117; border:none; border-radius:6px; padding:7px 18px; font-size:13px; font-weight:600; cursor:pointer; }
+.btn-apply:hover { opacity:.85; }
+.btn-apply:disabled { opacity:.4; cursor:not-allowed; }
+.btn-reset { background:transparent; border:1px solid rgba(255,255,255,.15); color:var(--muted); border-radius:6px; padding:7px 14px; font-size:13px; cursor:pointer; }
+.btn-reset:hover { color:var(--text); }
+#settings-msg { font-size:12px; margin-left:6px; }
+
+/* metrics strip */
+.grid-top { display:grid; grid-template-columns:repeat(5,1fr); gap:1px; background:var(--border); border-bottom:1px solid var(--border); }
+.metric { background:var(--bg); padding:11px 16px; }
+.metric .lbl { font-size:11px; color:var(--muted); margin-bottom:3px; text-transform:uppercase; letter-spacing:.4px; }
+.metric .val { font-size:20px; font-weight:600; }
+.up{color:var(--green)} .down{color:var(--red)} .flat{color:var(--muted)}
+
+/* main layout */
+.main { display:grid; grid-template-columns:1fr 310px; gap:1px; background:var(--border); }
+.chart-panel { background:var(--bg); padding:16px; }
+.ct { font-size:11px; color:var(--muted); margin-bottom:10px; text-transform:uppercase; letter-spacing:.4px; }
+.chart-wrap  { position:relative; width:100%; height:320px; margin-bottom:14px; }
+.chart-wrap2 { position:relative; width:100%; height:110px; }
+
+/* sidebar */
+.side { background:var(--bg); padding:14px; display:flex; flex-direction:column; gap:12px; }
+.card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:12px 14px; }
+.card-title { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:10px; }
+.prob-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+.prob-cell { text-align:center; padding:8px 4px; border-radius:6px; }
+.prob-cell .pct { font-size:22px; font-weight:700; }
+.prob-cell .lbl { font-size:10px; margin-top:2px; }
+.prob-cell.up   { background:rgba(63,185,80,.1);  } .prob-cell.up   .pct,.prob-cell.up   .lbl{color:var(--green)}
+.prob-cell.flat { background:rgba(139,148,158,.08);} .prob-cell.flat .pct,.prob-cell.flat .lbl{color:var(--muted)}
+.prob-cell.dn   { background:rgba(248,81,73,.1);  } .prob-cell.dn   .pct,.prob-cell.dn   .lbl{color:var(--red)}
+.price-range { display:flex; justify-content:space-between; font-size:12px; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
+.range-item { text-align:center; }
+.range-item .rv { font-size:14px; font-weight:600; margin-top:2px; }
+.ind-row { display:flex; align-items:center; gap:8px; margin-bottom:9px; }
+.ind-name { width:80px; font-size:12px; color:var(--muted); flex-shrink:0; }
+.ind-bar-bg { flex:1; height:5px; background:var(--surface2); border-radius:3px; overflow:hidden; }
+.ind-bar-fill { height:100%; border-radius:3px; transition:width .5s; }
+.ind-val { width:58px; font-size:12px; font-weight:500; text-align:right; flex-shrink:0; }
+.reasoning { font-size:11px; color:var(--muted); line-height:1.6; padding-top:8px; border-top:1px solid var(--border); }
+.kv { display:flex; justify-content:space-between; font-size:12px; padding:3px 0; }
+.kv span:first-child { color:var(--muted); }
+.log { background:var(--surface2); border-radius:5px; padding:8px 10px; font-size:11px; color:var(--muted); font-family:'Courier New',monospace; max-height:90px; overflow-y:auto; line-height:1.7; }
+.confidence-row { display:flex; align-items:center; gap:8px; margin-top:8px; padding-top:8px; border-top:1px solid var(--border); }
+.conf-bar-bg { flex:1; height:4px; background:var(--surface2); border-radius:2px; overflow:hidden; }
+.conf-bar-fill { height:100%; background:var(--blue); border-radius:2px; transition:width .5s; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="dot" id="status-dot"></div>
+  <h1 id="header-title">MC Trader  —</h1>
+  <span class="badge neutral" id="signal-badge">Connecting…</span>
+  <span id="updated">—</span>
+  <div id="hdr-right">
+    <button class="hdr-btn" id="reload-btn" onclick="reloadData()">
+      <span class="spinner" id="spin"></span>
+      <span id="reload-label">Reload</span>
+    </button>
+    <button class="hdr-btn" id="settings-btn" onclick="toggleSettings()">Settings</button>
+  </div>
+</header>
+
+<!-- gap / news warning -->
+<div id="warning-banner">
+  <strong>⚠ News/Gap detected</strong> — <span id="warning-text"></span>
+</div>
+
+<!-- settings panel -->
+<div id="settings-panel">
+  <div class="settings-grid">
+    <div class="field">
+      <label>Ticker</label>
+      <input id="s-ticker" type="text" placeholder="AAPL, TSLA, NVDA…">
+      <span class="hint">Any US stock symbol</span>
+    </div>
+    <div class="field">
+      <label>Timeframe</label>
+      <select id="s-interval">
+        <option value="1m">1 minute</option>
+        <option value="2m">2 minutes</option>
+        <option value="5m">5 minutes</option>
+        <option value="15m" selected>15 minutes</option>
+        <option value="30m">30 minutes</option>
+        <option value="1h">1 hour</option>
+        <option value="4h">4 hours</option>
+        <option value="1d">Daily</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Lookback candles</label>
+      <input id="s-lookback" type="number" min="20" max="300" placeholder="50">
+      <span class="hint">20 - 200</span>
+    </div>
+    <div class="field">
+      <label>MC simulations</label>
+      <input id="s-nsim" type="number" min="50" max="2000" placeholder="500">
+      <span class="hint">50 - 2000</span>
+    </div>
+    <div class="field">
+      <label>Forward candles</label>
+      <input id="s-nfwd" type="number" min="1" max="50" placeholder="10">
+      <span class="hint">1 - 50</span>
+    </div>
+    <div class="field">
+      <label>Auto-refresh (s)</label>
+      <input id="s-poll" type="number" min="10" max="3600" placeholder="60">
+      <span class="hint">10 s -> 1 h</span>
+    </div>
+  </div>
+  <div class="settings-actions">
+    <button class="btn-apply" id="apply-btn" onclick="applySettings()">Apply &amp; reload</button>
+    <button class="btn-reset" onclick="resetSettings()">Reset defaults</button>
+    <span id="settings-msg"></span>
+  </div>
+</div>
+
+<!-- metrics strip -->
+<div class="grid-top">
+  <div class="metric"><div class="lbl">Price</div><div class="val" id="m-price">—</div></div>
+  <div class="metric"><div class="lbl">Ticker TF</div><div class="val" id="m-ticker">—</div></div>
+  <div class="metric"><div class="lbl">Drift bias</div><div class="val" id="m-drift">—</div></div>
+  <div class="metric"><div class="lbl">Median target</div><div class="val" id="m-target">—</div></div>
+  <div class="metric"><div class="lbl">Confidence</div><div class="val" id="m-conf">—</div></div>
+</div>
+
+<div class="main">
+  <div class="chart-panel">
+    <div class="ct">Price history + Monte Carlo projections</div>
+    <div class="chart-wrap"><canvas id="mainChart"></canvas></div>
+    <div class="ct">Volume</div>
+    <div class="chart-wrap2"><canvas id="volChart"></canvas></div>
+  </div>
+
+  <div class="side">
+    <div class="card">
+      <div class="card-title">Next <span id="fwd-label">10</span> candles</div>
+      <div class="prob-grid">
+        <div class="prob-cell up">  <div class="pct" id="p-up">—</div>  <div class="lbl">Up</div></div>
+        <div class="prob-cell flat"><div class="pct" id="p-flat">—</div><div class="lbl">Flat</div></div>
+        <div class="prob-cell dn">  <div class="pct" id="p-dn">—</div>  <div class="lbl">Down</div></div>
+      </div>
+      <div class="price-range">
+        <div class="range-item"><div style="color:var(--muted);font-size:11px;">P10</div><div class="rv down" id="p10">—</div></div>
+        <div class="range-item"><div style="color:var(--muted);font-size:11px;">Median</div><div class="rv" id="pmed">—</div></div>
+        <div class="range-item"><div style="color:var(--muted);font-size:11px;">P90</div><div class="rv up" id="p90">—</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">AI signal</div>
+      <div class="ind-row">
+        <span class="ind-name">RSI (14)</span>
+        <div class="ind-bar-bg"><div class="ind-bar-fill" id="b-rsi"   style="width:50%;background:#58a6ff"></div></div>
+        <span class="ind-val" id="v-rsi">—</span>
+      </div>
+      <div class="ind-row">
+        <span class="ind-name">Slope</span>
+        <div class="ind-bar-bg"><div class="ind-bar-fill" id="b-slope" style="width:50%;background:#3fb950"></div></div>
+        <span class="ind-val" id="v-slope">—</span>
+      </div>
+      <div class="ind-row">
+        <span class="ind-name">Momentum</span>
+        <div class="ind-bar-bg"><div class="ind-bar-fill" id="b-mom"   style="width:50%;background:#d29922"></div></div>
+        <span class="ind-val" id="v-mom">—</span>
+      </div>
+      <div class="ind-row" style="margin-bottom:0">
+        <span class="ind-name">Volatility</span>
+        <div class="ind-bar-bg"><div class="ind-bar-fill" id="b-vol"   style="width:50%;background:#bc8cff"></div></div>
+        <span class="ind-val" id="v-vol">—</span>
+      </div>
+      <div class="confidence-row">
+        <span style="font-size:11px;color:var(--muted);width:80px;flex-shrink:0">Confidence</span>
+        <div class="conf-bar-bg"><div class="conf-bar-fill" id="conf-bar" style="width:50%"></div></div>
+        <span style="font-size:12px;font-weight:500;width:36px;text-align:right" id="conf-val">—</span>
+      </div>
+      <div class="reasoning" id="reasoning">Waiting…</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Drift breakdown</div>
+      <div class="kv"><span>Historical drift/candle</span><span id="d-base">—</span></div>
+      <div class="kv"><span>Signal adjustment</span><span id="d-adj">—</span></div>
+      <div class="kv" style="border-top:1px solid var(--border);padding-top:6px;margin-top:4px">
+        <span style="font-weight:600">Final drift bias</span>
+        <span id="d-final" style="font-weight:600">—</span>
+      </div>
+      <div style="height:1px;background:var(--border);margin:8px 0"></div>
+      <div class="kv"><span>Hist mean return</span><span id="d-mean">—</span></div>
+      <div class="kv"><span>Hist std / candle</span><span id="d-std">—</span></div>
+      <div class="kv"><span>Skewness</span><span id="d-skew">—</span></div>
+      <div class="kv"><span>Trend bias</span><span id="d-tbias">—</span></div>
+      <div class="kv"><span>Vol regime</span><span id="d-vreg">—</span></div>
+      <div style="height:1px;background:var(--border);margin:8px 0"></div>
+      <div class="kv"><span>EMA 9 / 21</span><span id="ema9">—</span> / <span id="ema21">—</span></div>
+      <div class="kv"><span>EMA cross</span><span id="ema-cross">—</span></div>
+      <div class="kv"><span>ATR %</span><span id="atr">—</span></div>
+      <div style="height:1px;background:var(--border);margin:8px 0"></div>
+      <div class="kv"><span>Simulations</span><span id="cfg-nsim">—</span></div>
+      <div class="kv"><span>Forward</span><span id="cfg-nfwd">—</span></div>
+      <div class="kv"><span>Refresh</span><span id="cfg-poll">—</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Activity log</div>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let mainChart=null, volChart=null, currentConfig={};
+
+function log(msg,color) {
+  const el=document.getElementById('log');
+  const t=new Date().toLocaleTimeString();
+  const c=color||'var(--blue)';
+  el.innerHTML=`<span style="color:${c}">[${t}]</span> ${msg}\n`+el.innerHTML;
+}
+function fmt(n,d=2){return typeof n==='number'?n.toFixed(d):String(n);}
+function fmtPct(n){return(n>=0?'+':'')+fmt(n)+'%';}
+
+// ── Warning banner ──────────────────────────────────────────────────────────
+function showWarning(text) {
+  const b=document.getElementById('warning-banner');
+  document.getElementById('warning-text').textContent=text;
+  b.classList.add('show');
+}
+function hideWarning() {
+  document.getElementById('warning-banner').classList.remove('show');
+}
+
+// ── Settings ────────────────────────────────────────────────────────────────
+function toggleSettings(){
+  const p=document.getElementById('settings-panel');
+  const b=document.getElementById('settings-btn');
+  const open=p.classList.toggle('open');
+  b.classList.toggle('active',open);
+  if(open) loadSettingsIntoForm();
+}
+function loadSettingsIntoForm(){
+  if(!currentConfig.ticker) return;
+  document.getElementById('s-ticker').value  =currentConfig.ticker||'';
+  document.getElementById('s-interval').value=currentConfig.interval||'15m';
+  document.getElementById('s-lookback').value=currentConfig.lookback||50;
+  document.getElementById('s-nsim').value    =currentConfig.n_sim||500;
+  document.getElementById('s-nfwd').value    =currentConfig.n_forward||10;
+  document.getElementById('s-poll').value    =currentConfig.poll_seconds||60;
+}
+async function applySettings(){
+  const btn=document.getElementById('apply-btn');
+  const msg=document.getElementById('settings-msg');
+  btn.disabled=true; msg.style.color='var(--muted)'; msg.textContent='Applying...';
+  const payload={};
+  const ticker  =document.getElementById('s-ticker').value.trim();
+  const interval=document.getElementById('s-interval').value;
+  const lookback=parseInt(document.getElementById('s-lookback').value);
+  const nsim    =parseInt(document.getElementById('s-nsim').value);
+  const nfwd    =parseInt(document.getElementById('s-nfwd').value);
+  const poll    =parseInt(document.getElementById('s-poll').value);
+  if(ticker)          payload.ticker      =ticker;
+  if(interval)        payload.interval    =interval;
+  if(!isNaN(lookback))payload.lookback    =lookback;
+  if(!isNaN(nsim))    payload.n_sim       =nsim;
+  if(!isNaN(nfwd))    payload.n_forward   =nfwd;
+  if(!isNaN(poll))    payload.poll_seconds=poll;
+  try{
+    const res=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const data=await res.json();
+    if(!res.ok){msg.style.color='var(--red)';msg.textContent=data.detail?.[0]?.msg||'Error';}
+    else{
+      currentConfig=data.config;
+      msg.style.color='var(--green)';
+      msg.textContent='Applied ('+data.changed.join(', ')+')';
+      log('Config: '+data.changed.join(', '));
+      setTimeout(()=>msg.textContent='',4000);
+    }
+  }catch(e){msg.style.color='var(--red)';msg.textContent='Failed: '+e;}
+  finally{btn.disabled=false;}
+}
+function resetSettings(){
+  document.getElementById('s-ticker').value  ='PLTR';
+  document.getElementById('s-interval').value='15m';
+  document.getElementById('s-lookback').value=50;
+  document.getElementById('s-nsim').value    =500;
+  document.getElementById('s-nfwd').value    =10;
+  document.getElementById('s-poll').value    =60;
+  document.getElementById('settings-msg').textContent='Reset — click Apply to save';
+  document.getElementById('settings-msg').style.color='var(--muted)';
+}
+
+// ── Reload ──────────────────────────────────────────────────────────────────
+async function reloadData(){
+  const btn=document.getElementById('reload-btn');
+  const spin=document.getElementById('spin');
+  const lbl=document.getElementById('reload-label');
+  btn.disabled=true;spin.style.display='block';lbl.textContent='Loading…';
+  log('Manual reload…');
+  try{
+    const res=await fetch('/api/signal');
+    const data=await res.json();
+    if(data.error){log('Error: '+data.error,'var(--red)');}
+    else{updateUI(data);log('Reload complete');}
+  }catch(e){log('Reload failed: '+e,'var(--red)');}
+  finally{btn.disabled=false;spin.style.display='none';lbl.textContent='Reload';}
+}
+
+// ── UI update ────────────────────────────────────────────────────────────────
+function updateUI(d){
+  const ind=d.indicators,sig=d.signal,mc=d.mc,cur=d.current_price;
+  const cfg_d=d.config||{};
+
+  currentConfig={ticker:d.ticker,interval:d.interval,
+    n_sim:cfg_d.n_sim,n_forward:cfg_d.n_forward,
+    lookback:cfg_d.lookback,poll_seconds:cfg_d.poll_seconds};
+
+  // Warning banner
+  if(d.warnings&&d.warnings.length>0){showWarning(d.warnings[0]);}
+  else{hideWarning();}
+
+  document.getElementById('header-title').textContent=`MC Trader  ${d.ticker}  $${fmt(cur)}`;
+  document.getElementById('status-dot').className='dot live';
+  document.getElementById('updated').textContent='Updated '+new Date(d.updated_at).toLocaleTimeString();
+  document.getElementById('fwd-label').textContent=cfg_d.n_forward||10;
+
+  const badge=document.getElementById('signal-badge');
+  badge.textContent=sig.label;
+  badge.className='badge '+(sig.label.toLowerCase().includes('buy')?'buy':sig.label.toLowerCase().includes('sell')?'sell':'neutral');
+
+  document.getElementById('m-price').textContent='$'+fmt(cur);
+  document.getElementById('m-ticker').textContent=`${d.ticker}  ${d.interval||'15m'}`;
+
+  const drift=sig.drift_bias*100;
+  const dEl=document.getElementById('m-drift');
+  dEl.textContent=(drift>=0?'+':'')+fmt(drift,3)+'%';
+  dEl.className='val '+(drift>0?'up':drift<0?'down':'flat');
+
+  const tEl=document.getElementById('m-target');
+  tEl.textContent='$'+fmt(mc.median_price);
+  tEl.className='val '+(mc.median_price>cur?'up':'down');
+
+  const confPct=Math.round(sig.confidence*100);
+  const confEl=document.getElementById('m-conf');
+  confEl.textContent=confPct+'%';
+  confEl.className='val '+(confPct>60?'up':confPct>30?'flat':'down');
+
+  document.getElementById('p-up').textContent  =mc.prob_up  +'%';
+  document.getElementById('p-flat').textContent=mc.prob_flat+'%';
+  document.getElementById('p-dn').textContent  =mc.prob_down+'%';
+  document.getElementById('p10').textContent ='$'+fmt(mc.p10_price);
+  document.getElementById('pmed').textContent='$'+fmt(mc.median_price);
+  document.getElementById('p90').textContent ='$'+fmt(mc.p90_price);
+
+  document.getElementById('b-rsi').style.width  =ind.rsi+'%';
+  document.getElementById('v-rsi').textContent  =fmt(ind.rsi,1);
+  document.getElementById('b-slope').style.width=Math.min(100,Math.max(0,50+ind.slope*400))+'%';
+  document.getElementById('v-slope').textContent=fmtPct(ind.slope);
+  document.getElementById('b-mom').style.width  =Math.min(100,Math.max(0,50+ind.momentum*10))+'%';
+  document.getElementById('v-mom').textContent  =fmtPct(ind.momentum);
+  document.getElementById('b-vol').style.width  =Math.min(100,ind.std_return*8)+'%';
+  document.getElementById('v-vol').textContent  =fmt(ind.std_return,3)+'%';
+  document.getElementById('conf-bar').style.width=confPct+'%';
+  document.getElementById('conf-val').textContent=confPct+'%';
+  document.getElementById('reasoning').textContent=sig.reasoning;
+
+  document.getElementById('ema9').textContent ='$'+fmt(ind.ema_fast);
+  document.getElementById('ema21').textContent='$'+fmt(ind.ema_slow);
+  const cx=document.getElementById('ema-cross');
+  cx.textContent=ind.ema_cross;
+  cx.style.color=ind.ema_cross==='bullish'?'var(--green)':ind.ema_cross==='bearish'?'var(--red)':'var(--muted)';
+  document.getElementById('atr').textContent=fmt(ind.atr_pct,2)+'%';
+
+  // Drift breakdown
+  const basePct  = (sig.base_drift  * 100);
+  const adjPct   = (sig.signal_adj  * 100);
+  const finalPct = (sig.drift_bias  * 100);
+  const dBase = document.getElementById('d-base');
+  const dAdj  = document.getElementById('d-adj');
+  const dFin  = document.getElementById('d-final');
+  dBase.textContent  = (basePct>=0?'+':'')+fmt(basePct,4)+'%';
+  dBase.style.color  = basePct>0?'var(--green)':basePct<0?'var(--red)':'var(--muted)';
+  dAdj.textContent   = (adjPct>=0?'+':'')+fmt(adjPct,4)+'%';
+  dAdj.style.color   = adjPct>0?'var(--green)':adjPct<0?'var(--red)':'var(--muted)';
+  dFin.textContent   = (finalPct>=0?'+':'')+fmt(finalPct,4)+'%';
+  dFin.style.color   = finalPct>0?'var(--green)':finalPct<0?'var(--red)':'var(--muted)';
+  document.getElementById('d-mean').textContent  = (ind.mean_return>=0?'+':'')+fmt(ind.mean_return,4)+'%';
+  document.getElementById('d-std').textContent   = fmt(ind.std_return,4)+'%';
+  const skewEl = document.getElementById('d-skew');
+  skewEl.textContent = fmt(ind.skewness,3);
+  skewEl.style.color = ind.skewness>0.2?'var(--green)':ind.skewness<-0.2?'var(--red)':'var(--muted)';
+  const tbEl = document.getElementById('d-tbias');
+  tbEl.textContent = Math.round(ind.trend_bias*100)+'% up candles';
+  tbEl.style.color = ind.trend_bias>0.53?'var(--green)':ind.trend_bias<0.47?'var(--red)':'var(--muted)';
+  const vregEl = document.getElementById('d-vreg');
+  vregEl.textContent = ind.vol_regime;
+  vregEl.style.color = ind.vol_regime==='high'?'var(--red)':ind.vol_regime==='low'?'var(--blue)':'var(--muted)';
+
+  document.getElementById('cfg-nsim').textContent=(cfg_d.n_sim||'—')+' paths';
+  document.getElementById('cfg-nfwd').textContent=(cfg_d.n_forward||'—')+' candles';
+  document.getElementById('cfg-poll').textContent=(cfg_d.poll_seconds||'—')+'s';
+
+  buildCharts(d);
+  log(`${d.ticker}  $${fmt(cur)} ${sig.label} (${confPct}% conf)  up=${mc.prob_up}% dn=${mc.prob_down}%`);
+}
+
+// ── Charts ───────────────────────────────────────────────────────────────────
+function buildCharts(d){
+  const candles=d.candles,mc=d.mc,cur=d.current_price;
+  const nHist=candles.length,nFwd=mc.median_path.length-1;
+
+  const histClose=candles.map(c=>c.c);
+  const volumes  =candles.map(c=>c.v);
+  const volColors=candles.map(c=>c.c>=c.o?'rgba(63,185,80,.5)':'rgba(248,81,73,.5)');
+
+  const makeLabel=(i)=>{
+    if(i<nHist) return i%5===0?new Date(candles[i].t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'';
+    const fwd=i-nHist+1;
+    return fwd===1?'NOW':fwd===nFwd?'+'+nFwd+'c':'';
+  };
+  const labels=Array.from({length:nHist+nFwd},(_,i)=>makeLabel(i));
+
+  const b20=new Set(mc.paths.map((p,i)=>({v:p[nFwd],i})).sort((a,b)=>b.v-a.v).slice(0,Math.floor(mc.paths.length*.2)).map(x=>x.i));
+  const w20=new Set(mc.paths.map((p,i)=>({v:p[nFwd],i})).sort((a,b)=>a.v-b.v).slice(0,Math.floor(mc.paths.length*.2)).map(x=>x.i));
+
+  const datasets=mc.paths.map((path,i)=>({
+    data:[...Array(nHist-1).fill(null),...path],
+    borderColor:b20.has(i)?'rgba(63,185,80,.15)':w20.has(i)?'rgba(248,81,73,.15)':'rgba(88,166,255,.07)',
+    borderWidth:1,pointRadius:0,tension:.3,spanGaps:true
+  }));
+
+  datasets.push({data:[...Array(nHist-1).fill(null),...mc.median_path],
+    borderColor:'#d29922',borderWidth:2.5,borderDash:[5,3],pointRadius:0,tension:.3,spanGaps:true});
+  datasets.push({data:[...histClose,...Array(nFwd).fill(null)],
+    borderColor:'#58a6ff',borderWidth:2,pointRadius:0,tension:.1});
+
+  const shared={responsive:true,maintainAspectRatio:false,animation:{duration:300},
+    plugins:{legend:{display:false},tooltip:{enabled:false}}};
+
+  if(mainChart) mainChart.destroy();
+  mainChart=new Chart(document.getElementById('mainChart'),{
+    type:'line',data:{labels,datasets},
+    options:{...shared,scales:{
+      x:{ticks:{font:{size:10},color:'#8b949e',maxRotation:0},grid:{color:'rgba(255,255,255,.04)'}},
+      y:{ticks:{font:{size:11},color:'#8b949e',callback:v=>'$'+v.toFixed(2)},grid:{color:'rgba(255,255,255,.04)'}}
+    }}
+  });
+
+  if(volChart) volChart.destroy();
+  volChart=new Chart(document.getElementById('volChart'),{
+    type:'bar',
+    data:{labels:volumes.map(()=>''),datasets:[{data:volumes,backgroundColor:volColors,borderWidth:0}]},
+    options:{...shared,scales:{
+      x:{display:false},
+      y:{ticks:{font:{size:10},color:'#8b949e',callback:v=>v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v},grid:{color:'rgba(255,255,255,.04)'}}
+    }}
+  });
+}
+
+// ── WebSocket ────────────────────────────────────────────────────────────────
+function connect(){
+  const ws=new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen   =()=>{log('Connected');document.getElementById('status-dot').className='dot live';};
+  ws.onmessage=e=>{try{updateUI(JSON.parse(e.data));}catch(err){log('Parse error: '+err,'var(--red)');}};
+  ws.onerror  =()=>log('WS error','var(--red)');
+  ws.onclose  =()=>{
+    document.getElementById('status-dot').className='dot';
+    log('Disconnected — reconnecting in 5s…','var(--amber)');
+    setTimeout(connect,5000);
+  };
+}
+
+fetch('/api/config').then(r=>r.json()).then(c=>{currentConfig=c;}).catch(()=>{});
+connect();
+</script>
+</body>
+</html>
