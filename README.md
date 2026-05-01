@@ -198,6 +198,9 @@ time via `/api/export.csv?ticker=AAPL`.
 ![img.png](resource_image/oil_result_img.png)
 
 ---
+## After Update
+### NBIS 01/05/2026 at 5:30 PM Paris Time Zone
+![img.png](resource_image/NBIS_predict.png)
 
 ## Disclaimer
 
