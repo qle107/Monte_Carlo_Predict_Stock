@@ -3,5 +3,5 @@
   <component name="Black">
     <option name="sdkName" value="Python 3.12 (mc_trader)" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.12 (mc_trader)" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.14 virtualenv at E:\DataProject\Monte_Carlo_Predict_Stock\.venv" project-jdk-type="Python SDK" />
 </project>

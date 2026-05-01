@@ -1,111 +1,208 @@
 # MC Trader — Local Monte Carlo Trading Dashboard
 
-A fully local Python app that fetches live 15m candles, runs AI-adjusted
-Monte Carlo simulation, and streams results to a live web dashboard.
+A fully local Python app that fetches live candles, runs an AI-adjusted
+Monte Carlo simulation with five different innovation models, walk-forward
+backtests itself, and streams everything to a live web dashboard.
 
 ---
 
-## Quick start (3 steps)
+## Quick start
 
-### 1. Install Python dependencies
+### 1. Install
 ```bash
-cd mc_trader
+cd Monte_Carlo_Predict_Stock
 pip install -r requirements.txt
 ```
 
-### 2. Configure your API keys
-Edit the `.env` file:
+### 2. (Optional) Configure API keys
+The app works out of the box with yfinance. For real-time data, edit `.env`:
 ```
-ALPACA_API_KEY=your_key_here
-ALPACA_SECRET_KEY=your_secret_here
+ALPACA_API_KEY=...
+ALPACA_SECRET_KEY=...
+POLYGON_API_KEY=...        # optional, paid
+
 TICKER=PLTR
+CANDLE_INTERVAL=15m
+MC_MODEL=garch              # gaussian | student_t | garch | bootstrap | jump
+MC_SIMULATIONS=500
+MC_FORWARD_CANDLES=10
 ```
 
-**Which API should I use?**
+| Source     | Cost   | Delay     | Sign up |
+|------------|--------|-----------|---------|
+| yfinance   | Free   | ~15 min   | None — used as fallback |
+| Alpaca     | Free   | Real-time | https://alpaca.markets |
+| Polygon.io | Paid   | Real-time | https://polygon.io |
 
-| Source       | Cost    | Delay      | Sign up |
-|--------------|---------|------------|---------|
-| yfinance     | Free    | ~15 min    | None — works out of the box |
-| Alpaca       | Free    | Real-time  | https://alpaca.markets (free paper account) |
-| Polygon.io   | $29/mo  | Real-time  | https://polygon.io |
-
-> Tip: Start with yfinance (no sign-up needed). When ready for live trading,
-> add your free Alpaca keys for real-time data.
-
-### 3. Run the server
+### 3. Run
 ```bash
-python server.py
+python main.py
 ```
+Open **http://localhost:8000**.
 
-Then open your browser: **http://localhost:8000**
+### 4. Run the tests
+```bash
+pytest -q
+```
 
 ---
 
-## Project structure
+## Project layout
 
 ```
-mc_trader/
-├── .env                 ← your API keys and config
+Monte_Carlo_Predict_Stock/
+├── main.py                  ← entry point (uvicorn)
+├── config.py                ← validated runtime config
 ├── requirements.txt
-├── data_fetcher.py      ← fetches candles (yfinance / Alpaca / Polygon)
-├── engine.py            ← indicators + AI signal + Monte Carlo
-├── server.py            ← FastAPI WebSocket server
-└── templates/
-    └── dashboard.html   ← live web dashboard
+├── api/
+│   ├── __init__.py          ← exports `app`
+│   ├── server.py            ← FastAPI: routes, WS, lifespan, poll loop
+│   └── models.py            ← Pydantic request models
+├── core/
+│   ├── __init__.py          ← `analyse(df, n_sim, n_fwd, mc_model)`
+│   ├── fetcher.py           ← Alpaca → Polygon → yfinance
+│   ├── indicators.py        ← RSI / EMA / MACD / Bollinger / ADX / OBV / VWAP / …
+│   ├── signal.py            ← Composite signal + entropy-aware confidence
+│   ├── montecarlo.py        ← 5 innovation models (gaussian, student-t, GARCH, bootstrap, jump)
+│   ├── backtest.py          ← Walk-forward scoring (hit rate, Brier, log-loss, calibration)
+│   └── store.py             ← SQLite signal log
+├── templates/
+│   └── dashboard.html       ← live dashboard with confidence cone
+└── tests/
+    ├── conftest.py
+    ├── test_indicators.py
+    ├── test_signal.py
+    ├── test_montecarlo.py
+    ├── test_backtest.py
+    ├── test_store.py
+    └── test_api.py
 ```
 
 ---
 
-## How the AI signal works
+## How the signal works
 
-The engine computes 4 indicators from the last 50 candles:
+`core/indicators.py` computes a wide indicator set on each fetch:
 
-1. **RSI (14)** — oversold (<35) pushes drift positive, overbought (>65) negative
-2. **Linear slope** — direction of last 8 candles
-3. **Momentum** — % change over last 5 candles
-4. **EMA cross** — 9-period vs 21-period crossover
+| Indicator        | Used for                                                            |
+|------------------|---------------------------------------------------------------------|
+| RSI (14)         | Mean-reversion read                                                 |
+| Linear slope     | Short-term trend direction                                          |
+| Momentum         | 5-candle %-change                                                   |
+| EMA 9/21 cross   | Trend regime                                                        |
+| MACD histogram   | Momentum confirmation                                               |
+| Bollinger pos    | Mean-reversion / band breakouts                                     |
+| ADX              | Trend strength (paired with slope sign)                             |
+| OBV slope        | Volume confirmation                                                 |
+| VWAP distance    | Above/below today's volume-weighted price                           |
+| Skew / kurtosis  | Tail asymmetry & fatness (drives Student-t df)                      |
+| Trend bias       | % of historical candles closing up                                  |
+| Vol regime       | Recent vs long realised vol — scales MC vol                         |
 
-These are combined into a composite score (−1 to +1) that biases the
-per-candle drift in the Monte Carlo simulation. 500 paths are run for
-the next 10 candles, producing Up/Flat/Down probabilities.
+`core/signal.py` combines them into a composite score in [−1, +1] with
+calibrated weights, plus an **entropy-aware confidence**: high only when
+most active sub-signals agree on direction *and* their average magnitude
+is large.
+
+That score sets the per-candle drift bias for the simulation:
+
+```
+base_drift  = stock's actual mean return per candle
+signal_adj  = composite × confidence × (½ stdev)
+drift_bias  = clip(base_drift + signal_adj, ±2σ)   # the "no 99.9%" guard
+```
 
 ---
 
-## Changing the ticker or timeframe
+## Monte Carlo models
 
-Edit `.env`:
-```
-TICKER=AAPL
-CANDLE_INTERVAL=5m
-MC_SIMULATIONS=1000
-```
+Selectable via `MC_MODEL` env var, the Settings panel, or `POST /api/config`:
 
-Valid intervals: `1m`, `5m`, `15m`, `1h`, `1d`
+| Model        | What it does                                                                 |
+|--------------|------------------------------------------------------------------------------|
+| `gaussian`   | Classic GBM with Normal innovations.                                         |
+| `student_t`  | Heavy-tailed innovations; df fit from observed excess kurtosis.              |
+| `garch`      | GARCH(1,1)-style volatility clustering. **Default.**                         |
+| `bootstrap`  | Resamples the stock's own historical returns — preserves the real distribution. |
+| `jump`       | Merton jump-diffusion: Gaussian + Poisson-triggered jumps for gap regimes.   |
+
+Per-step returns are clipped to ±25% so a single tail event can't
+detonate the path.
+
+The dashboard renders both the inner P25–P75 band and the outer
+P10–P90 band as a confidence cone, plus a sample of 30 paths and the
+P50 (median) path.
 
 ---
 
-## Running at market open automatically (optional)
+## API
 
-Add a cron job (Mac/Linux):
+```
+GET  /                       dashboard
+GET  /api/health             liveness
+GET  /api/signal             trigger fresh analysis
+GET  /api/config             current config + valid choices
+POST /api/config             update any config field (validated)
+POST /api/backtest           walk-forward over recent history
+GET  /api/history            recent persisted signals
+GET  /api/metrics            aggregate stats per ticker
+GET  /api/export.csv         CSV dump of signal history
+WS   /ws                     server pushes new analysis on every poll
+```
+
+`POST /api/config` body (all fields optional):
+```json
+{
+  "ticker": "AAPL", "interval": "15m", "mc_model": "garch",
+  "n_sim": 500, "n_forward": 10, "lookback": 50, "poll_seconds": 60
+}
+```
+
+`POST /api/backtest` body (all fields optional):
+```json
+{ "history_bars": 200, "n_forward": 10, "n_sim": 200, "mc_model": "garch" }
+```
+
+---
+
+## Persistent history
+
+Every analysis is logged to a local SQLite file (`mc_trader.db` by
+default; override with `DB_PATH`). The dashboard reads it for
+`/api/history` and `/api/metrics`, and you can dump it to CSV at any
+time via `/api/export.csv?ticker=AAPL`.
+
+---
+
+## Running on a schedule
+
 ```bash
-# Run at 9:30 AM ET on weekdays
-30 9 * * 1-5 cd /path/to/mc_trader && python server.py >> trader.log 2>&1
+# 9:30 ET weekdays
+30 9 * * 1-5 cd /path/to/Monte_Carlo_Predict_Stock && python main.py >> trader.log 2>&1
 ```
-### QQQ Stimulation
+
+---
+
+## Screenshots
+
+### QQQ simulation
 ![img_1.png](resource_image/img_1.png)
 
 ### Result
 ![img.png](resource_image/QQQ_result_img.png)
-### Oil stimulation
+
+### Oil simulation
 ![img.png](resource_image/img.png)
 
 ### Result
 ![img.png](resource_image/oil_result_img.png)
+
 ---
 
 ## Disclaimer
 
 This tool is for **educational purposes only**.
-- Monte Carlo simulation does not guarantee future results
-- Always paper trade before using real money
-- Past volatility patterns do not predict future movements
+
+- Monte Carlo simulation does not guarantee future results.
+- Always paper trade before using real money.
+- Past volatility patterns do not predict future movements.

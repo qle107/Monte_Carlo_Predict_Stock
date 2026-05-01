@@ -6,16 +6,16 @@
 <title>MC Trader</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+*, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
 :root {
   --bg:#0e1117; --surface:#161b22; --surface2:#1c2128;
   --border:rgba(255,255,255,0.08); --text:#e6edf3; --muted:#8b949e;
   --green:#3fb950; --red:#f85149; --amber:#d29922;
   --blue:#58a6ff; --purple:#bc8cff; --radius:8px;
 }
-body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:14px; }
+body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:14px; min-height:100vh; }
 
-/* header */
+/* ── header ─────────────────────────────────────────────────────────── */
 header { display:flex; align-items:center; gap:10px; padding:12px 20px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
 header h1 { font-size:15px; font-weight:600; }
 .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); flex-shrink:0; }
@@ -26,68 +26,75 @@ header h1 { font-size:15px; font-weight:600; }
 .badge.sell   { background:rgba(248,81,73,.15);   color:var(--red); }
 .badge.neutral{ background:rgba(139,148,158,.15); color:var(--muted); }
 #updated { font-size:12px; color:var(--muted); }
-#hdr-right { margin-left:auto; display:flex; align-items:center; gap:8px; }
-.hdr-btn { background:transparent; border:1px solid rgba(255,255,255,.15); color:var(--text); border-radius:6px; padding:5px 13px; font-size:12px; cursor:pointer; display:flex; align-items:center; gap:6px; }
-.hdr-btn:hover { background:rgba(255,255,255,.07); }
+#hdr-right { margin-left:auto; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.hdr-btn { background:transparent; border:1px solid rgba(255,255,255,.15); color:var(--text); border-radius:6px; padding:5px 13px; font-size:12px; cursor:pointer; display:flex; align-items:center; gap:6px; transition:all .15s; }
+.hdr-btn:hover { background:rgba(255,255,255,.07); border-color:rgba(255,255,255,.25); }
 .hdr-btn:disabled { opacity:.4; cursor:not-allowed; }
 .hdr-btn.active { border-color:var(--blue); color:var(--blue); }
 .spinner { display:none; width:10px; height:10px; border:2px solid rgba(255,255,255,.15); border-top-color:var(--blue); border-radius:50%; animation:spin .7s linear infinite; }
 @keyframes spin { to { transform:rotate(360deg); } }
 
-/* warning banner */
+/* ── warning banner ─────────────────────────────────────────────────── */
 #warning-banner { display:none; background:rgba(210,153,34,.12); border-bottom:1px solid rgba(210,153,34,.3); padding:10px 20px; font-size:13px; color:var(--amber); line-height:1.5; }
 #warning-banner.show { display:block; }
 
-/* settings */
+/* ── settings panel ─────────────────────────────────────────────────── */
 #settings-panel { display:none; background:var(--surface); border-bottom:1px solid var(--border); padding:16px 20px; }
 #settings-panel.open { display:block; }
-.settings-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(175px,1fr)); gap:14px; margin-bottom:14px; }
+.settings-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:14px; margin-bottom:14px; }
 .field { display:flex; flex-direction:column; gap:5px; }
 .field label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; }
 .field input, .field select { background:var(--surface2); border:1px solid rgba(255,255,255,.1); color:var(--text); border-radius:6px; padding:7px 10px; font-size:13px; outline:none; width:100%; }
 .field input:focus, .field select:focus { border-color:var(--blue); }
 .field .hint { font-size:11px; color:var(--muted); }
-.settings-actions { display:flex; gap:8px; align-items:center; }
-.btn-apply { background:var(--blue); color:#0e1117; border:none; border-radius:6px; padding:7px 18px; font-size:13px; font-weight:600; cursor:pointer; }
+.settings-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.btn-apply { background:var(--blue); color:#0e1117; border:none; border-radius:6px; padding:7px 18px; font-size:13px; font-weight:600; cursor:pointer; transition:opacity .15s; }
 .btn-apply:hover { opacity:.85; }
 .btn-apply:disabled { opacity:.4; cursor:not-allowed; }
 .btn-reset { background:transparent; border:1px solid rgba(255,255,255,.15); color:var(--muted); border-radius:6px; padding:7px 14px; font-size:13px; cursor:pointer; }
 .btn-reset:hover { color:var(--text); }
 #settings-msg { font-size:12px; margin-left:6px; }
 
-/* metrics strip */
-.grid-top { display:grid; grid-template-columns:repeat(5,1fr); gap:1px; background:var(--border); border-bottom:1px solid var(--border); }
+/* ── metrics strip ──────────────────────────────────────────────────── */
+.grid-top { display:grid; grid-template-columns:repeat(6,1fr); gap:1px; background:var(--border); border-bottom:1px solid var(--border); }
+@media (max-width:900px) { .grid-top { grid-template-columns:repeat(3,1fr); } }
 .metric { background:var(--bg); padding:11px 16px; }
 .metric .lbl { font-size:11px; color:var(--muted); margin-bottom:3px; text-transform:uppercase; letter-spacing:.4px; }
 .metric .val { font-size:20px; font-weight:600; }
 .up{color:var(--green)} .down{color:var(--red)} .flat{color:var(--muted)}
 
-/* main layout */
-.main { display:grid; grid-template-columns:1fr 310px; gap:1px; background:var(--border); }
-.chart-panel { background:var(--bg); padding:16px; }
-.ct { font-size:11px; color:var(--muted); margin-bottom:10px; text-transform:uppercase; letter-spacing:.4px; }
-.chart-wrap  { position:relative; width:100%; height:320px; margin-bottom:14px; }
+/* ── main layout ────────────────────────────────────────────────────── */
+.main { display:grid; grid-template-columns:1fr 320px; gap:1px; background:var(--border); }
+@media (max-width:1100px) { .main { grid-template-columns:1fr; } }
+.chart-panel { background:var(--bg); padding:16px; min-height:560px; }
+.ct { font-size:11px; color:var(--muted); margin-bottom:10px; text-transform:uppercase; letter-spacing:.4px; display:flex; justify-content:space-between; align-items:center; }
+.ct-legend { display:flex; gap:12px; font-size:10px; text-transform:none; }
+.ct-legend .sw { display:inline-block; width:10px; height:3px; vertical-align:middle; margin-right:4px; }
+.chart-wrap  { position:relative; width:100%; height:340px; margin-bottom:14px; }
 .chart-wrap2 { position:relative; width:100%; height:110px; }
 
-/* sidebar */
+/* ── sidebar ────────────────────────────────────────────────────────── */
 .side { background:var(--bg); padding:14px; display:flex; flex-direction:column; gap:12px; }
 .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:12px 14px; }
-.card-title { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:10px; }
+.card-title { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; }
+.pill { font-size:10px; padding:2px 7px; border-radius:10px; background:rgba(88,166,255,.12); color:var(--blue); text-transform:none; letter-spacing:0; }
 .prob-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
 .prob-cell { text-align:center; padding:8px 4px; border-radius:6px; }
 .prob-cell .pct { font-size:22px; font-weight:700; }
 .prob-cell .lbl { font-size:10px; margin-top:2px; }
-.prob-cell.up   { background:rgba(63,185,80,.1);  } .prob-cell.up   .pct,.prob-cell.up   .lbl{color:var(--green)}
-.prob-cell.flat { background:rgba(139,148,158,.08);} .prob-cell.flat .pct,.prob-cell.flat .lbl{color:var(--muted)}
-.prob-cell.dn   { background:rgba(248,81,73,.1);  } .prob-cell.dn   .pct,.prob-cell.dn   .lbl{color:var(--red)}
+.prob-cell.up   { background:rgba(63,185,80,.1);   } .prob-cell.up   .pct, .prob-cell.up   .lbl { color:var(--green); }
+.prob-cell.flat { background:rgba(139,148,158,.08); } .prob-cell.flat .pct, .prob-cell.flat .lbl { color:var(--muted); }
+.prob-cell.dn   { background:rgba(248,81,73,.1);   } .prob-cell.dn   .pct, .prob-cell.dn   .lbl { color:var(--red); }
 .price-range { display:flex; justify-content:space-between; font-size:12px; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
 .range-item { text-align:center; }
 .range-item .rv { font-size:14px; font-weight:600; margin-top:2px; }
-.ind-row { display:flex; align-items:center; gap:8px; margin-bottom:9px; }
-.ind-name { width:80px; font-size:12px; color:var(--muted); flex-shrink:0; }
+
+/* ── indicator bars ─────────────────────────────────────────────────── */
+.ind-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+.ind-name { width:88px; font-size:12px; color:var(--muted); flex-shrink:0; }
 .ind-bar-bg { flex:1; height:5px; background:var(--surface2); border-radius:3px; overflow:hidden; }
 .ind-bar-fill { height:100%; border-radius:3px; transition:width .5s; }
-.ind-val { width:58px; font-size:12px; font-weight:500; text-align:right; flex-shrink:0; }
+.ind-val { width:62px; font-size:12px; font-weight:500; text-align:right; flex-shrink:0; }
 .reasoning { font-size:11px; color:var(--muted); line-height:1.6; padding-top:8px; border-top:1px solid var(--border); }
 .kv { display:flex; justify-content:space-between; font-size:12px; padding:3px 0; }
 .kv span:first-child { color:var(--muted); }
@@ -95,6 +102,23 @@ header h1 { font-size:15px; font-weight:600; }
 .confidence-row { display:flex; align-items:center; gap:8px; margin-top:8px; padding-top:8px; border-top:1px solid var(--border); }
 .conf-bar-bg { flex:1; height:4px; background:var(--surface2); border-radius:2px; overflow:hidden; }
 .conf-bar-fill { height:100%; background:var(--blue); border-radius:2px; transition:width .5s; }
+
+/* ── backtest panel ─────────────────────────────────────────────────── */
+.bt-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; font-size:12px; }
+.bt-cell { background:var(--surface2); padding:8px 10px; border-radius:6px; }
+.bt-cell .l { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.3px; }
+.bt-cell .v { font-size:15px; font-weight:600; margin-top:2px; }
+.bt-status { font-size:11px; color:var(--muted); margin-top:8px; line-height:1.5; }
+.btn-bt { background:transparent; border:1px solid rgba(255,255,255,.15); color:var(--text); border-radius:6px; padding:5px 12px; font-size:11px; cursor:pointer; }
+.btn-bt:hover { background:rgba(255,255,255,.07); }
+.btn-bt:disabled { opacity:.4; cursor:not-allowed; }
+
+/* ── sub-score chips ────────────────────────────────────────────────── */
+.scores { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+.score-chip { font-size:10px; padding:2px 7px; border-radius:10px; background:var(--surface2); color:var(--muted); display:inline-flex; gap:5px; align-items:center; }
+.score-chip .v { font-weight:600; }
+.score-chip.pos .v { color:var(--green); }
+.score-chip.neg .v { color:var(--red); }
 </style>
 </head>
 <body>
@@ -109,16 +133,16 @@ header h1 { font-size:15px; font-weight:600; }
       <span class="spinner" id="spin"></span>
       <span id="reload-label">Reload</span>
     </button>
+    <button class="hdr-btn" onclick="window.open('/api/export.csv','_blank')">CSV</button>
     <button class="hdr-btn" id="settings-btn" onclick="toggleSettings()">Settings</button>
   </div>
 </header>
 
-<!-- gap / news warning -->
 <div id="warning-banner">
   <strong>⚠ News/Gap detected</strong> — <span id="warning-text"></span>
 </div>
 
-<!-- settings panel -->
+<!-- ── Settings ───────────────────────────────────────────────────── -->
 <div id="settings-panel">
   <div class="settings-grid">
     <div class="field">
@@ -140,19 +164,30 @@ header h1 { font-size:15px; font-weight:600; }
       </select>
     </div>
     <div class="field">
+      <label>MC model</label>
+      <select id="s-model">
+        <option value="gaussian">Gaussian (classic GBM)</option>
+        <option value="student_t">Student-t (heavy tails)</option>
+        <option value="garch" selected>GARCH (vol clustering)</option>
+        <option value="bootstrap">Bootstrap (real returns)</option>
+        <option value="jump">Jump-diffusion (gaps)</option>
+      </select>
+      <span class="hint">Innovation distribution</span>
+    </div>
+    <div class="field">
       <label>Lookback candles</label>
-      <input id="s-lookback" type="number" min="20" max="300" placeholder="50">
-      <span class="hint">20 - 200</span>
+      <input id="s-lookback" type="number" min="20" max="500" placeholder="50">
+      <span class="hint">20 - 500</span>
     </div>
     <div class="field">
       <label>MC simulations</label>
-      <input id="s-nsim" type="number" min="50" max="2000" placeholder="500">
-      <span class="hint">50 - 2000</span>
+      <input id="s-nsim" type="number" min="50" max="5000" placeholder="500">
+      <span class="hint">50 - 5000</span>
     </div>
     <div class="field">
       <label>Forward candles</label>
-      <input id="s-nfwd" type="number" min="1" max="50" placeholder="10">
-      <span class="hint">1 - 50</span>
+      <input id="s-nfwd" type="number" min="1" max="100" placeholder="10">
+      <span class="hint">1 - 100</span>
     </div>
     <div class="field">
       <label>Auto-refresh (s)</label>
@@ -167,26 +202,43 @@ header h1 { font-size:15px; font-weight:600; }
   </div>
 </div>
 
-<!-- metrics strip -->
+<!-- ── Metrics strip ──────────────────────────────────────────────── -->
 <div class="grid-top">
-  <div class="metric"><div class="lbl">Price</div><div class="val" id="m-price">—</div></div>
-  <div class="metric"><div class="lbl">Ticker TF</div><div class="val" id="m-ticker">—</div></div>
-  <div class="metric"><div class="lbl">Drift bias</div><div class="val" id="m-drift">—</div></div>
-  <div class="metric"><div class="lbl">Median target</div><div class="val" id="m-target">—</div></div>
-  <div class="metric"><div class="lbl">Confidence</div><div class="val" id="m-conf">—</div></div>
+  <div class="metric"><div class="lbl">Price</div>          <div class="val" id="m-price">—</div></div>
+  <div class="metric"><div class="lbl">Ticker TF</div>      <div class="val" id="m-ticker">—</div></div>
+  <div class="metric"><div class="lbl">Drift bias</div>     <div class="val" id="m-drift">—</div></div>
+  <div class="metric"><div class="lbl">Median target</div>  <div class="val" id="m-target">—</div></div>
+  <div class="metric"><div class="lbl">Confidence</div>     <div class="val" id="m-conf">—</div></div>
+  <div class="metric"><div class="lbl">CVaR 5%</div>        <div class="val" id="m-cvar">—</div></div>
 </div>
 
 <div class="main">
+
+  <!-- ── Chart panel ───────────────────────────────────────────── -->
   <div class="chart-panel">
-    <div class="ct">Price history + Monte Carlo projections</div>
+    <div class="ct">
+      <span>Price history + Monte Carlo projections</span>
+      <span class="ct-legend">
+        <span><span class="sw" style="background:#58a6ff"></span>Price</span>
+        <span><span class="sw" style="background:#d29922"></span>Median path</span>
+        <span><span class="sw" style="background:rgba(63,185,80,.25)"></span>P25–P75</span>
+        <span><span class="sw" style="background:rgba(63,185,80,.10)"></span>P10–P90</span>
+      </span>
+    </div>
     <div class="chart-wrap"><canvas id="mainChart"></canvas></div>
     <div class="ct">Volume</div>
     <div class="chart-wrap2"><canvas id="volChart"></canvas></div>
   </div>
 
+  <!-- ── Sidebar ───────────────────────────────────────────────── -->
   <div class="side">
+
+    <!-- MC probs -->
     <div class="card">
-      <div class="card-title">Next <span id="fwd-label">10</span> candles</div>
+      <div class="card-title">
+        <span>Next <span id="fwd-label">10</span> candles</span>
+        <span class="pill" id="model-pill">model</span>
+      </div>
       <div class="prob-grid">
         <div class="prob-cell up">  <div class="pct" id="p-up">—</div>  <div class="lbl">Up</div></div>
         <div class="prob-cell flat"><div class="pct" id="p-flat">—</div><div class="lbl">Flat</div></div>
@@ -199,6 +251,7 @@ header h1 { font-size:15px; font-weight:600; }
       </div>
     </div>
 
+    <!-- AI signal panel -->
     <div class="card">
       <div class="card-title">AI signal</div>
       <div class="ind-row">
@@ -216,21 +269,38 @@ header h1 { font-size:15px; font-weight:600; }
         <div class="ind-bar-bg"><div class="ind-bar-fill" id="b-mom"   style="width:50%;background:#d29922"></div></div>
         <span class="ind-val" id="v-mom">—</span>
       </div>
+      <div class="ind-row">
+        <span class="ind-name">MACD hist</span>
+        <div class="ind-bar-bg"><div class="ind-bar-fill" id="b-macd"  style="width:50%;background:#bc8cff"></div></div>
+        <span class="ind-val" id="v-macd">—</span>
+      </div>
+      <div class="ind-row">
+        <span class="ind-name">Bollinger</span>
+        <div class="ind-bar-bg"><div class="ind-bar-fill" id="b-bb"    style="width:50%;background:#58a6ff"></div></div>
+        <span class="ind-val" id="v-bb">—</span>
+      </div>
+      <div class="ind-row">
+        <span class="ind-name">ADX</span>
+        <div class="ind-bar-bg"><div class="ind-bar-fill" id="b-adx"   style="width:0%;background:#d29922"></div></div>
+        <span class="ind-val" id="v-adx">—</span>
+      </div>
       <div class="ind-row" style="margin-bottom:0">
         <span class="ind-name">Volatility</span>
         <div class="ind-bar-bg"><div class="ind-bar-fill" id="b-vol"   style="width:50%;background:#bc8cff"></div></div>
         <span class="ind-val" id="v-vol">—</span>
       </div>
       <div class="confidence-row">
-        <span style="font-size:11px;color:var(--muted);width:80px;flex-shrink:0">Confidence</span>
+        <span style="font-size:11px;color:var(--muted);width:88px;flex-shrink:0">Confidence</span>
         <div class="conf-bar-bg"><div class="conf-bar-fill" id="conf-bar" style="width:50%"></div></div>
         <span style="font-size:12px;font-weight:500;width:36px;text-align:right" id="conf-val">—</span>
       </div>
+      <div class="scores" id="scores"></div>
       <div class="reasoning" id="reasoning">Waiting…</div>
     </div>
 
+    <!-- Drift breakdown -->
     <div class="card">
-      <div class="card-title">Drift breakdown</div>
+      <div class="card-title">Drift &amp; risk</div>
       <div class="kv"><span>Historical drift/candle</span><span id="d-base">—</span></div>
       <div class="kv"><span>Signal adjustment</span><span id="d-adj">—</span></div>
       <div class="kv" style="border-top:1px solid var(--border);padding-top:6px;margin-top:4px">
@@ -238,21 +308,38 @@ header h1 { font-size:15px; font-weight:600; }
         <span id="d-final" style="font-weight:600">—</span>
       </div>
       <div style="height:1px;background:var(--border);margin:8px 0"></div>
-      <div class="kv"><span>Hist mean return</span><span id="d-mean">—</span></div>
-      <div class="kv"><span>Hist std / candle</span><span id="d-std">—</span></div>
-      <div class="kv"><span>Skewness</span><span id="d-skew">—</span></div>
-      <div class="kv"><span>Trend bias</span><span id="d-tbias">—</span></div>
-      <div class="kv"><span>Vol regime</span><span id="d-vreg">—</span></div>
+      <div class="kv"><span>Expected return</span>      <span id="d-exp">—</span></div>
+      <div class="kv"><span>CVaR (5% worst)</span>      <span id="d-cvar">—</span></div>
       <div style="height:1px;background:var(--border);margin:8px 0"></div>
-      <div class="kv"><span>EMA 9 / 21</span><span id="ema9">—</span> / <span id="ema21">—</span></div>
-      <div class="kv"><span>EMA cross</span><span id="ema-cross">—</span></div>
-      <div class="kv"><span>ATR %</span><span id="atr">—</span></div>
+      <div class="kv"><span>Hist mean / std</span>      <span id="d-meanstd">—</span></div>
+      <div class="kv"><span>Skew / kurtosis</span>      <span id="d-skewkurt">—</span></div>
+      <div class="kv"><span>Trend bias</span>           <span id="d-tbias">—</span></div>
+      <div class="kv"><span>Vol regime</span>           <span id="d-vreg">—</span></div>
+      <div class="kv"><span>EMA 9 / 21</span>           <span id="d-ema">—</span></div>
+      <div class="kv"><span>VWAP distance</span>        <span id="d-vwap">—</span></div>
+      <div class="kv"><span>OBV slope</span>            <span id="d-obv">—</span></div>
       <div style="height:1px;background:var(--border);margin:8px 0"></div>
-      <div class="kv"><span>Simulations</span><span id="cfg-nsim">—</span></div>
-      <div class="kv"><span>Forward</span><span id="cfg-nfwd">—</span></div>
-      <div class="kv"><span>Refresh</span><span id="cfg-poll">—</span></div>
+      <div class="kv"><span>Simulations</span>          <span id="cfg-nsim">—</span></div>
+      <div class="kv"><span>Forward</span>              <span id="cfg-nfwd">—</span></div>
+      <div class="kv"><span>Refresh</span>              <span id="cfg-poll">—</span></div>
     </div>
 
+    <!-- Backtest -->
+    <div class="card">
+      <div class="card-title">
+        <span>Walk-forward backtest</span>
+        <button class="btn-bt" id="bt-run" onclick="runBacktest()">Run</button>
+      </div>
+      <div class="bt-grid">
+        <div class="bt-cell"><div class="l">Hit rate</div><div class="v" id="bt-hit">—</div></div>
+        <div class="bt-cell"><div class="l">Brier</div><div class="v" id="bt-brier">—</div></div>
+        <div class="bt-cell"><div class="l">Log loss</div><div class="v" id="bt-ll">—</div></div>
+        <div class="bt-cell"><div class="l">Pred ↔ real ρ</div><div class="v" id="bt-corr">—</div></div>
+      </div>
+      <div class="bt-status" id="bt-status">Click <em>Run</em> to score this model on recent history.</div>
+    </div>
+
+    <!-- Activity log -->
     <div class="card">
       <div class="card-title">Activity log</div>
       <div class="log" id="log"></div>
@@ -263,76 +350,88 @@ header h1 { font-size:15px; font-weight:600; }
 <script>
 let mainChart=null, volChart=null, currentConfig={};
 
-function log(msg,color) {
+function log(msg, color) {
   const el=document.getElementById('log');
   const t=new Date().toLocaleTimeString();
   const c=color||'var(--blue)';
   el.innerHTML=`<span style="color:${c}">[${t}]</span> ${msg}\n`+el.innerHTML;
 }
-function fmt(n,d=2){return typeof n==='number'?n.toFixed(d):String(n);}
-function fmtPct(n){return(n>=0?'+':'')+fmt(n)+'%';}
+function fmt(n,d=2)   { return typeof n==='number' && isFinite(n) ? n.toFixed(d) : String(n); }
+function fmtPct(n,d=2){ return (n>=0?'+':'') + fmt(n,d) + '%'; }
+function colorOf(n)   { return n>0?'var(--green)' : n<0?'var(--red)' : 'var(--muted)'; }
 
-// ── Warning banner ──────────────────────────────────────────────────────────
+// ── warning banner ──────────────────────────────────────────────────────
 function showWarning(text) {
-  const b=document.getElementById('warning-banner');
+  document.getElementById('warning-banner').classList.add('show');
   document.getElementById('warning-text').textContent=text;
-  b.classList.add('show');
 }
 function hideWarning() {
   document.getElementById('warning-banner').classList.remove('show');
 }
 
-// ── Settings ────────────────────────────────────────────────────────────────
-function toggleSettings(){
+// ── settings ────────────────────────────────────────────────────────────
+function toggleSettings() {
   const p=document.getElementById('settings-panel');
   const b=document.getElementById('settings-btn');
   const open=p.classList.toggle('open');
   b.classList.toggle('active',open);
-  if(open) loadSettingsIntoForm();
+  if (open) loadSettingsIntoForm();
 }
-function loadSettingsIntoForm(){
-  if(!currentConfig.ticker) return;
-  document.getElementById('s-ticker').value  =currentConfig.ticker||'';
-  document.getElementById('s-interval').value=currentConfig.interval||'15m';
-  document.getElementById('s-lookback').value=currentConfig.lookback||50;
-  document.getElementById('s-nsim').value    =currentConfig.n_sim||500;
-  document.getElementById('s-nfwd').value    =currentConfig.n_forward||10;
-  document.getElementById('s-poll').value    =currentConfig.poll_seconds||60;
+function loadSettingsIntoForm() {
+  if (!currentConfig.ticker) return;
+  document.getElementById('s-ticker').value  =currentConfig.ticker || '';
+  document.getElementById('s-interval').value=currentConfig.interval || '15m';
+  document.getElementById('s-model').value   =currentConfig.mc_model || 'garch';
+  document.getElementById('s-lookback').value=currentConfig.lookback || 50;
+  document.getElementById('s-nsim').value    =currentConfig.n_sim || 500;
+  document.getElementById('s-nfwd').value    =currentConfig.n_forward || 10;
+  document.getElementById('s-poll').value    =currentConfig.poll_seconds || 60;
 }
-async function applySettings(){
+async function applySettings() {
   const btn=document.getElementById('apply-btn');
   const msg=document.getElementById('settings-msg');
   btn.disabled=true; msg.style.color='var(--muted)'; msg.textContent='Applying...';
   const payload={};
-  const ticker  =document.getElementById('s-ticker').value.trim();
-  const interval=document.getElementById('s-interval').value;
-  const lookback=parseInt(document.getElementById('s-lookback').value);
-  const nsim    =parseInt(document.getElementById('s-nsim').value);
-  const nfwd    =parseInt(document.getElementById('s-nfwd').value);
-  const poll    =parseInt(document.getElementById('s-poll').value);
-  if(ticker)          payload.ticker      =ticker;
-  if(interval)        payload.interval    =interval;
-  if(!isNaN(lookback))payload.lookback    =lookback;
-  if(!isNaN(nsim))    payload.n_sim       =nsim;
-  if(!isNaN(nfwd))    payload.n_forward   =nfwd;
-  if(!isNaN(poll))    payload.poll_seconds=poll;
-  try{
-    const res=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const v={
+    ticker:   document.getElementById('s-ticker').value.trim(),
+    interval: document.getElementById('s-interval').value,
+    mc_model: document.getElementById('s-model').value,
+    lookback: parseInt(document.getElementById('s-lookback').value),
+    n_sim:    parseInt(document.getElementById('s-nsim').value),
+    n_forward:parseInt(document.getElementById('s-nfwd').value),
+    poll_seconds:parseInt(document.getElementById('s-poll').value),
+  };
+  if (v.ticker)            payload.ticker      =v.ticker;
+  if (v.interval)          payload.interval    =v.interval;
+  if (v.mc_model)          payload.mc_model    =v.mc_model;
+  if (!isNaN(v.lookback))  payload.lookback    =v.lookback;
+  if (!isNaN(v.n_sim))     payload.n_sim       =v.n_sim;
+  if (!isNaN(v.n_forward)) payload.n_forward   =v.n_forward;
+  if (!isNaN(v.poll_seconds)) payload.poll_seconds=v.poll_seconds;
+  try {
+    const res =await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     const data=await res.json();
-    if(!res.ok){msg.style.color='var(--red)';msg.textContent=data.detail?.[0]?.msg||'Error';}
-    else{
+    if (!res.ok) {
+      msg.style.color='var(--red)';
+      msg.textContent=data.detail?.[0]?.msg || 'Error';
+    } else {
       currentConfig=data.config;
       msg.style.color='var(--green)';
       msg.textContent='Applied ('+data.changed.join(', ')+')';
       log('Config: '+data.changed.join(', '));
-      setTimeout(()=>msg.textContent='',4000);
+      setTimeout(()=>msg.textContent='', 4000);
     }
-  }catch(e){msg.style.color='var(--red)';msg.textContent='Failed: '+e;}
-  finally{btn.disabled=false;}
+  } catch(e) {
+    msg.style.color='var(--red)';
+    msg.textContent='Failed: '+e;
+  } finally {
+    btn.disabled=false;
+  }
 }
-function resetSettings(){
+function resetSettings() {
   document.getElementById('s-ticker').value  ='PLTR';
   document.getElementById('s-interval').value='15m';
+  document.getElementById('s-model').value   ='garch';
   document.getElementById('s-lookback').value=50;
   document.getElementById('s-nsim').value    =500;
   document.getElementById('s-nfwd').value    =10;
@@ -341,187 +440,314 @@ function resetSettings(){
   document.getElementById('settings-msg').style.color='var(--muted)';
 }
 
-// ── Reload ──────────────────────────────────────────────────────────────────
-async function reloadData(){
+// ── reload ──────────────────────────────────────────────────────────────
+async function reloadData() {
   const btn=document.getElementById('reload-btn');
   const spin=document.getElementById('spin');
   const lbl=document.getElementById('reload-label');
-  btn.disabled=true;spin.style.display='block';lbl.textContent='Loading…';
+  btn.disabled=true; spin.style.display='block'; lbl.textContent='Loading…';
   log('Manual reload…');
-  try{
-    const res=await fetch('/api/signal');
+  try {
+    const res =await fetch('/api/signal');
     const data=await res.json();
-    if(data.error){log('Error: '+data.error,'var(--red)');}
-    else{updateUI(data);log('Reload complete');}
-  }catch(e){log('Reload failed: '+e,'var(--red)');}
-  finally{btn.disabled=false;spin.style.display='none';lbl.textContent='Reload';}
+    if (data.error) log('Error: '+data.error,'var(--red)');
+    else { updateUI(data); log('Reload complete'); }
+  } catch(e) { log('Reload failed: '+e,'var(--red)'); }
+  finally { btn.disabled=false; spin.style.display='none'; lbl.textContent='Reload'; }
 }
 
-// ── UI update ────────────────────────────────────────────────────────────────
-function updateUI(d){
-  const ind=d.indicators,sig=d.signal,mc=d.mc,cur=d.current_price;
-  const cfg_d=d.config||{};
+// ── backtest ────────────────────────────────────────────────────────────
+async function runBacktest() {
+  const btn=document.getElementById('bt-run');
+  const status=document.getElementById('bt-status');
+  btn.disabled=true; status.textContent='Running walk-forward…';
+  try {
+    const res=await fetch('/api/backtest',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({history_bars:200, n_sim:120}),
+    });
+    const j=await res.json();
+    if (!res.ok || j.ok===false) {
+      status.textContent=j.detail || j.error || 'Backtest failed';
+      status.style.color='var(--red)';
+    } else {
+      document.getElementById('bt-hit').textContent  =j.hit_rate==null ? '—' : j.hit_rate+'%';
+      document.getElementById('bt-brier').textContent=fmt(j.brier_score,3);
+      document.getElementById('bt-ll').textContent   =fmt(j.log_loss,3);
+      document.getElementById('bt-corr').textContent =fmt(j.expected_vs_real,2);
+      status.style.color='var(--muted)';
+      status.textContent=`${j.n_evaluated} evaluations · ${j.n_called} buy/sell calls · mean prob_up ${fmt(j.mean_prob_up,1)}% · realised up ${fmt(j.real_up_rate,1)}%`;
+      log(`Backtest: hit ${j.hit_rate}%  brier ${fmt(j.brier_score,3)}  ρ ${fmt(j.expected_vs_real,2)}`);
+    }
+  } catch(e) {
+    status.textContent='Failed: '+e;
+    status.style.color='var(--red)';
+  } finally {
+    btn.disabled=false;
+  }
+}
 
-  currentConfig={ticker:d.ticker,interval:d.interval,
-    n_sim:cfg_d.n_sim,n_forward:cfg_d.n_forward,
-    lookback:cfg_d.lookback,poll_seconds:cfg_d.poll_seconds};
+// ── UI update ────────────────────────────────────────────────────────────
+function updateUI(d) {
+  const ind=d.indicators, sig=d.signal, mc=d.mc, cur=d.current_price;
+  const cfg_d=d.config || {};
 
-  // Warning banner
-  if(d.warnings&&d.warnings.length>0){showWarning(d.warnings[0]);}
-  else{hideWarning();}
+  currentConfig={
+    ticker:   d.ticker, interval: d.interval,
+    mc_model: d.mc_model || cfg_d.mc_model,
+    n_sim:    cfg_d.n_sim, n_forward: cfg_d.n_forward,
+    lookback: cfg_d.lookback, poll_seconds: cfg_d.poll_seconds,
+  };
+
+  if (d.warnings && d.warnings.length>0) showWarning(d.warnings[0]); else hideWarning();
 
   document.getElementById('header-title').textContent=`MC Trader  ${d.ticker}  $${fmt(cur)}`;
   document.getElementById('status-dot').className='dot live';
   document.getElementById('updated').textContent='Updated '+new Date(d.updated_at).toLocaleTimeString();
-  document.getElementById('fwd-label').textContent=cfg_d.n_forward||10;
+  document.getElementById('fwd-label').textContent=cfg_d.n_forward || 10;
+  document.getElementById('model-pill').textContent=d.mc_model || 'gaussian';
 
   const badge=document.getElementById('signal-badge');
   badge.textContent=sig.label;
-  badge.className='badge '+(sig.label.toLowerCase().includes('buy')?'buy':sig.label.toLowerCase().includes('sell')?'sell':'neutral');
+  const lab=sig.label.toLowerCase();
+  badge.className='badge '+(lab.includes('buy')?'buy':lab.includes('sell')?'sell':'neutral');
 
-  document.getElementById('m-price').textContent='$'+fmt(cur);
-  document.getElementById('m-ticker').textContent=`${d.ticker}  ${d.interval||'15m'}`;
+  document.getElementById('m-price').textContent ='$'+fmt(cur);
+  document.getElementById('m-ticker').textContent=`${d.ticker}  ${d.interval || '15m'}`;
 
   const drift=sig.drift_bias*100;
   const dEl=document.getElementById('m-drift');
-  dEl.textContent=(drift>=0?'+':'')+fmt(drift,3)+'%';
-  dEl.className='val '+(drift>0?'up':drift<0?'down':'flat');
+  dEl.textContent=fmtPct(drift,3); dEl.className='val '+(drift>0?'up':drift<0?'down':'flat');
 
   const tEl=document.getElementById('m-target');
-  tEl.textContent='$'+fmt(mc.median_price);
-  tEl.className='val '+(mc.median_price>cur?'up':'down');
+  tEl.textContent='$'+fmt(mc.median_price); tEl.className='val '+(mc.median_price>cur?'up':'down');
 
   const confPct=Math.round(sig.confidence*100);
   const confEl=document.getElementById('m-conf');
   confEl.textContent=confPct+'%';
   confEl.className='val '+(confPct>60?'up':confPct>30?'flat':'down');
 
-  document.getElementById('p-up').textContent  =mc.prob_up  +'%';
-  document.getElementById('p-flat').textContent=mc.prob_flat+'%';
-  document.getElementById('p-dn').textContent  =mc.prob_down+'%';
+  const cvarEl=document.getElementById('m-cvar');
+  cvarEl.textContent=fmtPct(mc.cvar_5||0,2);
+  cvarEl.className='val '+((mc.cvar_5||0)<-2?'down':'flat');
+
+  // Probabilities
+  document.getElementById('p-up').textContent  =mc.prob_up   +'%';
+  document.getElementById('p-flat').textContent=mc.prob_flat +'%';
+  document.getElementById('p-dn').textContent  =mc.prob_down +'%';
   document.getElementById('p10').textContent ='$'+fmt(mc.p10_price);
   document.getElementById('pmed').textContent='$'+fmt(mc.median_price);
   document.getElementById('p90').textContent ='$'+fmt(mc.p90_price);
 
-  document.getElementById('b-rsi').style.width  =ind.rsi+'%';
-  document.getElementById('v-rsi').textContent  =fmt(ind.rsi,1);
-  document.getElementById('b-slope').style.width=Math.min(100,Math.max(0,50+ind.slope*400))+'%';
-  document.getElementById('v-slope').textContent=fmtPct(ind.slope);
-  document.getElementById('b-mom').style.width  =Math.min(100,Math.max(0,50+ind.momentum*10))+'%';
-  document.getElementById('v-mom').textContent  =fmtPct(ind.momentum);
-  document.getElementById('b-vol').style.width  =Math.min(100,ind.std_return*8)+'%';
-  document.getElementById('v-vol').textContent  =fmt(ind.std_return,3)+'%';
-  document.getElementById('conf-bar').style.width=confPct+'%';
-  document.getElementById('conf-val').textContent=confPct+'%';
-  document.getElementById('reasoning').textContent=sig.reasoning;
+  // Indicators
+  const $ = id => document.getElementById(id);
+  $('b-rsi').style.width   = ind.rsi + '%';
+  $('v-rsi').textContent   = fmt(ind.rsi,1);
+  $('b-slope').style.width = Math.min(100, Math.max(0, 50 + ind.slope*400)) + '%';
+  $('v-slope').textContent = fmtPct(ind.slope);
+  $('b-mom').style.width   = Math.min(100, Math.max(0, 50 + ind.momentum*10)) + '%';
+  $('v-mom').textContent   = fmtPct(ind.momentum);
+  $('b-macd').style.width  = Math.min(100, Math.max(0, 50 + (ind.macd_hist||0)*100)) + '%';
+  $('v-macd').textContent  = fmtPct(ind.macd_hist||0,3);
+  $('b-bb').style.width    = Math.min(100, Math.max(0, 50 + (ind.bb_position||0)*30)) + '%';
+  $('v-bb').textContent    = fmt(ind.bb_position||0,2);
+  $('b-adx').style.width   = Math.min(100, ind.adx||0) + '%';
+  $('v-adx').textContent   = fmt(ind.adx||0,1);
+  $('b-vol').style.width   = Math.min(100, ind.std_return*8) + '%';
+  $('v-vol').textContent   = fmt(ind.std_return,3) + '%';
+  $('conf-bar').style.width=confPct + '%';
+  $('conf-val').textContent=confPct + '%';
+  $('reasoning').textContent=sig.reasoning;
 
-  document.getElementById('ema9').textContent ='$'+fmt(ind.ema_fast);
-  document.getElementById('ema21').textContent='$'+fmt(ind.ema_slow);
-  const cx=document.getElementById('ema-cross');
-  cx.textContent=ind.ema_cross;
-  cx.style.color=ind.ema_cross==='bullish'?'var(--green)':ind.ema_cross==='bearish'?'var(--red)':'var(--muted)';
-  document.getElementById('atr').textContent=fmt(ind.atr_pct,2)+'%';
+  // Sub-score chips
+  const scoresEl=document.getElementById('scores');
+  scoresEl.innerHTML='';
+  if (sig.sub_scores) {
+    for (const [k, v] of Object.entries(sig.sub_scores)) {
+      if (Math.abs(v) < 0.02) continue;
+      const cls = v>0?'pos':'neg';
+      const chip=document.createElement('span');
+      chip.className='score-chip '+cls;
+      chip.innerHTML=`${k} <span class="v">${v>=0?'+':''}${fmt(v,2)}</span>`;
+      scoresEl.appendChild(chip);
+    }
+  }
 
   // Drift breakdown
   const basePct  = (sig.base_drift  * 100);
   const adjPct   = (sig.signal_adj  * 100);
   const finalPct = (sig.drift_bias  * 100);
-  const dBase = document.getElementById('d-base');
-  const dAdj  = document.getElementById('d-adj');
-  const dFin  = document.getElementById('d-final');
-  dBase.textContent  = (basePct>=0?'+':'')+fmt(basePct,4)+'%';
-  dBase.style.color  = basePct>0?'var(--green)':basePct<0?'var(--red)':'var(--muted)';
-  dAdj.textContent   = (adjPct>=0?'+':'')+fmt(adjPct,4)+'%';
-  dAdj.style.color   = adjPct>0?'var(--green)':adjPct<0?'var(--red)':'var(--muted)';
-  dFin.textContent   = (finalPct>=0?'+':'')+fmt(finalPct,4)+'%';
-  dFin.style.color   = finalPct>0?'var(--green)':finalPct<0?'var(--red)':'var(--muted)';
-  document.getElementById('d-mean').textContent  = (ind.mean_return>=0?'+':'')+fmt(ind.mean_return,4)+'%';
-  document.getElementById('d-std').textContent   = fmt(ind.std_return,4)+'%';
-  const skewEl = document.getElementById('d-skew');
-  skewEl.textContent = fmt(ind.skewness,3);
-  skewEl.style.color = ind.skewness>0.2?'var(--green)':ind.skewness<-0.2?'var(--red)':'var(--muted)';
-  const tbEl = document.getElementById('d-tbias');
-  tbEl.textContent = Math.round(ind.trend_bias*100)+'% up candles';
-  tbEl.style.color = ind.trend_bias>0.53?'var(--green)':ind.trend_bias<0.47?'var(--red)':'var(--muted)';
-  const vregEl = document.getElementById('d-vreg');
-  vregEl.textContent = ind.vol_regime;
-  vregEl.style.color = ind.vol_regime==='high'?'var(--red)':ind.vol_regime==='low'?'var(--blue)':'var(--muted)';
+  $('d-base').textContent  = fmtPct(basePct,4);  $('d-base').style.color = colorOf(basePct);
+  $('d-adj').textContent   = fmtPct(adjPct,4);   $('d-adj').style.color  = colorOf(adjPct);
+  $('d-final').textContent = fmtPct(finalPct,4); $('d-final').style.color= colorOf(finalPct);
+  $('d-exp').textContent   = fmtPct(mc.expected_return||0,2);
+  $('d-exp').style.color   = colorOf(mc.expected_return||0);
+  $('d-cvar').textContent  = fmtPct(mc.cvar_5||0,2); $('d-cvar').style.color=colorOf(mc.cvar_5||0);
 
-  document.getElementById('cfg-nsim').textContent=(cfg_d.n_sim||'—')+' paths';
-  document.getElementById('cfg-nfwd').textContent=(cfg_d.n_forward||'—')+' candles';
-  document.getElementById('cfg-poll').textContent=(cfg_d.poll_seconds||'—')+'s';
+  $('d-meanstd').textContent =`${fmt(ind.mean_return,4)}% / ${fmt(ind.std_return,4)}%`;
+  $('d-skewkurt').textContent=`${fmt(ind.skewness,2)} / ${fmt(ind.kurtosis,2)}`;
+  $('d-tbias').textContent   =Math.round(ind.trend_bias*100) + '% up candles';
+  $('d-tbias').style.color   =ind.trend_bias>0.53?'var(--green)':ind.trend_bias<0.47?'var(--red)':'var(--muted)';
+  $('d-vreg').textContent    =ind.vol_regime;
+  $('d-vreg').style.color    =ind.vol_regime==='high'?'var(--red)':ind.vol_regime==='low'?'var(--blue)':'var(--muted)';
+  $('d-ema').textContent     =`$${fmt(ind.ema_fast)} / $${fmt(ind.ema_slow)}`;
+  $('d-vwap').textContent    =fmtPct(ind.vwap_dist||0,2);
+  $('d-vwap').style.color    =colorOf(ind.vwap_dist||0);
+  $('d-obv').textContent     =fmt(ind.obv_slope||0,3);
+  $('d-obv').style.color     =colorOf(ind.obv_slope||0);
+
+  $('cfg-nsim').textContent=(cfg_d.n_sim || '—') + ' paths';
+  $('cfg-nfwd').textContent=(cfg_d.n_forward || '—') + ' candles';
+  $('cfg-poll').textContent=(cfg_d.poll_seconds || '—') + 's';
 
   buildCharts(d);
-  log(`${d.ticker}  $${fmt(cur)} ${sig.label} (${confPct}% conf)  up=${mc.prob_up}% dn=${mc.prob_down}%`);
+  log(`${d.ticker}  $${fmt(cur)} ${sig.label} (${confPct}% conf)  up=${mc.prob_up}% dn=${mc.prob_down}% [${d.mc_model||'?'}]`);
 }
 
-// ── Charts ───────────────────────────────────────────────────────────────────
-function buildCharts(d){
-  const candles=d.candles,mc=d.mc,cur=d.current_price;
-  const nHist=candles.length,nFwd=mc.median_path.length-1;
+// ── charts ───────────────────────────────────────────────────────────────
+function buildCharts(d) {
+  const candles=d.candles, mc=d.mc, cur=d.current_price;
+  const nHist=candles.length;
+  const nFwdSteps=mc.median_path.length;          // includes starting candle
+  const nFwd=nFwdSteps - 1;
+  const totalLen=nHist + nFwd;
 
   const histClose=candles.map(c=>c.c);
   const volumes  =candles.map(c=>c.v);
   const volColors=candles.map(c=>c.c>=c.o?'rgba(63,185,80,.5)':'rgba(248,81,73,.5)');
 
   const makeLabel=(i)=>{
-    if(i<nHist) return i%5===0?new Date(candles[i].t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'';
+    if (i<nHist) return i%5===0 ? new Date(candles[i].t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '';
     const fwd=i-nHist+1;
-    return fwd===1?'NOW':fwd===nFwd?'+'+nFwd+'c':'';
+    return fwd===1 ? 'NOW' : fwd===nFwd ? '+'+nFwd+'c' : '';
   };
-  const labels=Array.from({length:nHist+nFwd},(_,i)=>makeLabel(i));
+  const labels=Array.from({length:totalLen},(_,i)=>makeLabel(i));
 
-  const b20=new Set(mc.paths.map((p,i)=>({v:p[nFwd],i})).sort((a,b)=>b.v-a.v).slice(0,Math.floor(mc.paths.length*.2)).map(x=>x.i));
-  const w20=new Set(mc.paths.map((p,i)=>({v:p[nFwd],i})).sort((a,b)=>a.v-b.v).slice(0,Math.floor(mc.paths.length*.2)).map(x=>x.i));
+  // Pad MC bands to align with the chart x-axis (history + forward)
+  const padHist = (arr) => [...Array(nHist-1).fill(null), ...arr];
+  const medianPath = padHist(mc.median_path);
+  const upper25_75_top = padHist(mc.upper_band || mc.median_path);
+  const lower25_75_bot = padHist(mc.lower_band || mc.median_path);
+  const upper10_90_top = padHist(mc.p90_band   || mc.median_path);
+  const lower10_90_bot = padHist(mc.p10_band   || mc.median_path);
 
-  const datasets=mc.paths.map((path,i)=>({
-    data:[...Array(nHist-1).fill(null),...path],
-    borderColor:b20.has(i)?'rgba(63,185,80,.15)':w20.has(i)?'rgba(248,81,73,.15)':'rgba(88,166,255,.07)',
-    borderWidth:1,pointRadius:0,tension:.3,spanGaps:true
-  }));
+  const datasets=[];
 
-  datasets.push({data:[...Array(nHist-1).fill(null),...mc.median_path],
-    borderColor:'#d29922',borderWidth:2.5,borderDash:[5,3],pointRadius:0,tension:.3,spanGaps:true});
-  datasets.push({data:[...histClose,...Array(nFwd).fill(null)],
-    borderColor:'#58a6ff',borderWidth:2,pointRadius:0,tension:.1});
-
-  const shared={responsive:true,maintainAspectRatio:false,animation:{duration:300},
-    plugins:{legend:{display:false},tooltip:{enabled:false}}};
-
-  if(mainChart) mainChart.destroy();
-  mainChart=new Chart(document.getElementById('mainChart'),{
-    type:'line',data:{labels,datasets},
-    options:{...shared,scales:{
-      x:{ticks:{font:{size:10},color:'#8b949e',maxRotation:0},grid:{color:'rgba(255,255,255,.04)'}},
-      y:{ticks:{font:{size:11},color:'#8b949e',callback:v=>'$'+v.toFixed(2)},grid:{color:'rgba(255,255,255,.04)'}}
-    }}
+  // Outer 10–90 band (light fill)
+  datasets.push({
+    label:'p90',
+    data:upper10_90_top,
+    borderColor:'rgba(63,185,80,.0)',
+    backgroundColor:'rgba(63,185,80,.07)',
+    fill:'+1',
+    pointRadius:0, tension:.3, spanGaps:true, borderWidth:0,
+  });
+  datasets.push({
+    label:'p10',
+    data:lower10_90_bot,
+    borderColor:'rgba(248,81,73,.0)',
+    backgroundColor:'rgba(248,81,73,.07)',
+    fill:false,
+    pointRadius:0, tension:.3, spanGaps:true, borderWidth:0,
   });
 
-  if(volChart) volChart.destroy();
-  volChart=new Chart(document.getElementById('volChart'),{
+  // Inner 25–75 band (denser)
+  datasets.push({
+    label:'p75',
+    data:upper25_75_top,
+    borderColor:'rgba(63,185,80,.0)',
+    backgroundColor:'rgba(63,185,80,.16)',
+    fill:'+1',
+    pointRadius:0, tension:.3, spanGaps:true, borderWidth:0,
+  });
+  datasets.push({
+    label:'p25',
+    data:lower25_75_bot,
+    borderColor:'rgba(248,81,73,.0)',
+    backgroundColor:'rgba(248,81,73,.0)',
+    fill:false,
+    pointRadius:0, tension:.3, spanGaps:true, borderWidth:0,
+  });
+
+  // Sample paths (very faint) — only render up to 30 to avoid clutter
+  const samplePaths = (mc.paths || []).slice(0, 30);
+  for (const path of samplePaths) {
+    datasets.push({
+      data:padHist(path),
+      borderColor:'rgba(88,166,255,.07)',
+      borderWidth:1, pointRadius:0, tension:.3, spanGaps:true, fill:false,
+    });
+  }
+
+  // Median path
+  datasets.push({
+    label:'Median',
+    data:medianPath,
+    borderColor:'#d29922',
+    borderWidth:2.5,
+    borderDash:[5,3],
+    pointRadius:0, tension:.3, spanGaps:true, fill:false,
+  });
+
+  // Actual price line
+  datasets.push({
+    label:'Price',
+    data:[...histClose, ...Array(nFwd).fill(null)],
+    borderColor:'#58a6ff',
+    borderWidth:2, pointRadius:0, tension:.1, fill:false,
+  });
+
+  const shared={
+    responsive:true, maintainAspectRatio:false,
+    animation:{duration:300},
+    plugins:{ legend:{display:false}, tooltip:{enabled:false} },
+  };
+
+  if (mainChart) mainChart.destroy();
+  mainChart=new Chart(document.getElementById('mainChart'), {
+    type:'line',
+    data:{labels, datasets},
+    options:{
+      ...shared,
+      scales:{
+        x:{ ticks:{font:{size:10}, color:'#8b949e', maxRotation:0}, grid:{color:'rgba(255,255,255,.04)'} },
+        y:{ ticks:{font:{size:11}, color:'#8b949e', callback:v=>'$'+v.toFixed(2)}, grid:{color:'rgba(255,255,255,.04)'} },
+      },
+    },
+  });
+
+  if (volChart) volChart.destroy();
+  volChart=new Chart(document.getElementById('volChart'), {
     type:'bar',
-    data:{labels:volumes.map(()=>''),datasets:[{data:volumes,backgroundColor:volColors,borderWidth:0}]},
-    options:{...shared,scales:{
-      x:{display:false},
-      y:{ticks:{font:{size:10},color:'#8b949e',callback:v=>v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v},grid:{color:'rgba(255,255,255,.04)'}}
-    }}
+    data:{ labels:volumes.map(()=>''), datasets:[{data:volumes, backgroundColor:volColors, borderWidth:0}] },
+    options:{
+      ...shared,
+      scales:{
+        x:{display:false},
+        y:{ ticks:{font:{size:10}, color:'#8b949e',
+              callback:v=> v>=1e6 ? (v/1e6).toFixed(1)+'M' : v>=1e3 ? (v/1e3).toFixed(0)+'K' : v},
+            grid:{color:'rgba(255,255,255,.04)'} },
+      },
+    },
   });
 }
 
-// ── WebSocket ────────────────────────────────────────────────────────────────
-function connect(){
-  const ws=new WebSocket(`ws://${location.host}/ws`);
-  ws.onopen   =()=>{log('Connected');document.getElementById('status-dot').className='dot live';};
-  ws.onmessage=e=>{try{updateUI(JSON.parse(e.data));}catch(err){log('Parse error: '+err,'var(--red)');}};
+// ── WebSocket ────────────────────────────────────────────────────────────
+function connect() {
+  const proto=location.protocol==='https:' ? 'wss' : 'ws';
+  const ws=new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen   =()=>{ log('Connected'); document.getElementById('status-dot').className='dot live'; };
+  ws.onmessage=e =>{ try { updateUI(JSON.parse(e.data)); } catch(err){ log('Parse error: '+err,'var(--red)'); } };
   ws.onerror  =()=>log('WS error','var(--red)');
   ws.onclose  =()=>{
     document.getElementById('status-dot').className='dot';
     log('Disconnected — reconnecting in 5s…','var(--amber)');
-    setTimeout(connect,5000);
+    setTimeout(connect, 5000);
   };
 }
 
-fetch('/api/config').then(r=>r.json()).then(c=>{currentConfig=c;}).catch(()=>{});
+fetch('/api/config').then(r=>r.json()).then(c=>{ currentConfig=c; }).catch(()=>{});
 connect();
 </script>
 </body>

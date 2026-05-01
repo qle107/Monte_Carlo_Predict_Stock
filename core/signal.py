@@ -1,59 +1,62 @@
 """
 core/signal.py
-Computes the AI signal and — critically — derives drift bias and
-simulation volatility automatically from the stock's own history.
+Composite AI signal + auto-derived MC drift/vol parameters.
 
-How drift bias is calculated:
-──────────────────────────────
+Drift bias
+──────────
   base_drift        = stock's actual mean return per candle (from history)
   signal_adjustment = composite × confidence × (std_return × 0.5)
   drift_bias        = base_drift + signal_adjustment
+  Hard cap          = ±2 × std_return  (prevents the "99.9% certain" trap)
 
-  Cap: drift_bias is clamped to ±2 × std_return so it can never exceed
-       two standard deviations — prevents the 99.9% trap.
+Volatility (input to MC engine)
+───────────────────────────────
+  base_vol  = ATR%
+  scaled by vol_regime  ({low: 0.75, normal: 1.0, high: 1.4})
+  inflated 1.6× when a price gap is detected
 
-Why this is better than a fixed constant:
-  - PLTR (4% daily vol) gets a much wider MC cone than SPY (0.5% vol)
-  - A stock that historically drifts up 0.03%/candle keeps that bias
-  - The AI signal can only shift the drift by up to ½ a std dev
-  - Gaps suppress the signal portion but preserve the historical base
-
-Vol regime adjustment:
-  - "high" regime → inflate simulation vol by 1.4×  (wider paths)
-  - "low"  regime → deflate by 0.75×                 (tighter paths)
-  - "normal"      → use std_return as-is
+New in v2
+─────────
+  • MACD histogram, Bollinger band position, ADX, OBV slope, VWAP distance,
+    and trend-bias all feed the composite score with calibrated weights.
+  • Confidence is now an *entropy-aware* alignment metric — it is high
+    only when most active signals point the same way AND there are
+    enough active signals to matter.
+  • All sub-scores returned in `sub_scores` so the dashboard / backtest
+    can introspect what drove the call.
 """
 
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass, field
+from typing import Dict
+
 import numpy as np
-from dataclasses import dataclass
+
 from .indicators import Indicators, _safe
 
 
+# ─── Dataclass ──────────────────────────────────────────────────────────────
+
 @dataclass
 class Signal:
-    # scores
-    composite:        float   # raw weighted score  −1 … +1
-    confidence:       float   # 0 … 1 (signal alignment)
-
-    # MC parameters (auto-derived from stock history)
-    drift_bias:       float   # per-candle drift injected into MC (%)
-    base_drift:       float   # historical mean return component
-    signal_adj:       float   # signal adjustment component
-    vol_adj:          float   # per-candle volatility for MC (decimal)
-
-    # metadata
-    label:            str
-    reasoning:        str
-    gap_warning:      str
+    composite:   float
+    confidence:  float
+    drift_bias:  float
+    base_drift:  float
+    signal_adj:  float
+    vol_adj:     float
+    label:       str
+    reasoning:   str
+    gap_warning: str
+    sub_scores:  Dict[str, float] = field(default_factory=dict)
 
 
-# ── Sub-signal scorers ───────────────────────────────────────────────────────
+# ─── Sub-signal scorers ─────────────────────────────────────────────────────
 
 def _score_rsi(rsi: float) -> float:
-    """
-    Graduated RSI score. Max ±0.6 to avoid over-dominance.
-    Treats RSI as a mean-reversion hint, not a momentum signal.
-    """
+    """Mean-reversion read on RSI. Capped ±0.6."""
     if   rsi < 20: return  0.60
     elif rsi < 30: return  0.40
     elif rsi < 40: return  0.15
@@ -63,108 +66,160 @@ def _score_rsi(rsi: float) -> float:
     else:          return -0.60
 
 
-def _score_slope(slope: float) -> float:
-    """Regression slope (%/candle). Capped at ±0.8."""
-    return float(np.clip(slope * 15, -0.8, 0.8))
+def _score_slope(slope_pct: float) -> float:
+    return float(np.clip(slope_pct * 15, -0.8, 0.8))
 
 
-def _score_momentum(mom: float) -> float:
-    """5-candle momentum. Capped at ±0.6."""
-    return float(np.clip(mom * 5, -0.6, 0.6))
+def _score_momentum(mom_pct: float) -> float:
+    return float(np.clip(mom_pct * 5, -0.6, 0.6))
 
 
 def _score_ema(cross: str) -> float:
-    return {"bullish": 0.4, "bearish": -0.4, "neutral": 0.0}[cross]
+    return {"bullish": 0.4, "bearish": -0.4, "neutral": 0.0}.get(cross, 0.0)
+
+
+def _score_macd(hist_pct: float) -> float:
+    """MACD histogram (% of price). Strong signal when hist is large."""
+    return float(np.clip(hist_pct * 25, -0.6, 0.6))
+
+
+def _score_bollinger(bb_pos: float) -> float:
+    """
+    Mean-reversion: at upper band → bearish, at lower → bullish.
+    bb_pos ∈ [-3, 3]; ±1 = at the band, ±2+ = punched through.
+    """
+    return float(np.clip(-bb_pos * 0.4, -0.6, 0.6))
+
+
+def _score_adx(adx: float, slope_pct: float) -> float:
+    """
+    ADX is direction-agnostic, so we pair it with slope sign:
+       strong trend  + up slope   → bullish
+       strong trend  + down slope → bearish
+       weak trend                 → 0
+    """
+    if adx < 20:
+        return 0.0
+    strength = float(np.clip((adx - 20) / 30, 0.0, 1.0))   # 20→0, 50+→1
+    direction = 1.0 if slope_pct > 0 else -1.0 if slope_pct < 0 else 0.0
+    return float(np.clip(strength * direction * 0.5, -0.5, 0.5))
+
+
+def _score_obv(obv_slope: float) -> float:
+    """Volume-confirmed momentum."""
+    return float(np.clip(obv_slope * 0.3, -0.4, 0.4))
+
+
+def _score_vwap(vwap_dist_pct: float) -> float:
+    """
+    Trend-following: above VWAP → bullish bias.
+    Capped — too far above is overextension territory.
+    """
+    return float(np.clip(vwap_dist_pct * 0.05, -0.3, 0.3))
 
 
 def _score_skewness(skew: float) -> float:
-    """
-    Positive skew (more upside tails) → mild bullish bonus.
-    Negative skew (crash-prone) → mild bearish penalty.
-    Capped at ±0.3 so it never dominates.
-    """
     return float(np.clip(skew * 0.15, -0.3, 0.3))
 
 
 def _score_trend_bias(bias: float) -> float:
-    """
-    trend_bias > 0.55 means the stock closes up more than 55% of candles
-    → mild bullish. Centred at 0.5 (random walk baseline).
-    """
     return float(np.clip((bias - 0.5) * 2.0, -0.4, 0.4))
 
 
-# ── Confidence ───────────────────────────────────────────────────────────────
+# ─── Confidence (entropy-aware) ─────────────────────────────────────────────
 
-def _confidence(scores: list[float]) -> float:
+def _confidence(scores: Dict[str, float]) -> float:
     """
-    Measures signal alignment: 1.0 = all signals agree, 0.0 = all disagree.
-    Always returns a value in [0.0, 1.0].
+    Confidence ∈ [0,1]. High when:
+      (1) most active scores agree on direction, AND
+      (2) there are enough active scores (entropy penalty for sparse signals).
     """
     if not scores:
         return 0.0
-    signs    = [1 if s > 0.05 else -1 if s < -0.05 else 0 for s in scores]
-    majority = max(signs.count(1), signs.count(-1))
-    # clamp to [0, 1]: majority/total gives 0..1, then clip just in case
-    raw = majority / len(scores)
-    return round(float(max(0.0, min(1.0, raw))), 3)
+
+    vals = list(scores.values())
+    active = [v for v in vals if abs(v) > 0.05]
+    if not active:
+        return 0.0
+
+    pos = sum(1 for v in active if v > 0)
+    neg = sum(1 for v in active if v < 0)
+    n   = len(active)
+
+    # Directional agreement: 1.0 when unanimous
+    agreement = max(pos, neg) / n
+
+    # Entropy of distribution over { +, -, 0 } across all scores including zeros
+    total = len(vals)
+    zero  = total - n
+    p     = np.array([pos, neg, zero], dtype=float) / total
+    p     = p[p > 0]
+    H     = float(-(p * np.log(p)).sum())             # nats
+    Hmax  = math.log(3)
+    H_norm = H / Hmax if Hmax else 0.0
+    # Lower entropy → higher confidence (signals concentrated in one bucket)
+    entropy_factor = 1.0 - H_norm * 0.5               # max penalty 0.5
+
+    # Magnitude bonus: average |score| of active signals
+    mag = float(np.mean([abs(v) for v in active]))
+    mag_factor = float(np.clip(mag / 0.5, 0.0, 1.0))   # full credit at avg |s|=0.5
+
+    raw = agreement * entropy_factor * (0.5 + 0.5 * mag_factor)
+    return round(float(np.clip(raw, 0.0, 1.0)), 3)
 
 
-# ── Main ─────────────────────────────────────────────────────────────────────
+# ─── Main ───────────────────────────────────────────────────────────────────
 
 def compute_signal(ind: Indicators) -> Signal:
-    # ── 1. Composite score ───────────────────────────────────────────────
-    rsi_s   = _score_rsi(ind.rsi)
-    slope_s = _score_slope(ind.slope)
-    mom_s   = _score_momentum(ind.momentum)
-    ema_s   = _score_ema(ind.ema_cross)
-    skew_s  = _score_skewness(ind.skewness)
-    tbias_s = _score_trend_bias(ind.trend_bias)
+    # 1. Sub-scores ──────────────────────────────────────────────────────────
+    sub_scores: Dict[str, float] = {
+        "rsi":        _score_rsi(ind.rsi),
+        "slope":      _score_slope(ind.slope),
+        "momentum":   _score_momentum(ind.momentum),
+        "ema":        _score_ema(ind.ema_cross),
+        "macd":       _score_macd(ind.macd_hist),
+        "bollinger":  _score_bollinger(ind.bb_position),
+        "adx":        _score_adx(ind.adx, ind.slope),
+        "obv":        _score_obv(ind.obv_slope),
+        "vwap":       _score_vwap(ind.vwap_dist),
+        "skew":       _score_skewness(ind.skewness),
+        "trend_bias": _score_trend_bias(ind.trend_bias),
+    }
 
-    all_scores = [rsi_s, slope_s, mom_s, ema_s, skew_s, tbias_s]
+    # Calibrated weights (sum to 1.0)
+    weights = {
+        "rsi":        0.10,
+        "slope":      0.16,
+        "momentum":   0.12,
+        "ema":        0.10,
+        "macd":       0.12,
+        "bollinger":  0.08,
+        "adx":        0.08,
+        "obv":        0.08,
+        "vwap":       0.05,
+        "skew":       0.05,
+        "trend_bias": 0.06,
+    }
 
-    composite = (
-        rsi_s   * 0.20 +
-        slope_s * 0.25 +   # slope most important on short timeframes
-        mom_s   * 0.20 +
-        ema_s   * 0.15 +
-        skew_s  * 0.10 +   # skewness: stock character
-        tbias_s * 0.10     # trend bias: is this stock a persistent drifter?
-    )
-    composite  = float(np.clip(composite, -1.0, 1.0))
-    confidence = _confidence(all_scores)
+    composite = float(np.clip(
+        sum(sub_scores[k] * weights[k] for k in weights), -1.0, 1.0
+    ))
+    confidence = _confidence(sub_scores)
 
-    # ── 2. Drift bias — auto-derived from stock's own history ────────────
-    #
-    # std_return is in % (e.g. 1.5 for a 1.5%-per-candle volatile stock).
-    # Convert to decimal for drift calculation.
-    std_dec  = ind.std_return / 100.0   # e.g. 0.015
-    mean_dec = ind.mean_return / 100.0  # e.g. 0.0002
+    # 2. Drift bias from stock's own history ────────────────────────────────
+    std_dec  = ind.std_return / 100.0
+    mean_dec = ind.mean_return / 100.0
 
-    # Base: the stock's actual historical drift per candle
     base_drift = mean_dec
-
-    # Signal adjustment: composite × confidence × half a std dev
-    # This means even a perfect signal can only shift drift by 0.5σ
     signal_adj = composite * confidence * (std_dec * 0.5)
+    drift_bias = float(np.clip(base_drift + signal_adj, -2.0 * std_dec, 2.0 * std_dec))
 
-    # Combined drift
-    drift_bias = base_drift + signal_adj
-
-    # Hard cap: drift cannot exceed ±2 standard deviations
-    # This is the fix for the 99.9% bug — statistically, 2σ is the limit
-    drift_bias = float(np.clip(drift_bias, -2.0 * std_dec, 2.0 * std_dec))
-
-    # ── 3. Simulation volatility — from ATR + vol regime ─────────────────
-    #
-    # Use ATR-based vol as the primary estimate (more stable than std_return
-    # on short lookbacks), then scale by vol regime.
-    base_vol = ind.atr_pct / 100.0   # ATR as decimal
-
-    vol_scale = {"low": 0.75, "normal": 1.0, "high": 1.40}[ind.vol_regime]
+    # 3. Simulation volatility ──────────────────────────────────────────────
+    base_vol  = ind.atr_pct / 100.0
+    vol_scale = {"low": 0.75, "normal": 1.0, "high": 1.40}.get(ind.vol_regime, 1.0)
     vol_adj   = float(np.clip(base_vol * vol_scale, 0.003, 0.06))
 
-    # ── 4. Gap / news override ────────────────────────────────────────────
+    # 4. Gap / news override ────────────────────────────────────────────────
     gap_warning = ""
     if ind.is_gap_up or ind.is_gap_down:
         direction = "UP" if ind.is_gap_up else "DOWN"
@@ -173,13 +228,11 @@ def compute_signal(ind: Indicators) -> Signal:
             f"Signal adjustment suppressed; base historical drift preserved. "
             f"MC volatility inflated to reflect elevated uncertainty."
         )
-        # Keep base_drift (historical) but zero the signal adjustment
         drift_bias = float(np.clip(base_drift, -2.0 * std_dec, 2.0 * std_dec))
         signal_adj = 0.0
-        # Inflate vol for gap sessions (news = higher uncertainty)
         vol_adj    = float(np.clip(vol_adj * 1.6, 0.003, 0.06))
 
-    # ── 5. Label ──────────────────────────────────────────────────────────
+    # 5. Label ──────────────────────────────────────────────────────────────
     eff = composite * confidence
     if   eff >  0.40: label = "Strong buy"
     elif eff >  0.15: label = "Buy"
@@ -187,23 +240,25 @@ def compute_signal(ind: Indicators) -> Signal:
     elif eff < -0.15: label = "Sell"
     else:             label = "Neutral"
 
-    # ── 6. Reasoning string ───────────────────────────────────────────────
+    # 6. Reasoning string ───────────────────────────────────────────────────
     rsi_desc = (
-        f"RSI {ind.rsi:.0f} oversold" if ind.rsi < 35 else
+        f"RSI {ind.rsi:.0f} oversold"   if ind.rsi < 35 else
         f"RSI {ind.rsi:.0f} overbought" if ind.rsi > 65 else
         f"RSI {ind.rsi:.0f} neutral"
     )
     drift_pct = drift_bias * 100
+    macd_dir  = "↑" if ind.macd_hist > 0 else "↓" if ind.macd_hist < 0 else "·"
     reasoning = (
         f"{rsi_desc} · EMA {ind.ema_cross} · "
-        f"slope {'↑' if ind.slope > 0 else '↓'} · "
+        f"slope {'↑' if ind.slope > 0 else '↓' if ind.slope < 0 else '·'} · "
+        f"MACD {macd_dir} · ADX {ind.adx:.0f} · "
         f"hist drift {ind.mean_return:+.3f}%/c · "
         f"adj {drift_pct:+.3f}%/c · "
         f"conf {confidence:.0%} · "
-        f"vol regime {ind.vol_regime}"
+        f"vol {ind.vol_regime}"
     )
 
-    # Final NaN guard — ensure nothing escapes into MC
+    # NaN guards
     drift_bias = _safe(drift_bias, 0.0)
     vol_adj    = _safe(vol_adj,    0.01)
     base_drift = _safe(base_drift, 0.0)
@@ -221,4 +276,5 @@ def compute_signal(ind: Indicators) -> Signal:
         label       = label,
         reasoning   = reasoning,
         gap_warning = gap_warning,
+        sub_scores  = {k: round(float(v), 3) for k, v in sub_scores.items()},
     )
