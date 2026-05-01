@@ -20,26 +20,38 @@ logger = logging.getLogger(__name__)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS signals (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    ts            TEXT    NOT NULL,
-    ticker        TEXT    NOT NULL,
-    interval      TEXT    NOT NULL,
-    price         REAL    NOT NULL,
-    label         TEXT    NOT NULL,
-    confidence    REAL    NOT NULL,
-    drift_bias    REAL    NOT NULL,
-    prob_up       REAL    NOT NULL,
-    prob_flat     REAL    NOT NULL,
-    prob_down     REAL    NOT NULL,
-    median_price  REAL    NOT NULL,
-    expected_ret  REAL,
-    cvar_5        REAL,
-    mc_model      TEXT    NOT NULL,
-    raw_json      TEXT
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts              TEXT    NOT NULL,
+    ticker          TEXT    NOT NULL,
+    interval        TEXT    NOT NULL,
+    price           REAL    NOT NULL,
+    label           TEXT    NOT NULL,
+    confidence      REAL    NOT NULL,
+    drift_bias      REAL    NOT NULL,
+    prob_up         REAL    NOT NULL,
+    prob_flat       REAL    NOT NULL,
+    prob_down       REAL    NOT NULL,
+    median_price    REAL    NOT NULL,
+    expected_ret    REAL,
+    cvar_5          REAL,
+    mc_model        TEXT    NOT NULL,
+    regime          TEXT,
+    potential_up    REAL,
+    potential_down  REAL,
+    potential_flat  REAL,
+    raw_json        TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_signals_ticker_ts ON signals(ticker, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_signals_ts        ON signals(ts DESC);
 """
+
+# Schema migration: add regime columns if upgrading from v1 schema.
+_MIGRATIONS = [
+    "ALTER TABLE signals ADD COLUMN regime TEXT",
+    "ALTER TABLE signals ADD COLUMN potential_up REAL",
+    "ALTER TABLE signals ADD COLUMN potential_down REAL",
+    "ALTER TABLE signals ADD COLUMN potential_flat REAL",
+]
 
 
 class SignalStore:
@@ -58,6 +70,12 @@ class SignalStore:
     def _init_schema(self):
         with self._lock, self._connect() as conn:
             conn.executescript(_SCHEMA)
+            # Apply additive migrations for older databases (no-op on fresh DBs).
+            for stmt in _MIGRATIONS:
+                try:
+                    conn.execute(stmt)
+                except sqlite3.OperationalError:
+                    pass  # column already exists
 
     @contextmanager
     def _cur(self):
@@ -76,6 +94,7 @@ class SignalStore:
             return
         sig = result.get("signal", {})
         mc  = result.get("mc",     {})
+        reg = result.get("regime", {}) or {}
         row = (
             result.get("updated_at", ""),
             result.get("ticker",   ""),
@@ -91,7 +110,12 @@ class SignalStore:
             float(mc.get("expected_return", 0.0)),
             float(mc.get("cvar_5", 0.0)),
             result.get("mc_model", "gaussian"),
+            reg.get("regime", ""),
+            float(reg.get("potential_up",   0.0)),
+            float(reg.get("potential_down", 0.0)),
+            float(reg.get("potential_flat", 0.0)),
             json.dumps({"sub_scores": sig.get("sub_scores", {}),
+                        "regime":     reg,
                         "indicators": result.get("indicators", {})},
                        default=str),
         )
@@ -101,8 +125,9 @@ class SignalStore:
                     """INSERT INTO signals
                     (ts, ticker, interval, price, label, confidence, drift_bias,
                      prob_up, prob_flat, prob_down, median_price, expected_ret,
-                     cvar_5, mc_model, raw_json)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     cvar_5, mc_model, regime, potential_up, potential_down,
+                     potential_flat, raw_json)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     row,
                 )
         except sqlite3.Error as e:
@@ -113,7 +138,8 @@ class SignalStore:
     def recent(self, ticker: Optional[str] = None, limit: int = 100) -> List[dict]:
         sql = """SELECT ts, ticker, interval, price, label, confidence,
                         drift_bias, prob_up, prob_flat, prob_down,
-                        median_price, expected_ret, cvar_5, mc_model
+                        median_price, expected_ret, cvar_5, mc_model,
+                        regime, potential_up, potential_down, potential_flat
                  FROM signals"""
         params: tuple = ()
         if ticker:

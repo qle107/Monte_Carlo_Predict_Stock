@@ -1,40 +1,50 @@
 """
-core/signal.py
-Composite AI signal + auto-derived MC drift/vol parameters.
+core/signal.py — composite signal, regime-aware.
 
-Drift bias
-──────────
+The signal answers the user's actual question:
+   "Does this stock have potential to go up, down, or consolidate?"
+
+Drift bias for the Monte Carlo
+──────────────────────────────
   base_drift        = stock's actual mean return per candle (from history)
   signal_adjustment = composite × confidence × (std_return × 0.5)
   drift_bias        = base_drift + signal_adjustment
   Hard cap          = ±2 × std_return  (prevents the "99.9% certain" trap)
 
-Volatility (input to MC engine)
-───────────────────────────────
-  base_vol  = ATR%
-  scaled by vol_regime  ({low: 0.75, normal: 1.0, high: 1.4})
-  inflated 1.6× when a price gap is detected
+Regime-awareness
+────────────────
+  In a TRENDING market (uptrend/downtrend) we don't fade RSI/Bollinger —
+  oversold prices in an uptrend keep going up. We boost trend-following
+  components (slope, MACD, ADX, pattern) and suppress mean-reversion
+  components (RSI, Bollinger).
 
-New in v2
-─────────
-  • MACD histogram, Bollinger band position, ADX, OBV slope, VWAP distance,
-    and trend-bias all feed the composite score with calibrated weights.
-  • Confidence is now an *entropy-aware* alignment metric — it is high
-    only when most active signals point the same way AND there are
-    enough active signals to matter.
-  • All sub-scores returned in `sub_scores` so the dashboard / backtest
-    can introspect what drove the call.
+  In a RANGE-BOUND market we do the opposite: extreme RSI and band touches
+  are tradeable, while slope/momentum are noise.
+
+  In a BREAKOUT regime, momentum and ADX dominate; we ignore RSI.
+
+  In a CHOPPY regime everything gets damped — no high-confidence calls.
+
+Outputs
+───────
+  • composite      [-1, 1] weighted score
+  • confidence     [0, 1]  alignment + magnitude
+  • label          Strong buy / Buy / Neutral / Sell / Strong sell
+  • drift_bias     per-candle drift fed into the MC simulation
+  • vol_adj        per-candle vol fed into the MC simulation
+  • sub_scores     per-component breakdown (for the dashboard)
 """
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Dict
+from typing import Dict, Optional
 
 import numpy as np
 
 from .indicators import Indicators, _safe
+from .regime import Regime
 
 
 # ─── Dataclass ──────────────────────────────────────────────────────────────
@@ -51,6 +61,7 @@ class Signal:
     reasoning:   str
     gap_warning: str
     sub_scores:  Dict[str, float] = field(default_factory=dict)
+    weights:     Dict[str, float] = field(default_factory=dict)
 
 
 # ─── Sub-signal scorers ─────────────────────────────────────────────────────
@@ -79,42 +90,27 @@ def _score_ema(cross: str) -> float:
 
 
 def _score_macd(hist_pct: float) -> float:
-    """MACD histogram (% of price). Strong signal when hist is large."""
     return float(np.clip(hist_pct * 25, -0.6, 0.6))
 
 
 def _score_bollinger(bb_pos: float) -> float:
-    """
-    Mean-reversion: at upper band → bearish, at lower → bullish.
-    bb_pos ∈ [-3, 3]; ±1 = at the band, ±2+ = punched through.
-    """
+    """Mean-reversion: at upper band → bearish, at lower → bullish."""
     return float(np.clip(-bb_pos * 0.4, -0.6, 0.6))
 
 
 def _score_adx(adx: float, slope_pct: float) -> float:
-    """
-    ADX is direction-agnostic, so we pair it with slope sign:
-       strong trend  + up slope   → bullish
-       strong trend  + down slope → bearish
-       weak trend                 → 0
-    """
     if adx < 20:
         return 0.0
-    strength = float(np.clip((adx - 20) / 30, 0.0, 1.0))   # 20→0, 50+→1
+    strength = float(np.clip((adx - 20) / 30, 0.0, 1.0))
     direction = 1.0 if slope_pct > 0 else -1.0 if slope_pct < 0 else 0.0
     return float(np.clip(strength * direction * 0.5, -0.5, 0.5))
 
 
 def _score_obv(obv_slope: float) -> float:
-    """Volume-confirmed momentum."""
     return float(np.clip(obv_slope * 0.3, -0.4, 0.4))
 
 
 def _score_vwap(vwap_dist_pct: float) -> float:
-    """
-    Trend-following: above VWAP → bullish bias.
-    Capped — too far above is overextension territory.
-    """
     return float(np.clip(vwap_dist_pct * 0.05, -0.3, 0.3))
 
 
@@ -126,14 +122,73 @@ def _score_trend_bias(bias: float) -> float:
     return float(np.clip((bias - 0.5) * 2.0, -0.4, 0.4))
 
 
-# ─── Confidence (entropy-aware) ─────────────────────────────────────────────
+# ─── Regime-aware weights ───────────────────────────────────────────────────
 
-def _confidence(scores: Dict[str, float]) -> float:
-    """
-    Confidence ∈ [0,1]. High when:
-      (1) most active scores agree on direction, AND
-      (2) there are enough active scores (entropy penalty for sparse signals).
-    """
+# Each row sums to 1.0. Trend regimes lean on slope/MACD/ADX; range regimes
+# lean on RSI/Bollinger; breakout regimes lean on momentum + ADX.
+_BASE_WEIGHTS = {
+    "rsi":        0.10,
+    "slope":      0.16,
+    "momentum":   0.12,
+    "ema":        0.10,
+    "macd":       0.12,
+    "bollinger":  0.08,
+    "adx":        0.08,
+    "obv":        0.08,
+    "vwap":       0.05,
+    "skew":       0.05,
+    "trend_bias": 0.06,
+}
+
+_REGIME_WEIGHTS = {
+    "strong_uptrend": {
+        "rsi": 0.03, "slope": 0.22, "momentum": 0.16, "ema": 0.14,
+        "macd": 0.16, "bollinger": 0.02, "adx": 0.12, "obv": 0.08,
+        "vwap": 0.04, "skew": 0.01, "trend_bias": 0.02,
+    },
+    "weak_uptrend": {
+        "rsi": 0.06, "slope": 0.20, "momentum": 0.14, "ema": 0.12,
+        "macd": 0.14, "bollinger": 0.04, "adx": 0.10, "obv": 0.10,
+        "vwap": 0.05, "skew": 0.02, "trend_bias": 0.03,
+    },
+    "strong_downtrend": {
+        "rsi": 0.03, "slope": 0.22, "momentum": 0.16, "ema": 0.14,
+        "macd": 0.16, "bollinger": 0.02, "adx": 0.12, "obv": 0.08,
+        "vwap": 0.04, "skew": 0.01, "trend_bias": 0.02,
+    },
+    "weak_downtrend": {
+        "rsi": 0.06, "slope": 0.20, "momentum": 0.14, "ema": 0.12,
+        "macd": 0.14, "bollinger": 0.04, "adx": 0.10, "obv": 0.10,
+        "vwap": 0.05, "skew": 0.02, "trend_bias": 0.03,
+    },
+    "breakout_up": {
+        "rsi": 0.02, "slope": 0.20, "momentum": 0.20, "ema": 0.10,
+        "macd": 0.18, "bollinger": 0.02, "adx": 0.16, "obv": 0.08,
+        "vwap": 0.02, "skew": 0.01, "trend_bias": 0.01,
+    },
+    "breakout_down": {
+        "rsi": 0.02, "slope": 0.20, "momentum": 0.20, "ema": 0.10,
+        "macd": 0.18, "bollinger": 0.02, "adx": 0.16, "obv": 0.08,
+        "vwap": 0.02, "skew": 0.01, "trend_bias": 0.01,
+    },
+    "range_bound": {
+        "rsi": 0.22, "slope": 0.04, "momentum": 0.04, "ema": 0.02,
+        "macd": 0.06, "bollinger": 0.30, "adx": 0.02, "obv": 0.06,
+        "vwap": 0.10, "skew": 0.06, "trend_bias": 0.08,
+    },
+    "choppy":   _BASE_WEIGHTS,
+}
+
+
+def _weights_for(regime: Optional[Regime]) -> Dict[str, float]:
+    if regime is None:
+        return _BASE_WEIGHTS
+    return _REGIME_WEIGHTS.get(regime.regime, _BASE_WEIGHTS)
+
+
+# ─── Confidence (entropy-aware + regime amplifier) ──────────────────────────
+
+def _confidence(scores: Dict[str, float], regime: Optional[Regime]) -> float:
     if not scores:
         return 0.0
 
@@ -146,31 +201,39 @@ def _confidence(scores: Dict[str, float]) -> float:
     neg = sum(1 for v in active if v < 0)
     n   = len(active)
 
-    # Directional agreement: 1.0 when unanimous
     agreement = max(pos, neg) / n
 
-    # Entropy of distribution over { +, -, 0 } across all scores including zeros
     total = len(vals)
     zero  = total - n
-    p     = np.array([pos, neg, zero], dtype=float) / total
-    p     = p[p > 0]
-    H     = float(-(p * np.log(p)).sum())             # nats
-    Hmax  = math.log(3)
+    p = np.array([pos, neg, zero], dtype=float) / total
+    p = p[p > 0]
+    H = float(-(p * np.log(p)).sum())
+    Hmax = math.log(3)
     H_norm = H / Hmax if Hmax else 0.0
-    # Lower entropy → higher confidence (signals concentrated in one bucket)
-    entropy_factor = 1.0 - H_norm * 0.5               # max penalty 0.5
+    entropy_factor = 1.0 - H_norm * 0.5
 
-    # Magnitude bonus: average |score| of active signals
     mag = float(np.mean([abs(v) for v in active]))
-    mag_factor = float(np.clip(mag / 0.5, 0.0, 1.0))   # full credit at avg |s|=0.5
+    mag_factor = float(np.clip(mag / 0.5, 0.0, 1.0))
 
     raw = agreement * entropy_factor * (0.5 + 0.5 * mag_factor)
+
+    # Regime amplifier: clean regimes add confidence, choppy subtracts.
+    if regime is not None:
+        if regime.regime in ("strong_uptrend", "strong_downtrend",
+                             "breakout_up", "breakout_down"):
+            raw *= 1.20
+        elif regime.regime in ("weak_uptrend", "weak_downtrend"):
+            raw *= 1.05
+        elif regime.regime == "choppy":
+            raw *= 0.55
+        # range_bound left at 1.0 — RSI/BB are doing real work
+
     return round(float(np.clip(raw, 0.0, 1.0)), 3)
 
 
 # ─── Main ───────────────────────────────────────────────────────────────────
 
-def compute_signal(ind: Indicators) -> Signal:
+def compute_signal(ind: Indicators, regime: Optional[Regime] = None) -> Signal:
     # 1. Sub-scores ──────────────────────────────────────────────────────────
     sub_scores: Dict[str, float] = {
         "rsi":        _score_rsi(ind.rsi),
@@ -186,25 +249,20 @@ def compute_signal(ind: Indicators) -> Signal:
         "trend_bias": _score_trend_bias(ind.trend_bias),
     }
 
-    # Calibrated weights (sum to 1.0)
-    weights = {
-        "rsi":        0.10,
-        "slope":      0.16,
-        "momentum":   0.12,
-        "ema":        0.10,
-        "macd":       0.12,
-        "bollinger":  0.08,
-        "adx":        0.08,
-        "obv":        0.08,
-        "vwap":       0.05,
-        "skew":       0.05,
-        "trend_bias": 0.06,
-    }
+    weights = _weights_for(regime)
 
     composite = float(np.clip(
         sum(sub_scores[k] * weights[k] for k in weights), -1.0, 1.0
     ))
-    confidence = _confidence(sub_scores)
+
+    # If we have a regime view, blend the regime's directional read into the
+    # composite. This is the key change: the regime is the dominant voice.
+    if regime is not None:
+        # regime.trend_score is signed in [-1, 1]
+        composite = float(np.clip(0.55 * regime.trend_score + 0.45 * composite,
+                                  -1.0, 1.0))
+
+    confidence = _confidence(sub_scores, regime)
 
     # 2. Drift bias from stock's own history ────────────────────────────────
     std_dec  = ind.std_return / 100.0
@@ -219,6 +277,14 @@ def compute_signal(ind: Indicators) -> Signal:
     vol_scale = {"low": 0.75, "normal": 1.0, "high": 1.40}.get(ind.vol_regime, 1.0)
     vol_adj   = float(np.clip(base_vol * vol_scale, 0.003, 0.06))
 
+    # In range-bound regimes: tighten vol (less directional movement expected)
+    # In breakout regimes: widen vol (volatility expansion is the whole point)
+    if regime is not None:
+        if regime.regime == "range_bound":
+            vol_adj = float(np.clip(vol_adj * 0.85, 0.003, 0.06))
+        elif regime.regime in ("breakout_up", "breakout_down"):
+            vol_adj = float(np.clip(vol_adj * 1.25, 0.003, 0.06))
+
     # 4. Gap / news override ────────────────────────────────────────────────
     gap_warning = ""
     if ind.is_gap_up or ind.is_gap_down:
@@ -232,13 +298,26 @@ def compute_signal(ind: Indicators) -> Signal:
         signal_adj = 0.0
         vol_adj    = float(np.clip(vol_adj * 1.6, 0.003, 0.06))
 
-    # 5. Label ──────────────────────────────────────────────────────────────
+    # 5. Label — regime-aware ──────────────────────────────────────────────
     eff = composite * confidence
-    if   eff >  0.40: label = "Strong buy"
-    elif eff >  0.15: label = "Buy"
-    elif eff < -0.40: label = "Strong sell"
-    elif eff < -0.15: label = "Sell"
-    else:             label = "Neutral"
+    if regime is not None and regime.regime in ("breakout_up", "breakout_down"):
+        # Breakouts: lower bar to call it
+        if   eff >  0.25: label = "Strong buy"
+        elif eff >  0.10: label = "Buy"
+        elif eff < -0.25: label = "Strong sell"
+        elif eff < -0.10: label = "Sell"
+        else:             label = "Neutral"
+    elif regime is not None and regime.regime == "range_bound":
+        # In a range we want bigger conviction before calling a side
+        if   eff >  0.30: label = "Buy"
+        elif eff < -0.30: label = "Sell"
+        else:             label = "Neutral"
+    else:
+        if   eff >  0.40: label = "Strong buy"
+        elif eff >  0.15: label = "Buy"
+        elif eff < -0.40: label = "Strong sell"
+        elif eff < -0.15: label = "Sell"
+        else:             label = "Neutral"
 
     # 6. Reasoning string ───────────────────────────────────────────────────
     rsi_desc = (
@@ -246,14 +325,13 @@ def compute_signal(ind: Indicators) -> Signal:
         f"RSI {ind.rsi:.0f} overbought" if ind.rsi > 65 else
         f"RSI {ind.rsi:.0f} neutral"
     )
+    macd_dir = "↑" if ind.macd_hist > 0 else "↓" if ind.macd_hist < 0 else "·"
     drift_pct = drift_bias * 100
-    macd_dir  = "↑" if ind.macd_hist > 0 else "↓" if ind.macd_hist < 0 else "·"
+    regime_part = f"regime: {regime.regime} · " if regime is not None else ""
     reasoning = (
-        f"{rsi_desc} · EMA {ind.ema_cross} · "
-        f"slope {'↑' if ind.slope > 0 else '↓' if ind.slope < 0 else '·'} · "
+        f"{regime_part}{rsi_desc} · EMA {ind.ema_cross} · "
         f"MACD {macd_dir} · ADX {ind.adx:.0f} · "
-        f"hist drift {ind.mean_return:+.3f}%/c · "
-        f"adj {drift_pct:+.3f}%/c · "
+        f"drift {drift_pct:+.3f}%/c · "
         f"conf {confidence:.0%} · "
         f"vol {ind.vol_regime}"
     )
@@ -277,4 +355,5 @@ def compute_signal(ind: Indicators) -> Signal:
         reasoning   = reasoning,
         gap_warning = gap_warning,
         sub_scores  = {k: round(float(v), 3) for k, v in sub_scores.items()},
+        weights     = {k: round(float(v), 3) for k, v in weights.items()},
     )

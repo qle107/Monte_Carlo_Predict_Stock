@@ -38,6 +38,40 @@ header h1 { font-size:15px; font-weight:600; }
 #warning-banner { display:none; background:rgba(210,153,34,.12); border-bottom:1px solid rgba(210,153,34,.3); padding:10px 20px; font-size:13px; color:var(--amber); line-height:1.5; }
 #warning-banner.show { display:block; }
 
+/* ── regime banner ──────────────────────────────────────────────────── */
+#regime-banner {
+  display:grid; grid-template-columns:1.2fr 1.8fr; gap:0;
+  border-bottom:1px solid var(--border); background:var(--surface);
+}
+@media (max-width:900px) { #regime-banner { grid-template-columns:1fr; } }
+.regime-left { padding:14px 22px; border-right:1px solid var(--border); }
+.regime-label-row { display:flex; align-items:center; gap:10px; margin-bottom:6px; flex-wrap:wrap; }
+.regime-tag {
+  font-size:13px; font-weight:700; letter-spacing:.4px; padding:5px 12px;
+  border-radius:6px; text-transform:uppercase;
+}
+.regime-tag.r-up         { background:rgba(63,185,80,.18);   color:var(--green); }
+.regime-tag.r-down       { background:rgba(248,81,73,.18);   color:var(--red); }
+.regime-tag.r-range      { background:rgba(88,166,255,.18);  color:var(--blue); }
+.regime-tag.r-breakout   { background:rgba(210,153,34,.20);  color:var(--amber); border:1px solid rgba(210,153,34,.4); }
+.regime-tag.r-choppy     { background:rgba(139,148,158,.15); color:var(--muted); }
+.regime-verdict { font-size:13px; color:var(--text); line-height:1.5; opacity:.9; }
+.regime-tickers { font-size:11px; color:var(--muted); margin-top:6px; display:flex; gap:14px; flex-wrap:wrap; }
+.regime-tickers strong { color:var(--text); font-weight:600; }
+
+.regime-right { padding:14px 22px; display:flex; flex-direction:column; gap:8px; }
+.potential-row { display:flex; align-items:center; gap:10px; }
+.potential-name { width:78px; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; flex-shrink:0; }
+.potential-bar-bg { flex:1; height:14px; background:var(--surface2); border-radius:4px; overflow:hidden; position:relative; }
+.potential-bar-fill { height:100%; transition:width .6s ease; border-radius:4px; }
+.potential-bar-fill.up   { background:linear-gradient(90deg, rgba(63,185,80,.5), var(--green)); }
+.potential-bar-fill.down { background:linear-gradient(90deg, rgba(248,81,73,.5), var(--red)); }
+.potential-bar-fill.flat { background:linear-gradient(90deg, rgba(139,148,158,.4), #8b949e); }
+.potential-pct { width:46px; font-size:13px; font-weight:700; text-align:right; flex-shrink:0; }
+.potential-pct.up { color:var(--green); }
+.potential-pct.down { color:var(--red); }
+.potential-pct.flat { color:var(--muted); }
+
 /* ── settings panel ─────────────────────────────────────────────────── */
 #settings-panel { display:none; background:var(--surface); border-bottom:1px solid var(--border); padding:16px 20px; }
 #settings-panel.open { display:block; }
@@ -140,6 +174,35 @@ header h1 { font-size:15px; font-weight:600; }
 
 <div id="warning-banner">
   <strong>⚠ News/Gap detected</strong> — <span id="warning-text"></span>
+</div>
+
+<!-- ── Regime banner ──────────────────────────────────────────────── -->
+<div id="regime-banner">
+  <div class="regime-left">
+    <div class="regime-label-row">
+      <span class="regime-tag r-choppy" id="regime-tag">—</span>
+      <span style="font-size:12px; color:var(--muted);">Trend potential, next <span id="regime-fwd-label">10</span> candles</span>
+    </div>
+    <div class="regime-verdict" id="regime-verdict">Loading…</div>
+    <div class="regime-tickers" id="regime-tickers"></div>
+  </div>
+  <div class="regime-right">
+    <div class="potential-row">
+      <span class="potential-name">Up</span>
+      <div class="potential-bar-bg"><div class="potential-bar-fill up" id="pot-up-bar" style="width:0%"></div></div>
+      <span class="potential-pct up" id="pot-up-val">—</span>
+    </div>
+    <div class="potential-row">
+      <span class="potential-name">Down</span>
+      <div class="potential-bar-bg"><div class="potential-bar-fill down" id="pot-down-bar" style="width:0%"></div></div>
+      <span class="potential-pct down" id="pot-down-val">—</span>
+    </div>
+    <div class="potential-row">
+      <span class="potential-name">Consolidate</span>
+      <div class="potential-bar-bg"><div class="potential-bar-fill flat" id="pot-flat-bar" style="width:0%"></div></div>
+      <span class="potential-pct flat" id="pot-flat-val">—</span>
+    </div>
+  </div>
 </div>
 
 <!-- ── Settings ───────────────────────────────────────────────────── -->
@@ -369,6 +432,53 @@ function hideWarning() {
   document.getElementById('warning-banner').classList.remove('show');
 }
 
+// ── regime banner ───────────────────────────────────────────────────────
+const REGIME_TAG_CLASS = {
+  strong_uptrend:   'r-up',
+  weak_uptrend:     'r-up',
+  strong_downtrend: 'r-down',
+  weak_downtrend:   'r-down',
+  breakout_up:      'r-breakout',
+  breakout_down:    'r-breakout',
+  range_bound:      'r-range',
+  choppy:           'r-choppy',
+};
+const REGIME_DISPLAY = {
+  strong_uptrend:   'STRONG UPTREND',
+  weak_uptrend:     'MILD UPTREND',
+  strong_downtrend: 'STRONG DOWNTREND',
+  weak_downtrend:   'MILD DOWNTREND',
+  breakout_up:      'BREAKOUT ↑',
+  breakout_down:    'BREAKOUT ↓',
+  range_bound:      'RANGE / CONSOLIDATION',
+  choppy:           'NO CLEAR TREND',
+};
+function updateRegimeBanner(reg, n_forward) {
+  if (!reg) return;
+  const tag=document.getElementById('regime-tag');
+  tag.textContent = REGIME_DISPLAY[reg.regime] || reg.regime;
+  tag.className   = 'regime-tag ' + (REGIME_TAG_CLASS[reg.regime] || 'r-choppy');
+  document.getElementById('regime-verdict').textContent = reg.verdict || '';
+  document.getElementById('regime-fwd-label').textContent = n_forward || 10;
+
+  const tEl=document.getElementById('regime-tickers');
+  const persistence = reg.hurst > 0.6 ? 'persistent' : reg.hurst < 0.4 ? 'mean-reverting' : 'random-walk';
+  const breakouts = (reg.breakout_up ? '↑ breakout · ' : '') + (reg.breakout_down ? '↓ breakdown · ' : '');
+  tEl.innerHTML =
+    `${breakouts}` +
+    `<span><strong>Hurst</strong> ${reg.hurst.toFixed(2)} (${persistence})</span>` +
+    `<span><strong>R²</strong> ${reg.r2_short.toFixed(2)} / ${reg.r2_mid.toFixed(2)} / ${reg.r2_long.toFixed(2)}</span>` +
+    `<span><strong>Donchian pos</strong> ${reg.donchian_pos>=0?'+':''}${reg.donchian_pos.toFixed(2)}</span>` +
+    `<span><strong>HH/LL</strong> ${reg.hh_count}↑ ${reg.ll_count}↓</span>`;
+
+  document.getElementById('pot-up-bar').style.width   = reg.potential_up   + '%';
+  document.getElementById('pot-down-bar').style.width = reg.potential_down + '%';
+  document.getElementById('pot-flat-bar').style.width = reg.potential_flat + '%';
+  document.getElementById('pot-up-val').textContent   = reg.potential_up   + '%';
+  document.getElementById('pot-down-val').textContent = reg.potential_down + '%';
+  document.getElementById('pot-flat-val').textContent = reg.potential_flat + '%';
+}
+
 // ── settings ────────────────────────────────────────────────────────────
 function toggleSettings() {
   const p=document.getElementById('settings-panel');
@@ -501,6 +611,9 @@ function updateUI(d) {
   };
 
   if (d.warnings && d.warnings.length>0) showWarning(d.warnings[0]); else hideWarning();
+
+  // Regime banner — the "is this trending or consolidating?" answer
+  updateRegimeBanner(d.regime, cfg_d.n_forward);
 
   document.getElementById('header-title').textContent=`MC Trader  ${d.ticker}  $${fmt(cur)}`;
   document.getElementById('status-dot').className='dot live';

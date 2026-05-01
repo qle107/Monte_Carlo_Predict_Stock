@@ -26,6 +26,7 @@ import pandas as pd
 
 from .indicators import compute_indicators
 from .montecarlo import run as run_mc
+from .regime import detect_regime
 from .signal import compute_signal
 
 
@@ -82,7 +83,8 @@ def walk_forward(
             continue
         try:
             ind = compute_indicators(sub)
-            sig = compute_signal(ind)
+            reg = detect_regime(sub, adx=ind.adx, obv_slope=ind.obv_slope)
+            sig = compute_signal(ind, regime=reg)
             entry = float(sub["close"].iloc[-1])
             if entry <= 0 or not math.isfinite(entry):
                 continue

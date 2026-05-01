@@ -203,7 +203,8 @@ async def api_export_csv(ticker: Optional[str] = None, limit: int = 1000):
         w.writerow([
             "ts", "ticker", "interval", "price", "label", "confidence",
             "drift_bias", "prob_up", "prob_flat", "prob_down",
-            "median_price", "mc_model",
+            "median_price", "mc_model", "regime",
+            "potential_up", "potential_down", "potential_flat",
         ])
         yield buf.getvalue(); buf.seek(0); buf.truncate(0)
         for r in rows:
@@ -213,6 +214,9 @@ async def api_export_csv(ticker: Optional[str] = None, limit: int = 1000):
                 r.get("drift_bias", ""), r.get("prob_up", ""),
                 r.get("prob_flat", ""), r.get("prob_down", ""),
                 r.get("median_price", ""), r.get("mc_model", ""),
+                r.get("regime", ""),
+                r.get("potential_up", ""), r.get("potential_down", ""),
+                r.get("potential_flat", ""),
             ])
             yield buf.getvalue(); buf.seek(0); buf.truncate(0)
 
@@ -294,13 +298,15 @@ async def _run_analysis() -> dict:
                 logger.warning("store.record failed: %s", e)
 
         sig = result["signal"]
+        reg = result.get("regime", {}) or {}
         warn_str = f"  ⚠ {result['warnings'][0]}" if result.get("warnings") else ""
         logger.info(
-            "%s %s [%s]  price=%.2f  signal=%s (conf=%.0f%%)  up=%.1f%% down=%.1f%%%s",
+            "%s %s [%s]  price=%.2f  regime=%s  pot up/dn/flat=%.0f/%.0f/%.0f  signal=%s (conf=%.0f%%)%s",
             cfg.ticker, cfg.interval, cfg.mc_model,
             result["current_price"],
+            reg.get("regime", "?"),
+            reg.get("potential_up", 0), reg.get("potential_down", 0), reg.get("potential_flat", 0),
             sig["label"], sig["confidence"] * 100,
-            result["mc"]["prob_up"], result["mc"]["prob_down"],
             warn_str,
         )
         return result
