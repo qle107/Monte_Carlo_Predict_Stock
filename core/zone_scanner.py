@@ -61,11 +61,38 @@ logger = logging.getLogger(__name__)
 
 # ─── EMA helpers ─────────────────────────────────────────────────────────────
 
+def _ema_series(closes: np.ndarray, period: int) -> pd.Series:
+    s = pd.Series(closes.astype(float))
+    return s.ewm(span=period, adjust=False).mean()
+
+
 def _ema_value(closes: np.ndarray, period: int) -> float:
     if len(closes) < period:
         return float(closes[-1]) if len(closes) else 0.0
-    s = pd.Series(closes.astype(float))
-    return float(s.ewm(span=period, adjust=False).mean().iloc[-1])
+    return float(_ema_series(closes, period).iloc[-1])
+
+
+def _ema_cross(closes: np.ndarray, fast: int, slow: int, lookback: int = 5) -> str:
+    """
+    Detect recent EMA cross between `fast` and `slow` EMAs within last `lookback` bars.
+    Returns: "cross_up" | "cross_down" | "none"
+    """
+    if len(closes) < slow + lookback:
+        return "none"
+    fast_s = _ema_series(closes, fast)
+    slow_s = _ema_series(closes, slow)
+    # Check recent bars for a cross
+    for i in range(-1, -(lookback + 1), -1):
+        try:
+            curr_above = fast_s.iloc[i] > slow_s.iloc[i]
+            prev_above = fast_s.iloc[i - 1] > slow_s.iloc[i - 1]
+        except IndexError:
+            break
+        if curr_above and not prev_above:
+            return "cross_up"
+        if not curr_above and prev_above:
+            return "cross_down"
+    return "none"
 
 
 def _classify_ema_stack(price: float, ema20: float, ema50: float, ema200: float) -> str:
@@ -136,14 +163,30 @@ class ZoneScanResult:
     setup_type:    str         # "demand_bounce"|"supply_break"|"supply_bounce"|"demand_break"|"none"
     side:          str         # "long"|"short"|"none"
 
+    # EMA values
     ema20:         float
     ema50:         float
     ema200:        float
-    ema_stack:     str
+    ema_stack:     str         # "bull_stack"|"bear_stack"|"above_200"|"below_200"|"mixed"
 
+    # EMA cross signals (within last 5 bars)
+    cross_20_50:   str         # "cross_up"|"cross_down"|"none"
+    cross_50_200:  str         # "cross_up"|"cross_down"|"none"
+    cross_20_200:  str         # "cross_up"|"cross_down"|"none"
+
+    # Price vs each EMA (%)
+    dist_ema20:    float       # (price - ema20) / price * 100
+    dist_ema50:    float
+    dist_ema200:   float
+
+    # Nearest zones (structured for display)
     nearest_zone_level:    Optional[float]
     nearest_zone_strength: Optional[float]
     nearest_zone_type:     Optional[str]   # "demand"|"supply"
+
+    # All demand zones sorted nearest-to-price first (up to 3)
+    demand_zones:  list        # list of {level, strength, fresh, touches, label}
+    supply_zones:  list        # list of {level, strength, fresh, touches, label}
 
     zone_tp1:      Optional[float]
     zone_tp2:      Optional[float]
@@ -186,7 +229,10 @@ async def _zone_scan_one(
         ticker=ticker, price=0.0, interval=interval,
         setup_score=0.0, setup_type="none", side="none",
         ema20=0.0, ema50=0.0, ema200=0.0, ema_stack="mixed",
+        cross_20_50="none", cross_50_200="none", cross_20_200="none",
+        dist_ema20=0.0, dist_ema50=0.0, dist_ema200=0.0,
         nearest_zone_level=None, nearest_zone_strength=None, nearest_zone_type=None,
+        demand_zones=[], supply_zones=[],
         zone_tp1=None, zone_tp2=None, zone_sl=None,
         zone_tp1_dist=None, zone_tp2_dist=None, zone_sl_dist=None, zone_rr=None,
         mc_tp1=None, mc_tp2=None,
@@ -205,16 +251,69 @@ async def _zone_scan_one(
         closes = df["close"].to_numpy(float)
         price  = float(closes[-1])
 
-        # ── 2. EMA 20 / 50 / 200 ────────────────────────────────────
+        # ── 2. EMA 20 / 50 / 200 + cross detection ──────────────────
         ema20  = _ema_value(closes, 20)
         ema50  = _ema_value(closes, 50)
         ema200 = _ema_value(closes, 200)
         ema_stack = _classify_ema_stack(price, ema20, ema50, ema200)
 
+        cross_20_50  = _ema_cross(closes, 20,  50,  lookback=5)
+        cross_50_200 = _ema_cross(closes, 50,  200, lookback=5)
+        cross_20_200 = _ema_cross(closes, 20,  200, lookback=5)
+
+        dist_ema20  = round((price - ema20)  / price * 100, 2) if price else 0.0
+        dist_ema50  = round((price - ema50)  / price * 100, 2) if price else 0.0
+        dist_ema200 = round((price - ema200) / price * 100, 2) if price else 0.0
+
         # ── 3. Zone detection ────────────────────────────────────────
         zones = await loop.run_in_executor(None, detect_zones, df)
         atr   = zones.atr if zones.atr > 0 else price * 0.015
         touch_band = atr * 0.6
+
+        # Build structured zone lists for display (nearest to price first, up to 3)
+        def _zone_label(z, price: float) -> str:
+            """Strong / Demand 1 / Demand 2 label based on strength."""
+            if z.strength >= 0.70:
+                return "Strong"
+            return None   # caller assigns index
+
+        def _build_zone_list(raw_zones, price: float, zone_kind: str) -> list:
+            """Sort by proximity to price, label by strength rank."""
+            if zone_kind == "demand":
+                # Demand zones below price — sort by level desc (nearest first)
+                candidates = sorted(
+                    [z for z in raw_zones],
+                    key=lambda z: abs(price - z.level)
+                )[:3]
+            else:
+                # Supply zones above price — sort by level asc (nearest first)
+                candidates = sorted(
+                    [z for z in raw_zones],
+                    key=lambda z: abs(price - z.level)
+                )[:3]
+            result = []
+            idx = 1
+            for z in candidates:
+                if z.strength >= 0.70:
+                    lbl = f"Strong {'Support' if zone_kind == 'demand' else 'Resistance'}"
+                else:
+                    lbl = f"{'Support' if zone_kind == 'demand' else 'Resistance'} {idx}"
+                    idx += 1
+                result.append({
+                    "level":    round(z.level, 4),
+                    "low":      round(z.low, 4),
+                    "high":     round(z.high, 4),
+                    "strength": round(z.strength, 3),
+                    "touches":  z.touches,
+                    "fresh":    z.fresh,
+                    "label":    lbl,
+                    "dist_pct": round((price - z.level) / price * 100, 2) if zone_kind == "demand"
+                                else round((z.level - price) / price * 100, 2),
+                })
+            return result
+
+        demand_zones_list = _build_zone_list(zones.demand_zones, price, "demand")
+        supply_zones_list = _build_zone_list(zones.supply_zones, price, "supply")
 
         # ── 4. Find best setup ───────────────────────────────────────
         setup_type  = "none"
@@ -367,9 +466,17 @@ async def _zone_scan_one(
             ema50         = round(ema50,  4),
             ema200        = round(ema200, 4),
             ema_stack     = ema_stack,
+            cross_20_50   = cross_20_50,
+            cross_50_200  = cross_50_200,
+            cross_20_200  = cross_20_200,
+            dist_ema20    = dist_ema20,
+            dist_ema50    = dist_ema50,
+            dist_ema200   = dist_ema200,
             nearest_zone_level    = trig_zone.level    if trig_zone else None,
             nearest_zone_strength = trig_zone.strength if trig_zone else None,
             nearest_zone_type     = trig_zone.zone_type if trig_zone else None,
+            demand_zones  = demand_zones_list,
+            supply_zones  = supply_zones_list,
             zone_tp1      = zone_tp1,
             zone_tp2      = zone_tp2,
             zone_sl       = zone_sl,
