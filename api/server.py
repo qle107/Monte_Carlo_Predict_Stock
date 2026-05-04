@@ -25,6 +25,7 @@ from core.scanner import scan_tickers, get_watchlist, WATCHLISTS
 from core.store import SignalStore
 from core.trade_setup import trade_setup_from_analysis, trade_setup_from_scan
 from core.zone_scanner import zone_scan_tickers
+from core.zones import detect_zones
 
 from .models import BacktestRequest, ConfigUpdate, ScanRequest
 
@@ -391,12 +392,23 @@ async def _run_analysis() -> dict:
             logger.warning("trade_setup failed: %s", e)
             trade_setup = {"valid": False, "side": "none", "reason": str(e)}
 
+        # ── Zone detection — expose all zones to the dashboard ────────
+        try:
+            zone_result = await loop.run_in_executor(None, detect_zones, df)
+            zones_data = zone_result.to_dict()
+        except Exception as e:
+            logger.warning("zone detect failed: %s", e)
+            zones_data = {"demand_zones": [], "supply_zones": [],
+                          "nearest_demand": None, "nearest_supply": None,
+                          "price_context": "unknown", "atr": 0.0}
+
         result.update({
             "ticker":      cfg.ticker,
             "interval":    cfg.interval,
             "extended":    cfg.extended,
             "mc_model":    cfg.mc_model,
             "trade_setup": trade_setup,
+            "zones":       zones_data,
             "config": {
                 "n_sim":        cfg.n_sim,
                 "n_forward":    cfg.n_forward,

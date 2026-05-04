@@ -839,6 +839,52 @@ header h1 { font-size:15px; font-weight:600; }
       </div><!-- /ts-levels-wrap -->
     </div>
 
+    <!-- ── Support & Resistance zones card ──────────────────────── -->
+    <div class="card" id="sr-card">
+      <div class="card-title">
+        <span>Support &amp; Resistance</span>
+        <span class="pill" id="sr-context-pill">—</span>
+      </div>
+
+      <!-- EMA 20 / 50 / 200 row -->
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; margin-bottom:10px;">
+        <div style="background:var(--surface2); border-radius:6px; padding:7px 8px; text-align:center;">
+          <div style="font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:3px;">EMA 9</div>
+          <div style="font-size:12px; font-weight:700;" id="sr-ema20">—</div>
+          <div style="font-size:10px; margin-top:1px;" id="sr-ema20-dist"></div>
+        </div>
+        <div style="background:var(--surface2); border-radius:6px; padding:7px 8px; text-align:center;">
+          <div style="font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:3px;">EMA 21</div>
+          <div style="font-size:12px; font-weight:700;" id="sr-ema50">—</div>
+          <div style="font-size:10px; margin-top:1px;" id="sr-ema50-dist"></div>
+        </div>
+        <div style="background:var(--surface2); border-radius:6px; padding:7px 8px; text-align:center;">
+          <div style="font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:3px;">EMA 200</div>
+          <div style="font-size:12px; font-weight:700;" id="sr-ema200">—</div>
+          <div style="font-size:10px; margin-top:1px;" id="sr-ema200-dist"></div>
+        </div>
+      </div>
+
+      <!-- Divider -->
+      <div style="height:1px; background:var(--border); margin-bottom:8px;"></div>
+
+      <!-- Demand zones (Support) -->
+      <div style="font-size:10px; font-weight:700; color:var(--green); text-transform:uppercase;
+                  letter-spacing:.5px; margin-bottom:6px;">📗 Support (Demand)</div>
+      <div id="sr-demand-list">
+        <div style="color:var(--muted); font-size:11px; font-style:italic;">—</div>
+      </div>
+
+      <div style="height:1px; background:var(--border); margin:8px 0;"></div>
+
+      <!-- Supply zones (Resistance) -->
+      <div style="font-size:10px; font-weight:700; color:var(--red); text-transform:uppercase;
+                  letter-spacing:.5px; margin-bottom:6px;">📕 Resistance (Supply)</div>
+      <div id="sr-supply-list">
+        <div style="color:var(--muted); font-size:11px; font-style:italic;">—</div>
+      </div>
+    </div>
+
     <!-- Drift breakdown -->
     <div class="card">
       <div class="card-title">Drift &amp; risk</div>
@@ -1777,6 +1823,7 @@ function _updateUI(d) {
 
   // ── Trade Setup sidebar card ───────────────────────────────────
   updateTradeSetup(d.trade_setup);
+  updateSRCard(d.zones, d.indicators, d.current_price);
 
   buildCharts(d);
   log(`${d.ticker}  $${fmt(cur)} ${sig.label} (${confPct}% conf)  up=${mc.prob_up}% dn=${mc.prob_down}% [${d.mc_model||'?'}]`);
@@ -1969,6 +2016,123 @@ function updateTradeSetup(ts) {
   }
 
   wrap.style.display = 'block';
+}
+
+// ── Support & Resistance card updater ────────────────────────────────────
+function updateSRCard(zones, ind, price) {
+  const $ = id => document.getElementById(id);
+  const set = (id, fn) => { const el = $(id); if (el) fn(el); };
+  if (!price) return;
+
+  // ── EMA values from indicators ──────────────────────────────────
+  // ind has: ema_fast (EMA9), ema_slow (EMA21), ema_200 (EMA200)
+  const fmtEma = (val) => {
+    if (!val) return { txt: '—', dist: '', up: null };
+    const d = (price - val) / price * 100;
+    return {
+      txt:  '$' + val.toFixed(2),
+      dist: (d >= 0 ? '+' : '') + d.toFixed(2) + '%',
+      up:   price > val,
+    };
+  };
+
+  const e9   = fmtEma(ind?.ema_fast);
+  const e21  = fmtEma(ind?.ema_slow);
+  const e200 = fmtEma(ind?.ema_200);
+
+  // EMA 9 cell (labelled EMA 9 in HTML)
+  set('sr-ema20', el => el.textContent = e9.txt);
+  set('sr-ema20-dist', el => { el.textContent = e9.dist; el.style.color = e9.up ? 'var(--green)' : 'var(--red)'; });
+  // EMA 21 cell
+  set('sr-ema50', el => el.textContent = e21.txt);
+  set('sr-ema50-dist', el => { el.textContent = e21.dist; el.style.color = e21.up ? 'var(--green)' : 'var(--red)'; });
+  // EMA 200 cell
+  set('sr-ema200', el => el.textContent = e200.txt);
+  set('sr-ema200-dist', el => { el.textContent = e200.dist; el.style.color = e200.up ? 'var(--green)' : 'var(--red)'; });
+
+  // ── Price context pill ──────────────────────────────────────────
+  const ctxMap = {
+    at_demand: ['📗 At Support',     'rgba(63,185,80,.15)',   'var(--green)'],
+    at_supply: ['📕 At Resistance',  'rgba(248,81,73,.15)',   'var(--red)'],
+    between:   ['↔ Between Zones',   'rgba(88,166,255,.1)',   'var(--blue)'],
+    unknown:   ['—',                 'rgba(139,148,158,.1)',  'var(--muted)'],
+  };
+  const ctx = zones?.price_context || 'unknown';
+  const [ctxLabel, ctxBg, ctxColor] = ctxMap[ctx] || ctxMap['unknown'];
+  set('sr-context-pill', el => {
+    el.textContent        = ctxLabel;
+    el.style.background   = ctxBg;
+    el.style.color        = ctxColor;
+    el.style.letterSpacing = '0';
+    el.style.textTransform = 'none';
+  });
+
+  // ── Zone row builder ────────────────────────────────────────────
+  function buildZoneRow(z, idx, kind) {
+    const isStrong  = (z.strength ?? 0) >= 0.70;
+    const baseColor = kind === 'demand' ? 'var(--green)' : 'var(--red)';
+    const bgAlpha   = kind === 'demand' ? 'rgba(63,185,80,' : 'rgba(248,81,73,';
+    const strPct    = Math.round((z.strength ?? 0) * 100);
+    const kindLabel = kind === 'demand' ? 'Support' : 'Resistance';
+    const label     = isStrong ? `Strong ${kindLabel} ★` : `${kindLabel} ${idx}`;
+    const freshTag  = z.fresh
+      ? `<span style="font-size:9px;padding:1px 4px;border-radius:3px;
+           background:${bgAlpha}.12);color:${baseColor};margin-left:4px;font-weight:700;">FRESH</span>` : '';
+    const dist      = kind === 'demand'
+      ? ((price - z.level) / price * 100)
+      : ((z.level - price) / price * 100);
+    const distStr   = `<span style="font-size:10px;color:var(--muted);margin-left:3px;">(${Math.abs(dist).toFixed(1)}% away)</span>`;
+    const zoneRange = z.low != null && z.high != null
+      ? `<div style="font-size:10px;color:var(--muted);margin-top:1px;">
+           Zone $${Number(z.low).toFixed(2)} – $${Number(z.high).toFixed(2)}</div>` : '';
+
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;
+                  padding:7px 9px;margin-bottom:5px;border-radius:7px;
+                  background:${bgAlpha}.06);border-left:3px solid ${bgAlpha}${isStrong ? '.6' : '.3'});">
+        <div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:2px;display:flex;align-items:center;gap:2px;">
+            ${label}${freshTag}
+          </div>
+          <div style="font-weight:700;font-size:13px;color:${baseColor};">
+            $${Number(z.level).toFixed(2)}${distStr}
+          </div>
+          ${zoneRange}
+        </div>
+        <div style="text-align:right;flex-shrink:0;margin-left:8px;">
+          <div style="font-size:11px;font-weight:600;color:${strPct>=70?baseColor:'var(--muted)'};">
+            ${strPct}%
+          </div>
+          <div style="font-size:10px;color:var(--muted);">${z.touches} touch${z.touches!==1?'es':''}</div>
+        </div>
+      </div>`;
+  }
+
+  // ── Demand zones (Support) — up to 3, sorted nearest first ─────
+  const demandEl = $('sr-demand-list');
+  if (demandEl) {
+    const raw = (zones?.demand_zones || [])
+      .slice()
+      .sort((a, b) => b.level - a.level)   // nearest to price = highest level
+      .slice(0, 3);
+
+    demandEl.innerHTML = raw.length
+      ? raw.map((z, i) => buildZoneRow(z, i + 1, 'demand')).join('')
+      : '<div style="color:var(--muted);font-size:11px;font-style:italic;padding:4px 0;">No demand zones detected</div>';
+  }
+
+  // ── Supply zones (Resistance) — up to 3, sorted nearest first ──
+  const supplyEl = $('sr-supply-list');
+  if (supplyEl) {
+    const raw = (zones?.supply_zones || [])
+      .slice()
+      .sort((a, b) => a.level - b.level)   // nearest to price = lowest level above price
+      .slice(0, 3);
+
+    supplyEl.innerHTML = raw.length
+      ? raw.map((z, i) => buildZoneRow(z, i + 1, 'supply')).join('')
+      : '<div style="color:var(--muted);font-size:11px;font-style:italic;padding:4px 0;">No supply zones detected</div>';
+  }
 }
 
 // ── Pure-canvas candlestick + MC overlay chart ───────────────────────────

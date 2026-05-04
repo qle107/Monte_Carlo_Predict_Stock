@@ -22,7 +22,7 @@ ALPACA_API_KEY=...
 ALPACA_SECRET_KEY=...
 POLYGON_API_KEY=...        # optional, paid
 
-TICKER=PLTR
+TICKER=NBIS
 CANDLE_INTERVAL=15m
 MC_MODEL=garch              # gaussian | student_t | garch | bootstrap | jump | ensemble
 MC_SIMULATIONS=10000
