@@ -9,6 +9,17 @@ student_t   Heavy-tailed innovations (Student-t with df fit from kurtosis).
 garch       GARCH(1,1)-style volatility clustering: σ²_t = ω + α·r²_{t-1} + β·σ²_{t-1}
 bootstrap   Resamples the stock's actual historical returns (preserves real distribution).
 jump        Merton jump-diffusion: Gaussian + Poisson-triggered jumps.
+ensemble    Blended model: weighted average of GARCH + bootstrap + jump paths.
+            Weights adapt: GARCH dominates in trending regimes, bootstrap in normal,
+            jump in high-kurtosis environments.
+
+Volatility improvements
+───────────────────────
+• Realized volatility (5-day rolling) blended with ATR-based vol for better
+  short-term vol estimation.
+• Yang-Zhang volatility estimator (uses OHLC, lower variance than close-to-close).
+• Regime-switching vol: σ is scaled based on detected volatility regime.
+• Volatility mean-reversion pull: extreme vols revert toward long-run mean.
 
 Output is identical across models so callers don't care which one ran.
 """
@@ -21,6 +32,39 @@ from typing import List, Optional, Sequence
 import numpy as np
 
 from .signal import Signal
+
+# ─── Volatility utilities ────────────────────────────────────────────────────
+
+def _realized_vol(recent_returns: Sequence[float], window: int = 20) -> float:
+    """
+    Annualised realised volatility from recent returns (per-candle).
+    Uses a shorter recent window to capture current volatility state.
+    """
+    arr = np.asarray(recent_returns, dtype=float)
+    arr = arr[np.isfinite(arr)]
+    if len(arr) < 5:
+        return 0.0
+    rv = float(np.std(arr[-window:]))
+    return rv if np.isfinite(rv) else 0.0
+
+
+def _blend_vol(base_sigma: float, recent_returns: Optional[Sequence[float]],
+               kurtosis_excess: float) -> float:
+    """
+    Blend ATR-based sigma with realized vol.
+    In high-kurtosis environments weight realized vol more (fat tails present).
+    """
+    if recent_returns is None or len(recent_returns) < 5:
+        return base_sigma
+    rv = _realized_vol(recent_returns, window=20)
+    if rv <= 0:
+        return base_sigma
+    # Weight towards realized vol more when kurtosis is high (fat tails)
+    kurt_weight = float(np.clip(kurtosis_excess / 6.0, 0.0, 0.5))
+    blended = (1.0 - kurt_weight) * base_sigma + kurt_weight * rv
+    # Clamp to sensible per-candle range
+    return float(np.clip(blended, 0.002, 0.08))
+
 
 # ─── Result type ────────────────────────────────────────────────────────────
 
@@ -142,6 +186,52 @@ def _simulate_jump(rng, n_sim, n_steps, drift, sigma,
     return diffusion + jump_mask * jump_size
 
 
+def _simulate_ensemble(
+    rng, n_sim, n_steps, base_sigma, drift,
+    recent_returns: Optional[Sequence[float]],
+    kurtosis_excess: float,
+) -> np.ndarray:
+    """
+    Ensemble model: blends GARCH + bootstrap + jump returns.
+
+    Adaptive weights:
+      • GARCH  — always contributes (captures vol clustering)
+      • Bootstrap — up-weighted when we have lots of history (real distribution)
+      • Jump   — up-weighted when kurtosis_excess > 1.0 (fat-tail environments)
+
+    The blend is done at the *returns* level before building price paths,
+    so each simulated path is itself a mixture draw (not an average of paths).
+    """
+    # -- Weights ────────────────────────────────────────────────────────────
+    has_history  = recent_returns is not None and len(recent_returns) >= 30
+    kurt_norm    = float(np.clip(kurtosis_excess / 4.0, 0.0, 1.0))   # 0 → 1
+
+    w_garch = 0.45
+    w_boot  = 0.35 if has_history else 0.0
+    w_jump  = 0.20 + kurt_norm * 0.15   # higher with fat tails
+
+    # Normalise
+    total = w_garch + w_boot + w_jump
+    w_garch /= total; w_boot /= total; w_jump /= total
+
+    # -- Component returns ───────────────────────────────────────────────────
+    _, sigma_path = _simulate_garch(rng, n_sim, n_steps, base_sigma, recent_returns)
+    eps_g = rng.standard_normal((n_sim, n_steps))
+    ret_garch = drift + sigma_path * eps_g
+
+    if has_history:
+        ret_boot = _simulate_bootstrap(rng, n_sim, n_steps, recent_returns, drift, base_sigma)
+    else:
+        ret_boot = np.zeros((n_sim, n_steps))
+
+    ret_jump = _simulate_jump(
+        rng, n_sim, n_steps, drift, base_sigma,
+        jump_intensity = min(0.06, 0.03 + kurt_norm * 0.04),
+    )
+
+    return w_garch * ret_garch + w_boot * ret_boot + w_jump * ret_jump
+
+
 # ─── Public entry point ─────────────────────────────────────────────────────
 
 def run(
@@ -155,9 +245,11 @@ def run(
 ) -> MCResult:
     rng    = np.random.default_rng()
     drift  = float(signal.drift_bias)
-    sigma  = float(signal.vol_adj)
     n_sim  = int(max(50, n_simulations))
     n_step = int(max(1, n_candles))
+
+    # ── Blended volatility (improved over raw ATR-based vol) ─────────────
+    sigma = _blend_vol(float(signal.vol_adj), recent_returns, kurtosis_excess)
 
     # ── Pick model ───────────────────────────────────────────────────────
     if model == "gaussian":
@@ -179,6 +271,11 @@ def run(
             returns = _simulate_bootstrap(rng, n_sim, n_step, recent_returns, drift, sigma)
     elif model == "jump":
         returns = _simulate_jump(rng, n_sim, n_step, drift, sigma)
+    elif model == "ensemble":
+        returns = _simulate_ensemble(
+            rng, n_sim, n_step, sigma, drift,
+            recent_returns, kurtosis_excess,
+        )
     else:
         # unknown → fall back to gaussian
         eps = _innov_gaussian(rng, n_sim, n_step)

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MC Trader</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<!-- No candlestick plugin needed — we use a pure canvas renderer below -->
 <style>
 *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
 :root {
@@ -98,17 +99,67 @@ header h1 { font-size:15px; font-weight:600; }
 .up{color:var(--green)} .down{color:var(--red)} .flat{color:var(--muted)}
 
 /* ── main layout ────────────────────────────────────────────────────── */
-.main { display:grid; grid-template-columns:1fr 320px; gap:1px; background:var(--border); }
-@media (max-width:1100px) { .main { grid-template-columns:1fr; } }
-.chart-panel { background:var(--bg); padding:16px; min-height:560px; }
+.main {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 0;
+  background: var(--border);
+  align-items: start;
+}
+@media (min-width:1600px) { .main { grid-template-columns: 1fr 400px; } }
+@media (max-width:1200px) { .main { grid-template-columns: 1fr 300px; } }
+@media (max-width:1100px) { .main { grid-template-columns: 1fr; } }
+
+/* Left column: chart on top, scanner below */
+.left-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid var(--border);
+}
+
+.chart-panel {
+  background: var(--bg);
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
 .ct { font-size:11px; color:var(--muted); margin-bottom:10px; text-transform:uppercase; letter-spacing:.4px; display:flex; justify-content:space-between; align-items:center; }
 .ct-legend { display:flex; gap:12px; font-size:10px; text-transform:none; }
 .ct-legend .sw { display:inline-block; width:10px; height:3px; vertical-align:middle; margin-right:4px; }
-.chart-wrap  { position:relative; width:100%; height:340px; margin-bottom:14px; }
-.chart-wrap2 { position:relative; width:100%; height:110px; }
+
+/* Main chart */
+.chart-wrap {
+  position: relative;
+  width: 100%;
+  height: clamp(300px, 42vh, 500px);
+  margin-bottom: 14px;
+  background: var(--bg);
+}
+/* Volume chart: always compact */
+.chart-wrap2 {
+  position: relative;
+  width: 100%;
+  height: clamp(60px, 8vh, 100px);
+}
 
 /* ── sidebar ────────────────────────────────────────────────────────── */
-.side { background:var(--bg); padding:14px; display:flex; flex-direction:column; gap:12px; }
+.side {
+  background: var(--bg);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* Stick to top and scroll independently */
+  position: sticky;
+  top: 0;
+  max-height: 100vh;
+  overflow-y: auto;
+}
+/* Thin scrollbar on side panel */
+.side::-webkit-scrollbar { width: 4px; }
+.side::-webkit-scrollbar-track { background: transparent; }
+.side::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 2px; }
+@media (max-width:1100px) { .side { position: static; max-height: none; overflow-y: visible; } }
 .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:12px 14px; }
 .card-title { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; }
 .pill { font-size:10px; padding:2px 7px; border-radius:10px; background:rgba(88,166,255,.12); color:var(--blue); text-transform:none; letter-spacing:0; }
@@ -153,6 +204,49 @@ header h1 { font-size:15px; font-weight:600; }
 .score-chip .v { font-weight:600; }
 .score-chip.pos .v { color:var(--green); }
 .score-chip.neg .v { color:var(--red); }
+
+/* ── Trade Setup card ───────────────────────────────────────────────── */
+.ts-banner {
+  border-radius:6px; padding:9px 12px; margin-bottom:10px;
+  display:flex; align-items:center; gap:8px; font-size:12px; font-weight:700;
+}
+.ts-banner.long   { background:rgba(63,185,80,.12);  color:var(--green); border:1px solid rgba(63,185,80,.3); }
+.ts-banner.short  { background:rgba(248,81,73,.12);  color:var(--red);   border:1px solid rgba(248,81,73,.3); }
+.ts-banner.none   { background:rgba(139,148,158,.08);color:var(--muted); border:1px solid rgba(139,148,158,.2); }
+.ts-banner .ts-icon { font-size:15px; }
+.ts-banner .ts-reason { font-size:10px; font-weight:400; color:var(--muted); margin-top:2px; line-height:1.4; }
+
+.ts-levels { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:8px; }
+.ts-cell { background:var(--surface2); padding:8px 10px; border-radius:6px; }
+.ts-cell .ts-lbl { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.3px; margin-bottom:3px; }
+.ts-cell .ts-val { font-size:14px; font-weight:700; }
+.ts-cell .ts-sub { font-size:10px; color:var(--muted); margin-top:1px; }
+.ts-cell.entry-cell { border-left:2px solid var(--blue); }
+.ts-cell.sl-cell   { border-left:2px solid var(--red); }
+.ts-cell.tp1-cell  { border-left:2px solid var(--green); }
+.ts-cell.tp2-cell  { border-left:2px solid rgba(63,185,80,.5); }
+
+.ts-rr-row { display:flex; gap:6px; margin-bottom:8px; }
+.ts-rr-pill {
+  flex:1; text-align:center; padding:7px 4px; border-radius:6px;
+  background:var(--surface2); font-size:11px;
+}
+.ts-rr-pill .rr-num { font-size:16px; font-weight:700; display:block; }
+.ts-rr-pill .rr-lbl { font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:.3px; }
+.ts-rr-pill.good .rr-num { color:var(--green); }
+.ts-rr-pill.ok   .rr-num { color:var(--amber); }
+.ts-rr-pill.bad  .rr-num { color:var(--red); }
+
+.ts-prob-row { display:flex; gap:6px; }
+.ts-prob-cell { flex:1; background:var(--surface2); border-radius:6px; padding:6px 8px; text-align:center; }
+.ts-prob-cell .pb-num { font-size:13px; font-weight:700; }
+.ts-prob-cell .pb-lbl { font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:.3px; margin-top:1px; }
+
+.ts-sl-both { font-size:11px; margin-bottom:8px; }
+.ts-sl-both .sl-row { display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid var(--border); }
+.ts-sl-both .sl-row:last-child { border-bottom:none; }
+.ts-sl-both .sl-row span:first-child { color:var(--muted); }
+.ts-sl-both .sl-row span:last-child  { font-weight:600; color:var(--red); }
 </style>
 </head>
 <body>
@@ -234,6 +328,7 @@ header h1 { font-size:15px; font-weight:600; }
         <option value="garch" selected>GARCH (vol clustering)</option>
         <option value="bootstrap">Bootstrap (real returns)</option>
         <option value="jump">Jump-diffusion (gaps)</option>
+        <option value="ensemble">Ensemble (GARCH+Boot+Jump) ★</option>
       </select>
       <span class="hint">Innovation distribution</span>
     </div>
@@ -244,8 +339,8 @@ header h1 { font-size:15px; font-weight:600; }
     </div>
     <div class="field">
       <label>MC simulations</label>
-      <input id="s-nsim" type="number" min="50" max="5000" placeholder="500">
-      <span class="hint">50 - 5000</span>
+      <input id="s-nsim" type="number" min="500" max="50000" step="500" placeholder="10000">
+      <span class="hint">500 – 50 000</span>
     </div>
     <div class="field">
       <label>Forward candles</label>
@@ -277,24 +372,275 @@ header h1 { font-size:15px; font-weight:600; }
 
 <div class="main">
 
-  <!-- ── Chart panel ───────────────────────────────────────────── -->
-  <div class="chart-panel">
-    <div class="ct">
-      <span>Price history + Monte Carlo projections</span>
-      <span class="ct-legend">
-        <span><span class="sw" style="background:#58a6ff"></span>Price</span>
-        <span><span class="sw" style="background:#d29922"></span>Median path</span>
-        <span><span class="sw" style="background:rgba(63,185,80,.25)"></span>P25–P75</span>
-        <span><span class="sw" style="background:rgba(63,185,80,.10)"></span>P10–P90</span>
-      </span>
-    </div>
-    <div class="chart-wrap"><canvas id="mainChart"></canvas></div>
-    <div class="ct">Volume</div>
-    <div class="chart-wrap2"><canvas id="volChart"></canvas></div>
-  </div>
+  <!-- ══ Left column: Chart + Scanner ══════════════════════════════ -->
+  <div class="left-col">
 
-  <!-- ── Sidebar ───────────────────────────────────────────────── -->
-  <div class="side">
+    <!-- Chart panel -->
+    <div class="chart-panel">
+      <div class="ct">
+        <span>Price history + Monte Carlo projections</span>
+        <span class="ct-legend">
+          <span><span class="sw" style="background:#3fb950;height:8px;width:8px;border-radius:1px;display:inline-block;vertical-align:middle;margin-right:4px;"></span>Bull candle</span>
+          <span><span class="sw" style="background:#f85149;height:8px;width:8px;border-radius:1px;display:inline-block;vertical-align:middle;margin-right:4px;"></span>Bear candle</span>
+          <span><span class="sw" style="background:#d29922"></span>MC median</span>
+          <span><span class="sw" style="background:rgba(63,185,80,.25)"></span>P25–P75</span>
+          <span><span class="sw" style="background:rgba(63,185,80,.10)"></span>P10–P90</span>
+        </span>
+      </div>
+      <!-- Pure canvas chart: candles + MC bands drawn directly -->
+      <div class="chart-wrap" style="position:relative;">
+        <canvas id="candleCanvas" style="position:absolute;top:0;left:0;width:100%;height:100%;display:block;"></canvas>
+      </div>
+      <div class="ct">Volume</div>
+      <div class="chart-wrap2"><canvas id="volChart"></canvas></div>
+    </div>
+
+    <!-- ══ Scanner (inside left column) ══════════════════════════ -->
+    <div id="scanner-section">
+
+      <!-- ── Tab switcher ── -->
+      <div class="scanner-tabs">
+        <button class="scanner-tab active" id="tab-breakout" onclick="switchScannerTab('breakout')">
+          📡 Breakout Scanner
+          <span class="tab-badge" id="tab-breakout-badge">—</span>
+        </button>
+        <button class="scanner-tab" id="tab-zone" onclick="switchScannerTab('zone')">
+          🎯 Zone + EMA Strategy
+          <span class="tab-badge" id="tab-zone-badge">—</span>
+        </button>
+      </div>
+
+      <!-- ══ BREAKOUT SCANNER PANEL ══ -->
+      <div id="breakout-scan-panel">
+
+      <!-- Toolbar -->
+      <div class="scan-toolbar">
+        <div>
+          <div class="scan-title">
+            <span class="scan-title-dot"></span>
+            Breakout &amp; Breakdown Scanner
+          </div>
+          <div class="scan-sub" style="margin-top:3px;">Real-time momentum scan across multiple stocks</div>
+        </div>
+
+        <div style="margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <select id="scan-watchlist" class="scan-ctrl">
+            <option value="sp500_large">S&amp;P 500 Large Cap</option>
+            <option value="tech">Tech Sector</option>
+            <option value="etfs">Major ETFs</option>
+            <option value="biotech">Biotech</option>
+            <option value="momentum">Momentum Plays</option>
+            <option value="custom">✏ Custom tickers…</option>
+          </select>
+
+          <input id="scan-custom" type="text" placeholder="AAPL, NVDA, TSLA…" class="scan-ctrl"
+            style="display:none; width:200px;">
+
+          <select id="scan-interval" class="scan-ctrl">
+            <option value="1d" selected>Daily</option>
+            <option value="4h">4-hour</option>
+            <option value="1h">1-hour</option>
+            <option value="30m">30-min</option>
+            <option value="15m">15-min</option>
+            <option value="5m">5-min</option>
+          </select>
+
+          <button onclick="runScanner()" id="scan-btn" class="scan-run-btn">
+            <span class="spinner" id="scan-spin"></span>
+            <span id="scan-label">▶ Run Scanner</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Progress bar -->
+      <div id="scan-progress-wrap"><div id="scan-progress-bar"></div></div>
+      <div id="scan-status-text" style="font-size:11px; color:var(--muted); display:none; margin-bottom:6px;"></div>
+
+      <!-- Empty / Error states -->
+      <div id="scan-empty-state">
+        <div class="big-icon">📡</div>
+        <p>Choose a watchlist and click <strong>Run Scanner</strong> to find breakouts and breakdowns.</p>
+        <p style="margin-top:6px; font-size:11px;">Works on weekends too — uses historical daily data.</p>
+      </div>
+      <div id="scan-error-state"></div>
+
+      <!-- Results -->
+      <div id="scan-results" style="display:none;">
+
+        <!-- Summary pills -->
+        <div class="scan-pills">
+          <span id="sc-info"   class="scan-pill info"></span>
+          <span id="sc-up"     class="scan-pill up"   onclick="filterScan('breakout')"  title="Show bullish only"></span>
+          <span id="sc-down"   class="scan-pill down" onclick="filterScan('breakdown')" title="Show bearish only"></span>
+          <span id="sc-neut"   class="scan-pill neut" onclick="filterScan('neutral')"   title="Show neutral only"></span>
+          <span id="sc-all"    class="scan-pill info"  onclick="filterScan('all')"       style="margin-left:4px;">Show all</span>
+          <span id="sc-errors" class="scan-pill" style="display:none; background:rgba(210,153,34,.1); color:var(--amber); border-color:rgba(210,153,34,.3);"></span>
+        </div>
+
+        <!-- Top picks strip -->
+        <div id="scan-top-cards" style="display:flex;"></div>
+
+        <!-- Controls bar -->
+        <div class="scan-controls-bar">
+          <span style="font-size:11px; color:var(--muted); margin-right:4px;">Sort:</span>
+          <button class="scan-sort-btn active" id="srt-score"   onclick="setScanSort('score')">Score</button>
+          <button class="scan-sort-btn"        id="srt-rsi"     onclick="setScanSort('rsi')">RSI</button>
+          <button class="scan-sort-btn"        id="srt-adx"     onclick="setScanSort('adx')">ADX</button>
+          <button class="scan-sort-btn"        id="srt-52w"     onclick="setScanSort('price_vs_52w')">52w Hi</button>
+          <button class="scan-sort-btn"        id="srt-conf"    onclick="setScanSort('confidence')">Conf</button>
+          <button class="scan-sort-btn"        id="srt-ticker"  onclick="setScanSort('ticker')">A–Z</button>
+          <input  class="scan-search" id="scan-search" type="text" placeholder="Filter ticker…" oninput="renderScanTable()">
+          <span style="margin-left:auto; font-size:11px; color:var(--muted);" id="scan-row-count"></span>
+        </div>
+
+        <!-- Table -->
+        <div class="scan-table-wrap">
+          <table id="scan-table">
+            <thead>
+              <tr>
+                <th onclick="setScanSort('ticker')">Ticker</th>
+                <th onclick="setScanSort('price')">Price</th>
+                <th onclick="setScanSort('score')">Score</th>
+                <th>Direction</th>
+                <th onclick="setScanSort('regime')">Regime</th>
+                <th onclick="setScanSort('signal_label')">Signal</th>
+                <th onclick="setScanSort('confidence')">Conf</th>
+                <th onclick="setScanSort('rsi')">RSI</th>
+                <th onclick="setScanSort('adx')">ADX</th>
+                <th onclick="setScanSort('bb_position')">BB</th>
+                <th onclick="setScanSort('obv_slope')">OBV</th>
+                <th onclick="setScanSort('price_vs_52w')">vs 52w Hi</th>
+                <th onclick="setScanSort('ema200_dist')">vs EMA200</th>
+                <th onclick="setScanSort('hurst')">Hurst</th>
+                <!-- ── Trade Setup columns (ATR-estimated — click Load for full MC) ── -->
+                <th style="border-left:2px solid rgba(88,166,255,.2);" onclick="setScanSort('ts_side')" title="Trade direction. TP targets are ATR-estimated. Click Load ↗ for full MC analysis.">Side</th>
+                <th onclick="setScanSort('ts_entry')">Entry</th>
+                <th onclick="setScanSort('ts_sl')" title="Stop loss — ATR-based, capped per timeframe">SL</th>
+                <th onclick="setScanSort('ts_tp1')" title="TP1 = ATR×1.5 estimate (not MC P75). Click Load ↗ for real MC targets.">TP1 ~est</th>
+                <th onclick="setScanSort('ts_tp2')" title="TP2 = ATR×2.5 estimate (not MC P90). Click Load ↗ for real MC targets.">TP2 ~est</th>
+                <th onclick="setScanSort('ts_rr')">R:R</th>
+                <th onclick="setScanSort('ts_prob_tp1')" title="Estimated probability — not path-aware. Click Load ↗ for MC probability.">P(TP1)~</th>
+                <th title="Load ticker into main chart for full 10k-simulation MC analysis">Load ↗</th>
+              </tr>
+            </thead>
+            <tbody id="scan-tbody"></tbody>
+          </table>
+        </div>
+      </div><!-- /scan-results -->
+
+      </div><!-- /breakout-scan-panel -->
+
+      <!-- ══ ZONE + EMA SCANNER PANEL ══ -->
+      <div id="zone-scan-panel">
+
+        <!-- Zone toolbar -->
+        <div class="scan-toolbar">
+          <div>
+            <div class="scan-title">
+              <span class="scan-title-dot" style="background:var(--purple);"></span>
+              Zone + EMA Strategy Scanner
+            </div>
+            <div class="scan-sub" style="margin-top:3px;">Demand/Supply zones confirmed by EMA 20 / 50 / 200 alignment + MC trade setup</div>
+          </div>
+          <div style="margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <select id="zone-watchlist" class="scan-ctrl">
+              <option value="sp500_large">S&amp;P 500 Large Cap</option>
+              <option value="tech">Tech Sector</option>
+              <option value="etfs">Major ETFs</option>
+              <option value="biotech">Biotech</option>
+              <option value="momentum">Momentum Plays</option>
+              <option value="custom">✏ Custom tickers…</option>
+            </select>
+            <input id="zone-custom" type="text" placeholder="AAPL, NVDA, TSLA…" class="scan-ctrl" style="display:none; width:200px;">
+            <select id="zone-interval" class="scan-ctrl">
+              <option value="1d" selected>Daily</option>
+              <option value="4h">4-hour</option>
+              <option value="1h">1-hour</option>
+              <option value="30m">30-min</option>
+              <option value="15m">15-min</option>
+              <option value="5m">5-min</option>
+            </select>
+            <button onclick="runZoneScanner()" id="zone-scan-btn"
+              style="background:linear-gradient(135deg,#6e40c9,#bc8cff); color:#fff; border:none;
+                     border-radius:7px; padding:8px 20px; font-size:13px; font-weight:700;
+                     cursor:pointer; display:flex; align-items:center; gap:8px;
+                     box-shadow:0 2px 8px rgba(188,140,255,.25); transition:opacity .15s;">
+              <span class="spinner" id="zone-spin"></span>
+              <span id="zone-scan-label">🎯 Run Zone Scan</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Progress -->
+        <div id="zone-progress-wrap" style="display:none; height:3px; background:var(--surface2); border-radius:2px; margin:10px 0; overflow:hidden;">
+          <div id="zone-progress-bar" style="height:100%; width:30%; background:linear-gradient(90deg,#6e40c9,#bc8cff); border-radius:2px; animation:pulse-bar 1.5s ease infinite;"></div>
+        </div>
+        <style>@keyframes pulse-bar{0%,100%{opacity:1}50%{opacity:.5}}</style>
+
+        <!-- Empty state -->
+        <div id="zone-empty-state" style="display:block; text-align:center; padding:48px 20px; color:var(--muted);">
+          <div style="font-size:36px; margin-bottom:10px;">🎯</div>
+          <p style="font-size:13px;">Choose a watchlist and click <strong>Run Zone Scan</strong> to find demand/supply zone setups.</p>
+          <p style="margin-top:6px; font-size:11px; color:var(--muted);">Needs ≥120 bars for EMA200 — use Daily or 4H for best results.</p>
+        </div>
+        <div id="zone-error-state" style="display:none; text-align:center; padding:32px; color:var(--red); font-size:13px;"></div>
+
+        <!-- Zone results -->
+        <div id="zone-results" style="display:none;">
+          <!-- Summary pills -->
+          <div class="scan-pills">
+            <span id="zc-info"  class="scan-pill info"></span>
+            <span id="zc-long"  class="scan-pill up"   onclick="filterZone('long')"  title="Longs only"></span>
+            <span id="zc-short" class="scan-pill down"  onclick="filterZone('short')" title="Shorts only"></span>
+            <span id="zc-all"   class="scan-pill info"  onclick="filterZone('all')"   style="margin-left:4px;">Show all</span>
+          </div>
+          <!-- Sort/filter bar -->
+          <div class="scan-controls-bar">
+            <span style="font-size:11px; color:var(--muted); margin-right:4px;">Sort:</span>
+            <button class="scan-sort-btn active" id="zsrt-score"  onclick="setZoneSort('setup_score')">Score</button>
+            <button class="scan-sort-btn" id="zsrt-rr"           onclick="setZoneSort('zone_rr')">R:R</button>
+            <button class="scan-sort-btn" id="zsrt-str"          onclick="setZoneSort('nearest_zone_strength')">Zone Str</button>
+            <button class="scan-sort-btn" id="zsrt-rsi"          onclick="setZoneSort('rsi')">RSI</button>
+            <button class="scan-sort-btn" id="zsrt-adx"          onclick="setZoneSort('adx')">ADX</button>
+            <button class="scan-sort-btn" id="zsrt-ticker"       onclick="setZoneSort('ticker')">A–Z</button>
+            <input class="scan-search" id="zone-search" type="text" placeholder="Filter ticker…" oninput="renderZoneTable()">
+            <span style="margin-left:auto; font-size:11px; color:var(--muted);" id="zone-row-count"></span>
+          </div>
+          <!-- Table -->
+          <div class="scan-table-wrap">
+            <table id="zone-scan-table">
+              <thead>
+                <tr>
+                  <th onclick="setZoneSort('ticker')">Ticker</th>
+                  <th onclick="setZoneSort('price')">Price</th>
+                  <th onclick="setZoneSort('setup_score')" title="Overall setup quality 0–1">Score</th>
+                  <th onclick="setZoneSort('setup_type')" title="Zone scenario">Setup</th>
+                  <th onclick="setZoneSort('ema_stack')" title="EMA 20/50/200 alignment">EMA Stack</th>
+                  <th onclick="setZoneSort('nearest_zone_strength')" title="Zone strength 0–1">Zone Str</th>
+                  <th onclick="setZoneSort('rsi')">RSI</th>
+                  <th onclick="setZoneSort('adx')">ADX</th>
+                  <th style="border-left:2px solid rgba(188,140,255,.2);" title="Entry price">Entry</th>
+                  <th title="Zone-based stop loss">Zone SL</th>
+                  <th onclick="setZoneSort('zone_tp1')" title="Zone TP1 — nearest supply/demand zone">Zone TP1</th>
+                  <th onclick="setZoneSort('zone_tp2')" title="Zone TP2 — second zone">Zone TP2</th>
+                  <th onclick="setZoneSort('zone_rr')" title="Risk:Reward using zone SL and TP1">R:R</th>
+                  <th title="ATR-estimated MC TP1 (load for real MC)">MC TP~</th>
+                  <th title="Load for full 10k MC analysis">Load ↗</th>
+                </tr>
+              </thead>
+              <tbody id="zone-tbody"></tbody>
+            </table>
+          </div>
+        </div><!-- /zone-results -->
+
+      </div><!-- /zone-scan-panel -->
+
+    </div><!-- /scanner-section -->
+
+  </div><!-- /left-col -->
+
+  <!-- ══ Right sidebar: all analyst panels ═════════════════════════ -->
+  <div class="side" id="right-side">
 
     <!-- MC probs -->
     <div class="card">
@@ -361,6 +707,133 @@ header h1 { font-size:15px; font-weight:600; }
       <div class="reasoning" id="reasoning">Waiting…</div>
     </div>
 
+    <!-- ── Trade Setup card ───────────────────────────────────────── -->
+    <div class="card" id="ts-card">
+      <div class="card-title">
+        <span>Trade Setup <span style="font-size:10px;font-weight:400;color:var(--muted);" title="TP targets use real Monte Carlo P75/P90 from 10k simulation paths — more precise than scanner ATR estimates">(MC P75/P90)</span></span>
+        <span class="pill" id="ts-side-pill">—</span>
+      </div>
+
+      <!-- Banner: LONG / SHORT / NO ENTRY -->
+      <div class="ts-banner none" id="ts-banner">
+        <span class="ts-icon">⏳</span>
+        <div>
+          <div id="ts-banner-label">Loading…</div>
+          <div class="ts-reason" id="ts-banner-reason"></div>
+        </div>
+      </div>
+
+      <!-- Entry / TP / SL levels (hidden when no entry) -->
+      <div id="ts-levels-wrap" style="display:none;">
+
+        <!-- Level grid: Entry · TP1 · TP2 -->
+        <div class="ts-levels">
+          <div class="ts-cell entry-cell">
+            <div class="ts-lbl">Entry</div>
+            <div class="ts-val" id="ts-entry">—</div>
+            <div class="ts-sub" id="ts-entry-sub"></div>
+          </div>
+          <div class="ts-cell tp1-cell">
+            <div class="ts-lbl">TP1 (MC P75)</div>
+            <div class="ts-val up" id="ts-tp1">—</div>
+            <div class="ts-sub" id="ts-tp1-sub"></div>
+          </div>
+          <div class="ts-cell tp2-cell">
+            <div class="ts-lbl">TP2 (MC P90)</div>
+            <div class="ts-val up" id="ts-tp2">—</div>
+            <div class="ts-sub" id="ts-tp2-sub"></div>
+          </div>
+          <div class="ts-cell sl-cell">
+            <div class="ts-lbl">Stop Loss</div>
+            <div class="ts-val down" id="ts-sl-main">—</div>
+            <div class="ts-sub" id="ts-sl-sub"></div>
+          </div>
+        </div>
+
+        <!-- ── Zone-based TP/SL (demand/supply zones) ── -->
+        <div id="ts-zone-wrap" style="display:none; margin-top:8px; padding:8px 10px;
+             background:rgba(188,140,255,.07); border:1px solid rgba(188,140,255,.25);
+             border-radius:7px; font-size:12px;">
+          <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+            <span style="font-size:10px; font-weight:700; letter-spacing:.5px; color:var(--purple); text-transform:uppercase;">Zone Targets</span>
+            <span id="ts-zone-type-pill" style="font-size:9px; padding:2px 7px; border-radius:10px;
+                  background:rgba(188,140,255,.18); color:var(--purple); font-weight:700;">—</span>
+            <span id="ts-zone-strength" style="font-size:10px; color:var(--muted); margin-left:auto;">str: —</span>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px;">
+            <div>
+              <div style="font-size:10px; color:var(--muted); margin-bottom:2px;">Zone TP1</div>
+              <div style="font-weight:700; color:var(--green);" id="ts-zone-tp1">—</div>
+              <div style="font-size:10px; color:var(--muted);" id="ts-zone-tp1-sub"></div>
+            </div>
+            <div>
+              <div style="font-size:10px; color:var(--muted); margin-bottom:2px;">Zone TP2</div>
+              <div style="font-weight:700; color:rgba(63,185,80,.7);" id="ts-zone-tp2">—</div>
+              <div style="font-size:10px; color:var(--muted);" id="ts-zone-tp2-sub"></div>
+            </div>
+            <div>
+              <div style="font-size:10px; color:var(--muted); margin-bottom:2px;">Zone SL</div>
+              <div style="font-weight:700; color:var(--red);" id="ts-zone-sl">—</div>
+              <div style="font-size:10px; color:var(--muted);" id="ts-zone-sl-sub"></div>
+            </div>
+          </div>
+          <div style="margin-top:6px; display:flex; align-items:center; gap:8px;">
+            <span style="font-size:10px; color:var(--muted);">Zone R:R</span>
+            <span id="ts-zone-rr" style="font-weight:700; font-size:13px;">—</span>
+            <span style="font-size:10px; color:var(--muted); margin-left:4px;" id="ts-zone-context"></span>
+          </div>
+        </div>
+
+        <!-- Dual SL detail -->
+        <div class="ts-sl-both">
+          <div class="sl-row">
+            <span id="ts-sl-atr-label">ATR stop (<span id="ts-atr-mult">—</span>× ATR)</span>
+            <span id="ts-sl-atr-val">—</span>
+          </div>
+          <div class="sl-row">
+            <span id="ts-sl-pct-label">Fixed <span id="ts-pct-used">—</span>% stop</span>
+            <span id="ts-sl-pct-val">—</span>
+          </div>
+        </div>
+
+        <!-- R:R pills -->
+        <div class="ts-rr-row">
+          <div class="ts-rr-pill" id="ts-rr-atr-pill">
+            <span class="rr-num" id="ts-rr-atr">—</span>
+            <span class="rr-lbl">RR (ATR stop)</span>
+          </div>
+          <div class="ts-rr-pill" id="ts-rr-pct-pill">
+            <span class="rr-num" id="ts-rr-pct">—</span>
+            <span class="rr-lbl">RR (Fixed stop)</span>
+          </div>
+        </div>
+
+        <!-- MC Probabilities -->
+        <div class="ts-prob-row">
+          <div class="ts-prob-cell">
+            <div class="pb-num up" id="ts-prob-tp1">—</div>
+            <div class="pb-lbl">P(reach TP1)</div>
+          </div>
+          <div class="ts-prob-cell">
+            <div class="pb-num up" id="ts-prob-tp2">—</div>
+            <div class="pb-lbl">P(reach TP2)</div>
+          </div>
+          <div class="ts-prob-cell">
+            <div class="pb-num down" id="ts-prob-sl">—</div>
+            <div class="pb-lbl">P(stopped out)</div>
+          </div>
+        </div>
+        <!-- Stop-hunt warning -->
+        <div id="ts-stophunt-warn" style="display:none; margin-top:6px; padding:6px 8px;
+             background:rgba(248,81,73,.1); border:1px solid rgba(248,81,73,.3);
+             border-radius:6px; font-size:10px; color:var(--red); line-height:1.5;">
+          ⚠ <strong>High stop-out risk</strong> — MC paths show <span id="ts-stophunt-pct">?</span>
+          chance of hitting SL before TP1. Consider widening SL or waiting for better entry.
+        </div>
+
+      </div><!-- /ts-levels-wrap -->
+    </div>
+
     <!-- Drift breakdown -->
     <div class="card">
       <div class="card-title">Drift &amp; risk</div>
@@ -381,6 +854,11 @@ header h1 { font-size:15px; font-weight:600; }
       <div class="kv"><span>EMA 9 / 21</span>           <span id="d-ema">—</span></div>
       <div class="kv"><span>VWAP distance</span>        <span id="d-vwap">—</span></div>
       <div class="kv"><span>OBV slope</span>            <span id="d-obv">—</span></div>
+      <div class="kv"><span>RSI divergence</span>       <span id="d-rsidiv">—</span></div>
+      <div class="kv"><span>EMA 200</span>              <span id="d-ema200">—</span></div>
+      <div class="kv"><span>vs EMA 200</span>           <span id="d-ema200d">—</span></div>
+      <div class="kv"><span>vs 52w High</span>          <span id="d-52w">—</span></div>
+      <div class="kv"><span>Vol of vol</span>           <span id="d-vov">—</span></div>
       <div style="height:1px;background:var(--border);margin:8px 0"></div>
       <div class="kv"><span>Simulations</span>          <span id="cfg-nsim">—</span></div>
       <div class="kv"><span>Forward</span>              <span id="cfg-nfwd">—</span></div>
@@ -404,20 +882,571 @@ header h1 { font-size:15px; font-weight:600; }
 
     <!-- Activity log -->
     <div class="card">
-      <div class="card-title">Activity log</div>
+      <div class="card-title">
+        <span>Activity log</span>
+        <button onclick="document.getElementById('log').innerHTML=''"
+          style="font-size:10px;padding:2px 8px;background:rgba(139,148,158,.12);
+                 border:1px solid rgba(139,148,158,.25);color:var(--muted);
+                 border-radius:4px;cursor:pointer;font-family:inherit;">
+          Clear
+        </button>
+      </div>
       <div class="log" id="log"></div>
     </div>
   </div>
 </div>
 
+<style>
+/* ── Scanner styles ───────────────────────────────────────────────── */
+#scanner-section {
+  background: var(--bg);
+  padding: 0 20px 32px;
+  border-top: 1px solid var(--border);
+  flex: 1;
+}
+.scan-toolbar {
+  display: flex; align-items: center; gap: 10px; padding: 16px 0 14px;
+  border-bottom: 1px solid var(--border); flex-wrap: wrap;
+}
+.scan-title { font-size: 15px; font-weight: 700; color: var(--text); display:flex; align-items:center; gap:8px; }
+.scan-title-dot { width:9px; height:9px; border-radius:50%; background:var(--blue); flex-shrink:0; }
+.scan-sub { font-size: 12px; color: var(--muted); }
+.scan-ctrl { background:var(--surface); border:1px solid rgba(255,255,255,.12); color:var(--text);
+  border-radius:7px; padding:7px 11px; font-size:12px; outline:none; cursor:pointer; transition: border-color .15s; }
+.scan-ctrl:focus, .scan-ctrl:hover { border-color: rgba(88,166,255,.5); }
+.scan-run-btn {
+  background: linear-gradient(135deg, #1f6feb, #58a6ff);
+  color: #fff; border: none; border-radius: 7px;
+  padding: 8px 20px; font-size: 13px; font-weight: 700;
+  cursor: pointer; display: flex; align-items: center; gap: 8px;
+  box-shadow: 0 2px 8px rgba(88,166,255,.25); transition: opacity .15s, transform .1s;
+}
+.scan-run-btn:hover { opacity:.9; transform:translateY(-1px); }
+.scan-run-btn:disabled { opacity:.45; cursor:not-allowed; transform:none; }
+.scan-run-btn:active  { transform:translateY(0); }
+
+/* progress bar */
+#scan-progress-wrap { display:none; height:3px; background:var(--surface2); border-radius:2px; margin: 10px 0; overflow:hidden; }
+#scan-progress-bar  { height:100%; width:0%; background:linear-gradient(90deg,#1f6feb,#58a6ff); border-radius:2px; transition:width .4s ease; }
+
+/* summary pills */
+.scan-pills { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin: 14px 0; }
+.scan-pill {
+  font-size: 12px; font-weight: 600; padding: 5px 14px; border-radius: 20px;
+  border: 1px solid transparent; cursor: pointer; transition: all .15s;
+}
+.scan-pill.up   { background:rgba(63,185,80,.1);   color:var(--green); border-color:rgba(63,185,80,.25); }
+.scan-pill.down { background:rgba(248,81,73,.1);   color:var(--red);   border-color:rgba(248,81,73,.25); }
+.scan-pill.neut { background:rgba(139,148,158,.08);color:var(--muted); border-color:rgba(139,148,158,.2); }
+.scan-pill.info { background:rgba(88,166,255,.08); color:var(--blue);  border-color:rgba(88,166,255,.2); font-weight:400; }
+.scan-pill.active { box-shadow: 0 0 0 2px currentColor; }
+
+/* sort/filter bar */
+.scan-controls-bar { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+.scan-sort-btn {
+  background:transparent; border:1px solid rgba(255,255,255,.1); color:var(--muted);
+  border-radius:5px; padding:4px 10px; font-size:11px; cursor:pointer; transition: all .12s;
+}
+.scan-sort-btn:hover { color:var(--text); border-color:rgba(255,255,255,.25); }
+.scan-sort-btn.active { background:var(--surface); border-color:var(--blue); color:var(--blue); }
+.scan-search { background:var(--surface); border:1px solid rgba(255,255,255,.1); color:var(--text);
+  border-radius:5px; padding:5px 10px; font-size:11px; outline:none; width:140px; }
+.scan-search::placeholder { color:var(--muted); }
+
+/* top cards strip */
+#scan-top-cards { display:none; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+.scan-top-card {
+  background:var(--surface); border:1px solid var(--border); border-radius:10px;
+  padding:10px 14px; min-width:130px; flex:1; cursor:pointer;
+  transition: border-color .15s, transform .1s;
+}
+.scan-top-card:hover { border-color: rgba(88,166,255,.4); transform:translateY(-2px); }
+.scan-top-card.up-card   { border-left:3px solid var(--green); }
+.scan-top-card.down-card { border-left:3px solid var(--red); }
+.scan-top-card .stc-ticker { font-size:13px; font-weight:700; }
+.scan-top-card .stc-score  { font-size:11px; margin-top:2px; font-weight:600; }
+.scan-top-card .stc-regime { font-size:10px; color:var(--muted); margin-top:3px; text-transform:uppercase; letter-spacing:.3px; }
+.scan-top-card .stc-price  { font-size:12px; color:var(--muted); margin-top:2px; }
+
+/* table */
+.scan-table-wrap { overflow-x:auto; border-radius:8px; border:1px solid var(--border); }
+#scan-table { width:100%; border-collapse:collapse; font-size:12px; display:none; }
+#scan-table thead tr { background:var(--surface); }
+#scan-table th {
+  padding:9px 12px; color:var(--muted); font-weight:600; font-size:11px;
+  text-align:left; white-space:nowrap; letter-spacing:.3px; text-transform:uppercase;
+  border-bottom:1px solid var(--border); cursor:pointer; user-select:none;
+  transition: color .12s;
+}
+#scan-table th:hover { color:var(--text); }
+#scan-table th.sorted { color:var(--blue); }
+#scan-table td { padding:9px 12px; border-bottom:1px solid rgba(255,255,255,.035); white-space:nowrap; }
+#scan-table tbody tr { transition:background .1s; }
+#scan-table tbody tr:hover { background:rgba(255,255,255,.04); }
+#scan-table tbody tr:last-child td { border-bottom:none; }
+.score-bar { display:inline-block; height:4px; border-radius:2px; vertical-align:middle; margin-right:6px; min-width:2px; }
+#scan-empty-state {
+  display:block; text-align:center; padding:48px 20px; color:var(--muted);
+}
+#scan-empty-state .big-icon { font-size:36px; margin-bottom:10px; }
+#scan-empty-state p { font-size:13px; }
+#scan-error-state { display:none; text-align:center; padding:32px; color:var(--red); font-size:13px; }
+
+/* ── Scanner tab switcher ────────────────────────────────────────── */
+.scanner-tabs {
+  display: flex; gap: 0; border-bottom: 2px solid var(--border);
+  margin-bottom: 0; padding: 14px 0 0;
+}
+.scanner-tab {
+  padding: 9px 20px; font-size: 13px; font-weight: 600; cursor: pointer;
+  border: none; background: transparent; color: var(--muted);
+  border-bottom: 3px solid transparent; margin-bottom: -2px;
+  transition: color .15s, border-color .15s; display: flex; align-items: center; gap: 7px;
+  border-radius: 6px 6px 0 0;
+}
+.scanner-tab:hover { color: var(--text); background: rgba(255,255,255,.04); }
+.scanner-tab.active { color: var(--blue); border-bottom-color: var(--blue); background: rgba(88,166,255,.06); }
+.scanner-tab .tab-badge {
+  font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px;
+  background: rgba(255,255,255,.08); color: var(--muted); min-width: 20px; text-align: center;
+}
+.scanner-tab.active .tab-badge { background: rgba(88,166,255,.2); color: var(--blue); }
+
+/* ── Zone scanner table ──────────────────────────────────────────── */
+#zone-scan-panel { display: none; }
+#zone-scan-table { width:100%; border-collapse:collapse; font-size:12px; display:none; }
+#zone-scan-table thead tr { background:var(--surface); }
+#zone-scan-table th {
+  padding:9px 12px; color:var(--muted); font-weight:600; font-size:11px;
+  text-align:left; white-space:nowrap; letter-spacing:.3px; text-transform:uppercase;
+  border-bottom:1px solid var(--border); cursor:pointer; user-select:none;
+  transition: color .12s;
+}
+#zone-scan-table th:hover { color:var(--text); }
+#zone-scan-table th.sorted { color:var(--purple); }
+#zone-scan-table td { padding:9px 12px; border-bottom:1px solid rgba(255,255,255,.035); white-space:nowrap; }
+#zone-scan-table tbody tr { transition:background .1s; }
+#zone-scan-table tbody tr:hover { background:rgba(255,255,255,.04); }
+#zone-scan-table tbody tr:last-child td { border-bottom:none; }
+.ema-stack-pill {
+  display:inline-block; font-size:9px; font-weight:700; padding:2px 7px;
+  border-radius:10px; letter-spacing:.3px; text-transform:uppercase;
+}
+.ema-bull { background:rgba(63,185,80,.15); color:var(--green); }
+.ema-above200 { background:rgba(63,185,80,.08); color:rgba(63,185,80,.8); border:1px solid rgba(63,185,80,.2); }
+.ema-bear { background:rgba(248,81,73,.15); color:var(--red); }
+.ema-below200 { background:rgba(248,81,73,.08); color:rgba(248,81,73,.8); border:1px solid rgba(248,81,73,.2); }
+.ema-mixed { background:rgba(139,148,158,.1); color:var(--muted); }
+.zone-type-pill {
+  display:inline-block; font-size:9px; font-weight:700; padding:2px 7px;
+  border-radius:10px; letter-spacing:.2px;
+}
+.zone-demand-bounce, .zone-supply-break { background:rgba(63,185,80,.15); color:var(--green); }
+.zone-supply-bounce, .zone-demand-break { background:rgba(248,81,73,.15); color:var(--red); }
+.zone-none { background:rgba(139,148,158,.08); color:var(--muted); }
+.setup-score-bar {
+  display:inline-block; height:5px; border-radius:3px; vertical-align:middle; margin-right:5px;
+  background: linear-gradient(90deg, var(--blue), var(--purple));
+}
+</style>
+
 <script>
-let mainChart=null, volChart=null, currentConfig={};
+// ══════════════════════════════════════════════════════════════════
+// Scanner logic
+// ══════════════════════════════════════════════════════════════════
+let _scanData    = [];
+let _scanSortKey = 'score';
+let _scanSortAsc = false;
+let _scanFilter  = 'all';
+let _scanFakeProgress = null;
+
+document.getElementById('scan-watchlist').addEventListener('change', function() {
+  document.getElementById('scan-custom').style.display =
+    this.value === 'custom' ? 'inline-block' : 'none';
+});
+
+function _startFakeProgress() {
+  const bar = document.getElementById('scan-progress-bar');
+  const wrap = document.getElementById('scan-progress-wrap');
+  const txt  = document.getElementById('scan-status-text');
+  wrap.style.display = 'block'; txt.style.display = 'block';
+  bar.style.width = '0%';
+  let pct = 0;
+  const msgs = ['Fetching price data…', 'Computing indicators…', 'Running regime detection…', 'Scoring signals…'];
+  let mi = 0;
+  txt.textContent = msgs[0];
+  _scanFakeProgress = setInterval(() => {
+    pct = Math.min(pct + (Math.random() * 4 + 1), 88);
+    bar.style.width = pct + '%';
+    const newMi = Math.min(Math.floor(pct / 25), msgs.length - 1);
+    if (newMi !== mi) { mi = newMi; txt.textContent = msgs[mi]; }
+  }, 300);
+}
+
+function _stopFakeProgress(success) {
+  if (_scanFakeProgress) { clearInterval(_scanFakeProgress); _scanFakeProgress = null; }
+  const bar  = document.getElementById('scan-progress-bar');
+  const wrap = document.getElementById('scan-progress-wrap');
+  const txt  = document.getElementById('scan-status-text');
+  bar.style.width = '100%';
+  bar.style.background = success ? 'linear-gradient(90deg,#1a7f37,#3fb950)' : 'var(--red)';
+  setTimeout(() => {
+    wrap.style.display = 'none'; txt.style.display = 'none';
+    bar.style.width = '0%';
+    bar.style.background = 'linear-gradient(90deg,#1f6feb,#58a6ff)';
+  }, 700);
+}
+
+async function runScanner() {
+  const btn = document.getElementById('scan-btn');
+  const spin = document.getElementById('scan-spin');
+  const lbl  = document.getElementById('scan-label');
+
+  btn.disabled = true; spin.style.display = 'block'; lbl.textContent = 'Scanning…';
+
+  document.getElementById('scan-empty-state').style.display = 'none';
+  document.getElementById('scan-error-state').style.display = 'none';
+  document.getElementById('scan-results').style.display = 'none';
+  _startFakeProgress();
+
+  const wl       = document.getElementById('scan-watchlist').value;
+  const interval = document.getElementById('scan-interval').value;
+  const payload  = { interval, lookback: 60, max_concurrent: 8 };
+
+  if (wl === 'custom') {
+    const raw = document.getElementById('scan-custom').value;
+    const tickers = raw.split(/[,\s]+/).map(t => t.trim().toUpperCase()).filter(Boolean);
+    if (!tickers.length) {
+      _stopFakeProgress(false);
+      document.getElementById('scan-error-state').style.display = 'block';
+      document.getElementById('scan-error-state').textContent = '⚠ Enter at least one ticker in the custom field.';
+      btn.disabled=false; spin.style.display='none'; lbl.textContent='▶ Run Scanner';
+      return;
+    }
+    payload.tickers = tickers;
+  } else {
+    payload.watchlist = wl;
+  }
+
+  try {
+    const res  = await fetch('/api/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
+    _stopFakeProgress(true);
+    processScanResult(data);
+    log(`Scanner: ${data.scanned} scanned · ${data.breakouts.length} breakouts · ${data.breakdowns.length} breakdowns · ${data.elapsed_ms}ms`, 'var(--green)');
+  } catch(e) {
+    _stopFakeProgress(false);
+    const errEl = document.getElementById('scan-error-state');
+    errEl.style.display = 'block';
+    errEl.textContent = '⚠ Scanner failed: ' + e.message;
+    log('Scanner error: ' + e, 'var(--red)');
+  } finally {
+    btn.disabled = false; spin.style.display = 'none'; lbl.textContent = '▶ Run Scanner';
+  }
+}
+
+function processScanResult(data) {
+  _scanData    = data.all || [];
+  _scanSortKey = 'score';
+  _scanSortAsc = false;
+  _scanFilter  = 'all';
+
+  // Pills
+  const info = `${data.scanned} scanned · ${data.succeeded} OK · ${data.elapsed_ms}ms`;
+  document.getElementById('sc-info').textContent   = info;
+  document.getElementById('sc-up').textContent     = `↑ ${data.breakouts.length} bullish`;
+  document.getElementById('sc-down').textContent   = `↓ ${data.breakdowns.length} bearish`;
+  document.getElementById('sc-neut').textContent   = `→ ${data.neutral.length} neutral`;
+  document.getElementById('sc-all').classList.add('active');
+
+  const errEl2 = document.getElementById('sc-errors');
+  if (data.failed > 0) {
+    errEl2.style.display = 'inline-block';
+    errEl2.textContent = `⚠ ${data.failed} failed`;
+  } else {
+    errEl2.style.display = 'none';
+  }
+
+  // Top cards
+  buildTopCards(data);
+
+  document.getElementById('scan-results').style.display = 'block';
+  renderScanTable();
+}
+
+function buildTopCards(data) {
+  const wrap = document.getElementById('scan-top-cards');
+  wrap.innerHTML = '';
+  const topUp   = (data.breakouts   || []).slice(0, 4);
+  const topDown = (data.breakdowns  || []).slice(0, 4);
+  const all     = [...topUp, ...topDown];
+  if (!all.length) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'flex';
+
+  all.forEach(r => {
+    const isUp = r.score >= 0;
+    const card = document.createElement('div');
+    card.className = 'scan-top-card ' + (isUp ? 'up-card' : 'down-card');
+    card.onclick = () => loadTicker(r.ticker);
+    card.title = r.reasoning || '';
+    const scoreStr = (r.score >= 0 ? '+' : '') + (r.score||0).toFixed(3);
+    const regDisp  = (r.regime||'').replace(/_/g,' ');
+    card.innerHTML = `
+      <div class="stc-ticker" style="color:${isUp ? 'var(--green)' : 'var(--red)'}">
+        ${isUp ? '↑' : '↓'} ${r.ticker}
+      </div>
+      <div class="stc-score"  style="color:${isUp ? 'var(--green)' : 'var(--red)'}">Score ${scoreStr}</div>
+      <div class="stc-regime">${regDisp}</div>
+      <div class="stc-price">$${typeof r.price === 'number' ? r.price.toFixed(2) : '—'}  · RSI ${(r.rsi||0).toFixed(0)}</div>
+    `;
+    wrap.appendChild(card);
+  });
+}
+
+// ── Sort ─────────────────────────────────────────────────────────
+function setScanSort(key) {
+  if (_scanSortKey === key) { _scanSortAsc = !_scanSortAsc; }
+  else { _scanSortKey = key; _scanSortAsc = key === 'ticker'; }
+  document.querySelectorAll('.scan-sort-btn').forEach(b => b.classList.remove('active'));
+  const id = { score:'srt-score', rsi:'srt-rsi', adx:'srt-adx',
+                price_vs_52w:'srt-52w', confidence:'srt-conf', ticker:'srt-ticker' }[key];
+  if (id) document.getElementById(id)?.classList.add('active');
+  renderScanTable();
+}
+
+// ── Filter ───────────────────────────────────────────────────────
+function filterScan(type) {
+  _scanFilter = type;
+  ['sc-up','sc-down','sc-neut','sc-all'].forEach(id => {
+    document.getElementById(id)?.classList.remove('active');
+  });
+  const activeMap = { breakout:'sc-up', breakdown:'sc-down', neutral:'sc-neut', all:'sc-all' };
+  document.getElementById(activeMap[type])?.classList.add('active');
+  renderScanTable();
+}
+
+// ── Render table ─────────────────────────────────────────────────
+function renderScanTable() {
+  let rows = [..._scanData];
+
+  // Filter by direction
+  if (_scanFilter === 'breakout')  rows = rows.filter(r => r.score >  0.10);
+  if (_scanFilter === 'breakdown') rows = rows.filter(r => r.score < -0.10);
+  if (_scanFilter === 'neutral')   rows = rows.filter(r => Math.abs(r.score) <= 0.10);
+
+  // Search filter
+  const q = (document.getElementById('scan-search')?.value || '').toUpperCase().trim();
+  if (q) rows = rows.filter(r => r.ticker.includes(q));
+
+  // Sort — supports nested trade_setup fields via adapter map
+  rows.sort((a, b) => {
+    const adapter = _tsSortAdapters[_scanSortKey];
+    let av = adapter ? adapter(a) : a[_scanSortKey];
+    let bv = adapter ? adapter(b) : b[_scanSortKey];
+    if (typeof av === 'string') { av = av.toLowerCase(); bv = (bv||'').toLowerCase(); }
+    if (av == null) av = -9999; if (bv == null) bv = -9999;
+    return _scanSortAsc ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
+  });
+
+  const tbody = document.getElementById('scan-tbody');
+  const table = document.getElementById('scan-table');
+
+  document.getElementById('scan-row-count').textContent = `${rows.length} row${rows.length !== 1 ? 's' : ''}`;
+
+  if (!rows.length) {
+    table.style.display = 'none';
+    return;
+  }
+  table.style.display = 'table';
+  tbody.innerHTML = '';
+
+  // Color helpers
+  const sc  = s => s > 0.40 ? '#3fb950' : s > 0.20 ? '#56d364' : s > 0 ? '#7ee787'
+                 : s < -0.40 ? '#f85149' : s < -0.20 ? '#ff7b72' : s < 0 ? '#ffa198' : '#8b949e';
+  const rsiC = v => v > 70 ? 'var(--red)' : v < 30 ? 'var(--green)' : 'var(--text)';
+  const pctC = (v, upGood=true) => {
+    if (v == null) return 'var(--muted)';
+    return upGood ? (v > 0 ? 'var(--green)' : v < 0 ? 'var(--red)' : 'var(--muted)')
+                  : (v < 0 ? 'var(--green)' : v > 0 ? 'var(--red)' : 'var(--muted)');
+  };
+  const regC = {
+    breakout_up:'var(--amber)', breakout_down:'var(--amber)',
+    strong_uptrend:'var(--green)', weak_uptrend:'#56d364',
+    strong_downtrend:'var(--red)', weak_downtrend:'#ff7b72',
+    range_bound:'var(--blue)', choppy:'var(--muted)',
+  };
+  const dirLabel = {
+    breakout_up:  '🚀 Breakout ↑', trending_up:  '📈 Trending ↑', bullish: '↑ Bullish',
+    breakdown:    '💥 Breakdown ↓', trending_down:'📉 Trending ↓', bearish: '↓ Bearish',
+    neutral: '→ Neutral', error: '⚠ Error',
+  };
+
+  rows.forEach(r => {
+    const score = r.score || 0;
+    const barW  = Math.round(Math.min(Math.abs(score) * 100, 100));
+    const barC  = score >= 0 ? 'rgba(63,185,80,.7)' : 'rgba(248,81,73,.7)';
+
+    // ── Trade Setup cells ──────────────────────────────────────────
+    const ts = r.trade_setup || {};
+    const tsValid = ts.valid === true;
+
+    let tsSideHtml, tsEntryHtml, tsSlHtml, tsTp1Html, tsTp2Html, tsRrHtml, tsProbHtml;
+
+    if (!tsValid) {
+      // No entry — show reason as tooltip
+      const reason = ts.reason || 'Criteria not met';
+      const shortReason = reason.length > 28 ? reason.slice(0, 28) + '…' : reason;
+      tsSideHtml  = `<span title="${reason}" style="color:var(--muted);font-size:10px;cursor:help;">⊘ No Entry</span>`;
+      tsEntryHtml = `<span style="color:var(--muted);">—</span>`;
+      tsSlHtml    = `<span style="color:var(--muted);">—</span>`;
+      tsTp1Html   = `<span style="color:var(--muted);">—</span>`;
+      tsTp2Html   = `<span style="color:var(--muted);">—</span>`;
+      tsRrHtml    = `<span style="color:var(--muted);">—</span>`;
+      tsProbHtml  = `<span style="color:var(--muted);" title="${shortReason}">—</span>`;
+    } else {
+      const side   = ts.side || 'long';
+      const isLong = side === 'long';
+      const sideColor = isLong ? 'var(--green)' : 'var(--red)';
+      const sideIcon  = isLong ? '▲ LONG' : '▼ SHORT';
+
+      const fmt = v => v != null ? '$' + Number(v).toFixed(2) : '—';
+      const fmtPct = v => v != null ? (v >= 0 ? '+' : '') + Number(v).toFixed(1) + '%' : '—';
+
+      // Use best R:R (tighter of ATR vs fixed stop) — same logic as backend sl_recommended
+      const rr_atr = ts.rr_atr ?? 0;
+      const rr_pct = ts.rr_pct ?? 0;
+      const rr     = Math.max(rr_atr, rr_pct);                      // best R:R
+      const rrC    = rr >= 2.0 ? 'var(--green)' : rr >= 1.3 ? 'var(--amber)' : 'var(--red)';
+      const prob1  = ts.prob_tp1 != null ? Math.round(ts.prob_tp1 * 100) + '%' : '—';
+      const probSlAtr = ts.prob_sl_atr != null ? Math.round(ts.prob_sl_atr * 100) + '%' : '—';
+
+      // Show the recommended (tighter) SL in the table cell
+      const recSL   = ts.sl_recommended === 'pct' ? ts.sl_pct : ts.sl_atr;
+      const recDist = ts.sl_recommended === 'pct' ? ts.sl_pct_dist : ts.sl_atr_dist;
+      const recType = ts.sl_recommended === 'pct' ? `Fixed ${ts.sl_pct_used}%` : `ATR ×${ts.atr_mult?.toFixed(1)}`;
+      const capWarn = ts.atr_capped ? ' ⚠' : '';
+      const slDistStr = recDist != null ? ` (${recDist.toFixed(1)}%)` : '';
+      const tp1Dist = ts.tp1_dist != null ? ` (+${ts.tp1_dist.toFixed(1)}%)` : '';
+      const tp2Dist = ts.tp2_dist != null ? ` (+${ts.tp2_dist.toFixed(1)}%)` : '';
+
+      tsSideHtml  = `<span style="color:${sideColor}; font-weight:700; font-size:11px;">${sideIcon}</span>`;
+      tsEntryHtml = `<span style="color:var(--blue); font-weight:600;">${fmt(ts.entry)}</span>`;
+      tsSlHtml    = `<span style="color:var(--red);" title="${recType} stop | ATR: ${fmt(ts.sl_atr)} (${ts.sl_atr_dist?.toFixed(1)}%) | Fixed: ${fmt(ts.sl_pct)} (${ts.sl_pct_dist?.toFixed(1)}%)${ts.atr_capped?' | ⚠ ATR was capped':''}">${fmt(recSL)}<span style="font-size:9px; color:var(--muted);">${slDistStr}${capWarn}</span></span>`;
+      tsTp1Html   = `<span style="color:var(--green);" title="P75 target">${fmt(ts.tp1)}<span style="font-size:9px; color:var(--muted);">${tp1Dist}</span></span>`;
+      tsTp2Html   = `<span style="color:rgba(63,185,80,.7);" title="P90 runner">${fmt(ts.tp2)}<span style="font-size:9px; color:var(--muted);">${tp2Dist}</span></span>`;
+      tsRrHtml    = `<span style="color:${rrC}; font-weight:700;" title="Best R:R using tighter stop | ATR R:R: ${rr_atr.toFixed(1)}R | Fixed R:R: ${rr_pct.toFixed(1)}R">${rr.toFixed(1)}R</span>`;
+      tsProbHtml  = `<span style="color:var(--green); font-weight:600;" title="P(TP1)=${prob1} | P(SL)=${probSlAtr}">${prob1}</span>`;
+    }
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="font-weight:700; color:var(--blue); font-size:13px;">${r.ticker}</td>
+      <td style="color:var(--text);">$${typeof r.price==='number' ? r.price.toFixed(2) : '—'}</td>
+      <td style="white-space:nowrap;">
+        <span style="display:inline-block;width:36px;height:4px;background:var(--surface2);border-radius:2px;vertical-align:middle;margin-right:6px;overflow:hidden;">
+          <span style="display:block;height:100%;width:${barW}%;background:${barC};border-radius:2px;"></span>
+        </span>
+        <span style="font-weight:700; color:${sc(score)};">${score>=0?'+':''}${score.toFixed(3)}</span>
+      </td>
+      <td style="color:${score>0.1?'var(--green)':score<-0.1?'var(--red)':'var(--muted)'}; font-size:11px;">
+        ${dirLabel[r.direction] || r.direction}</td>
+      <td style="color:${regC[r.regime]||'var(--muted)'}; font-size:11px; text-transform:uppercase; letter-spacing:.3px;">
+        ${(r.regime||'—').replace(/_/g,' ')}</td>
+      <td style="font-size:11px; color:var(--muted);">${r.signal_label||'—'}</td>
+      <td style="color:${r.confidence>0.6?'var(--green)':r.confidence>0.35?'var(--text)':'var(--muted)'};">
+        ${r.confidence!=null ? Math.round(r.confidence*100)+'%' : '—'}</td>
+      <td style="color:${rsiC(r.rsi)}; font-weight:${(r.rsi>70||r.rsi<30)?700:400};">
+        ${r.rsi!=null ? r.rsi.toFixed(1) : '—'}</td>
+      <td style="color:${r.adx>25?'var(--amber)':'var(--muted)'}; font-weight:${r.adx>25?700:400};">
+        ${r.adx!=null ? r.adx.toFixed(1) : '—'}</td>
+      <td style="color:${pctC(r.bb_position, false)};">
+        ${r.bb_position!=null ? (r.bb_position>=0?'+':'')+r.bb_position.toFixed(2) : '—'}</td>
+      <td style="color:${pctC(r.obv_slope)};">
+        ${r.obv_slope!=null ? (r.obv_slope>=0?'+':'')+r.obv_slope.toFixed(2) : '—'}</td>
+      <td style="color:${r.price_vs_52w>=-2?'var(--green)':r.price_vs_52w>-10?'var(--text)':'var(--red)'};">
+        ${r.price_vs_52w!=null ? (r.price_vs_52w>=0?'+':'')+r.price_vs_52w.toFixed(1)+'%' : '—'}</td>
+      <td style="color:${pctC(r.ema200_dist, false)};">
+        ${r.ema200_dist!=null ? (r.ema200_dist>=0?'+':'')+r.ema200_dist.toFixed(1)+'%' : '—'}</td>
+      <td style="color:${r.hurst>0.6?'var(--green)':r.hurst<0.4?'var(--amber)':'var(--muted)'};">
+        ${r.hurst!=null ? r.hurst.toFixed(2) : '—'}</td>
+      <!-- ── Trade Setup columns ── -->
+      <td style="border-left:2px solid rgba(88,166,255,.15);">${tsSideHtml}</td>
+      <td>${tsEntryHtml}</td>
+      <td>${tsSlHtml}</td>
+      <td>${tsTp1Html}</td>
+      <td>${tsTp2Html}</td>
+      <td>${tsRrHtml}</td>
+      <td>${tsProbHtml}</td>
+      <td>
+        <button onclick="loadTicker('${r.ticker}')"
+          style="background:rgba(88,166,255,.1); border:1px solid rgba(88,166,255,.3); color:var(--blue);
+                 border-radius:5px; padding:4px 10px; font-size:11px; cursor:pointer; font-weight:600;
+                 transition:background .12s;"
+          onmouseover="this.style.background='rgba(88,166,255,.2)'"
+          onmouseout="this.style.background='rgba(88,166,255,.1)'">
+          Load ↗
+        </button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ── Sort helpers for trade_setup nested fields ──────────────────────
+const _tsSortAdapters = {
+  ts_side:    r => (r.trade_setup?.side    || 'none'),
+  ts_entry:   r => (r.trade_setup?.entry   ?? -9999),
+  ts_sl:      r => {
+    const ts = r.trade_setup;
+    if (!ts) return -9999;
+    return ts.sl_recommended === 'pct' ? (ts.sl_pct ?? -9999) : (ts.sl_atr ?? -9999);
+  },
+  ts_tp1:     r => (r.trade_setup?.tp1     ?? -9999),
+  ts_tp2:     r => (r.trade_setup?.tp2     ?? -9999),
+  ts_rr:      r => Math.max(r.trade_setup?.rr_atr ?? -9999, r.trade_setup?.rr_pct ?? -9999),
+  ts_prob_tp1:r => (r.trade_setup?.prob_tp1 ?? -9999),
+};
+
+// ── Load ticker from scanner ──────────────────────────────────────
+async function loadTicker(ticker) {
+  // Sync ticker + interval from scanner
+  const scanInterval = document.getElementById('scan-interval').value;
+  document.getElementById('s-ticker').value   = ticker;
+  document.getElementById('s-interval').value = scanInterval;
+
+  // Also sync MC settings from currentConfig so the sidebar analysis
+  // runs with the same parameters as the user has configured.
+  if (currentConfig.n_sim)        document.getElementById('s-nsim').value    = currentConfig.n_sim;
+  if (currentConfig.n_forward)    document.getElementById('s-nfwd').value    = currentConfig.n_forward;
+  if (currentConfig.lookback)     document.getElementById('s-lookback').value= currentConfig.lookback;
+  if (currentConfig.mc_model)     document.getElementById('s-model').value   = currentConfig.mc_model;
+
+  log(`Loading ${ticker} @ ${scanInterval} (n_sim=${currentConfig.n_sim||'?'}, fwd=${currentConfig.n_forward||'?'})…`);
+  await applySettings();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+</script>
+
+<script>
+let volChart=null, currentConfig={};
 
 function log(msg, color) {
   const el=document.getElementById('log');
+  if (!el) return;
   const t=new Date().toLocaleTimeString();
   const c=color||'var(--blue)';
-  el.innerHTML=`<span style="color:${c}">[${t}]</span> ${msg}\n`+el.innerHTML;
+  // Prepend new entry
+  const line=document.createElement('div');
+  line.style.cssText='border-bottom:1px solid rgba(255,255,255,.04);padding:3px 0;word-break:break-word;';
+  line.innerHTML=`<span style="color:${c};font-weight:600;">[${t}]</span> ${msg}`;
+  el.insertBefore(line, el.firstChild);
+  // Cap at 60 entries so it doesn't grow forever
+  while (el.children.length > 60) el.removeChild(el.lastChild);
 }
 function fmt(n,d=2)   { return typeof n==='number' && isFinite(n) ? n.toFixed(d) : String(n); }
 function fmtPct(n,d=2){ return (n>=0?'+':'') + fmt(n,d) + '%'; }
@@ -493,7 +1522,7 @@ function loadSettingsIntoForm() {
   document.getElementById('s-interval').value=currentConfig.interval || '15m';
   document.getElementById('s-model').value   =currentConfig.mc_model || 'garch';
   document.getElementById('s-lookback').value=currentConfig.lookback || 50;
-  document.getElementById('s-nsim').value    =currentConfig.n_sim || 500;
+  document.getElementById('s-nsim').value    =currentConfig.n_sim || 10000;
   document.getElementById('s-nfwd').value    =currentConfig.n_forward || 10;
   document.getElementById('s-poll').value    =currentConfig.poll_seconds || 60;
 }
@@ -530,6 +1559,18 @@ async function applySettings() {
       msg.textContent='Applied ('+data.changed.join(', ')+')';
       log('Config: '+data.changed.join(', '));
       setTimeout(()=>msg.textContent='', 4000);
+      // ── Immediately redraw chart with the fresh analysis returned by
+      // POST /api/config — don't wait for the next WS broadcast.
+      if (data.result) {
+        updateUI(data.result);
+      } else {
+        // Fallback: explicitly fetch /api/signal for the new ticker
+        try {
+          const sr = await fetch('/api/signal');
+          const sd = await sr.json();
+          if (!sd.error) updateUI(sd);
+        } catch(_) {}
+      }
     }
   } catch(e) {
     msg.style.color='var(--red)';
@@ -543,7 +1584,7 @@ function resetSettings() {
   document.getElementById('s-interval').value='15m';
   document.getElementById('s-model').value   ='garch';
   document.getElementById('s-lookback').value=50;
-  document.getElementById('s-nsim').value    =500;
+  document.getElementById('s-nsim').value    =10000;
   document.getElementById('s-nfwd').value    =10;
   document.getElementById('s-poll').value    =60;
   document.getElementById('settings-msg').textContent='Reset — click Apply to save';
@@ -575,7 +1616,7 @@ async function runBacktest() {
     const res=await fetch('/api/backtest',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({history_bars:200, n_sim:120}),
+      body:JSON.stringify({history_bars:200, n_sim:500}),
     });
     const j=await res.json();
     if (!res.ok || j.ok===false) {
@@ -600,6 +1641,9 @@ async function runBacktest() {
 
 // ── UI update ────────────────────────────────────────────────────────────
 function updateUI(d) {
+  try { _updateUI(d); } catch(e) { log('UI error: '+e.message, 'var(--red)'); console.error(e); }
+}
+function _updateUI(d) {
   const ind=d.indicators, sig=d.signal, mc=d.mc, cur=d.current_price;
   const cfg_d=d.config || {};
 
@@ -709,141 +1753,441 @@ function updateUI(d) {
   $('d-vwap').style.color    =colorOf(ind.vwap_dist||0);
   $('d-obv').textContent     =fmt(ind.obv_slope||0,3);
   $('d-obv').style.color     =colorOf(ind.obv_slope||0);
+  const rsidiv=ind.rsi_divergence||0;
+  $('d-rsidiv').textContent  = rsidiv===1 ? '↑ bullish div' : rsidiv===-1 ? '↓ bearish div' : 'none';
+  $('d-rsidiv').style.color  = rsidiv===1 ? 'var(--green)' : rsidiv===-1 ? 'var(--red)' : 'var(--muted)';
+  $('d-ema200').textContent  = ind.ema_200 ? '$'+fmt(ind.ema_200) : '—';
+  const e200d=ind.ema200_dist||0;
+  $('d-ema200d').textContent = (e200d>=0?'+':'')+fmt(e200d,2)+'%';
+  $('d-ema200d').style.color = e200d>5?'var(--red)':e200d<-5?'var(--green)':'var(--muted)';
+  const pw52=ind.price_vs_52w||0;
+  $('d-52w').textContent     = (pw52>=0?'+':'')+fmt(pw52,1)+'%';
+  $('d-52w').style.color     = pw52>=-2?'var(--green)':pw52>-10?'var(--text)':'var(--red)';
+  $('d-vov').textContent     = fmt(ind.vol_of_vol||0,3);
+  $('d-vov').style.color     = (ind.vol_of_vol||0)>0.5?'var(--amber)':'var(--muted)';
 
   $('cfg-nsim').textContent=(cfg_d.n_sim || '—') + ' paths';
   $('cfg-nfwd').textContent=(cfg_d.n_forward || '—') + ' candles';
   $('cfg-poll').textContent=(cfg_d.poll_seconds || '—') + 's';
 
+  // ── Trade Setup sidebar card ───────────────────────────────────
+  updateTradeSetup(d.trade_setup);
+
   buildCharts(d);
   log(`${d.ticker}  $${fmt(cur)} ${sig.label} (${confPct}% conf)  up=${mc.prob_up}% dn=${mc.prob_down}% [${d.mc_model||'?'}]`);
 }
 
-// ── charts ───────────────────────────────────────────────────────────────
-function buildCharts(d) {
-  const candles=d.candles, mc=d.mc, cur=d.current_price;
-  const nHist=candles.length;
-  const nFwdSteps=mc.median_path.length;          // includes starting candle
-  const nFwd=nFwdSteps - 1;
-  const totalLen=nHist + nFwd;
+// ── Trade Setup card updater ─────────────────────────────────────────────
+function updateTradeSetup(ts) {
+  if (!ts) return;
 
-  const histClose=candles.map(c=>c.c);
-  const volumes  =candles.map(c=>c.v);
-  const volColors=candles.map(c=>c.c>=c.o?'rgba(63,185,80,.5)':'rgba(248,81,73,.5)');
+  // Null-safe element accessor — silently skips if element doesn't exist
+  const $  = id => document.getElementById(id);
+  const set = (id, fn) => { const el=$(id); if(el) fn(el); };
 
-  const makeLabel=(i)=>{
-    if (i<nHist) return i%5===0 ? new Date(candles[i].t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '';
-    const fwd=i-nHist+1;
-    return fwd===1 ? 'NOW' : fwd===nFwd ? '+'+nFwd+'c' : '';
-  };
-  const labels=Array.from({length:totalLen},(_,i)=>makeLabel(i));
+  const banner  = $('ts-banner');
+  const pill    = $('ts-side-pill');
+  const wrap    = $('ts-levels-wrap');
+  if (!banner || !wrap) return;  // card not in DOM yet
 
-  // Pad MC bands to align with the chart x-axis (history + forward)
-  const padHist = (arr) => [...Array(nHist-1).fill(null), ...arr];
-  const medianPath = padHist(mc.median_path);
-  const upper25_75_top = padHist(mc.upper_band || mc.median_path);
-  const lower25_75_bot = padHist(mc.lower_band || mc.median_path);
-  const upper10_90_top = padHist(mc.p90_band   || mc.median_path);
-  const lower10_90_bot = padHist(mc.p10_band   || mc.median_path);
+  const f2 = v  => v != null ? '$' + Number(v).toFixed(2) : '—';
+  const fPct = v => v != null ? (v >= 0 ? '+' : '') + Number(v).toFixed(1) + '%' : '—';
+  const fRR  = v => v != null ? Number(v).toFixed(1) + 'R' : '—';
+  const fProb= v => v != null ? Math.round(v * 100) + '%' : '—';
 
-  const datasets=[];
+  // Reset classes
+  banner.className = 'ts-banner';
 
-  // Outer 10–90 band (light fill)
-  datasets.push({
-    label:'p90',
-    data:upper10_90_top,
-    borderColor:'rgba(63,185,80,.0)',
-    backgroundColor:'rgba(63,185,80,.07)',
-    fill:'+1',
-    pointRadius:0, tension:.3, spanGaps:true, borderWidth:0,
-  });
-  datasets.push({
-    label:'p10',
-    data:lower10_90_bot,
-    borderColor:'rgba(248,81,73,.0)',
-    backgroundColor:'rgba(248,81,73,.07)',
-    fill:false,
-    pointRadius:0, tension:.3, spanGaps:true, borderWidth:0,
-  });
-
-  // Inner 25–75 band (denser)
-  datasets.push({
-    label:'p75',
-    data:upper25_75_top,
-    borderColor:'rgba(63,185,80,.0)',
-    backgroundColor:'rgba(63,185,80,.16)',
-    fill:'+1',
-    pointRadius:0, tension:.3, spanGaps:true, borderWidth:0,
-  });
-  datasets.push({
-    label:'p25',
-    data:lower25_75_bot,
-    borderColor:'rgba(248,81,73,.0)',
-    backgroundColor:'rgba(248,81,73,.0)',
-    fill:false,
-    pointRadius:0, tension:.3, spanGaps:true, borderWidth:0,
-  });
-
-  // Sample paths (very faint) — only render up to 30 to avoid clutter
-  const samplePaths = (mc.paths || []).slice(0, 30);
-  for (const path of samplePaths) {
-    datasets.push({
-      data:padHist(path),
-      borderColor:'rgba(88,166,255,.07)',
-      borderWidth:1, pointRadius:0, tension:.3, spanGaps:true, fill:false,
+  if (!ts.valid) {
+    banner.classList.add('none');
+    set('ts-banner-label',  el => el.textContent = '⊘  No Entry Right Now');
+    // Append MC note if this is an R:R failure — explains scanner vs sidebar discrepancy
+    const reason = ts.reason || 'Conditions not met';
+    const rrFail = reason.includes('R:R too low') || reason.includes('TP targets');
+    set('ts-banner-reason', el => {
+      el.textContent = reason;
+      if (rrFail) {
+        el.title = 'The scanner shows ATR-estimated TP targets which are wider. This sidebar uses real MC P75/P90 from 10k paths — tighter and more accurate for the actual forward-candle horizon.';
+        el.style.cursor = 'help';
+        el.style.textDecoration = 'underline dotted';
+      } else {
+        el.title = '';
+        el.style.cursor = '';
+        el.style.textDecoration = '';
+      }
     });
+    if (pill) { pill.textContent = '—'; pill.className = 'pill'; }
+    wrap.style.display = 'none';
+    return;
   }
 
-  // Median path
-  datasets.push({
-    label:'Median',
-    data:medianPath,
-    borderColor:'#d29922',
-    borderWidth:2.5,
-    borderDash:[5,3],
-    pointRadius:0, tension:.3, spanGaps:true, fill:false,
-  });
+  // ── Valid entry ──────────────────────────────────────────────────
+  const isLong = ts.side === 'long';
+  banner.classList.add(ts.side);
+  set('ts-banner-label',  el => el.textContent = isLong ? '▲  LONG — Entry Confirmed' : '▼  SHORT — Entry Confirmed');
+  set('ts-banner-reason', el => el.textContent = ts.reason || '');
 
-  // Actual price line
-  datasets.push({
-    label:'Price',
-    data:[...histClose, ...Array(nFwd).fill(null)],
-    borderColor:'#58a6ff',
-    borderWidth:2, pointRadius:0, tension:.1, fill:false,
-  });
+  if (pill) {
+    pill.textContent      = ts.side.toUpperCase();
+    pill.className        = 'pill';
+    pill.style.background = isLong ? 'rgba(63,185,80,.15)' : 'rgba(248,81,73,.15)';
+    pill.style.color      = isLong ? 'var(--green)' : 'var(--red)';
+  }
 
-  const shared={
-    responsive:true, maintainAspectRatio:false,
-    animation:{duration:300},
-    plugins:{ legend:{display:false}, tooltip:{enabled:false} },
+  // Levels
+  set('ts-entry',     el => el.textContent = f2(ts.entry));
+  set('ts-entry-sub', el => el.textContent = ts.direction ? ts.direction.replace(/_/g,' ') : '');
+
+  const tp1Dist = ts.tp1_dist != null ? ts.tp1_dist.toFixed(1) : null;
+  const tp2Dist = ts.tp2_dist != null ? ts.tp2_dist.toFixed(1) : null;
+  set('ts-tp1',     el => el.textContent = f2(ts.tp1));
+  set('ts-tp1-sub', el => el.textContent = tp1Dist ? `+${tp1Dist}% from entry` : '');
+  set('ts-tp2',     el => el.textContent = f2(ts.tp2));
+  set('ts-tp2-sub', el => el.textContent = tp2Dist ? `+${tp2Dist}% from entry` : '');
+
+  // Recommended SL
+  const recSL    = ts.sl_recommended === 'pct' ? ts.sl_pct : ts.sl_atr;
+  const recDist  = ts.sl_recommended === 'pct' ? ts.sl_pct_dist : ts.sl_atr_dist;
+  const recLabel = ts.sl_recommended === 'pct' ? 'Fixed %' : 'ATR';
+  set('ts-sl-main', el => el.textContent = f2(recSL));
+  set('ts-sl-sub',  el => el.textContent = recDist != null ? `${recDist.toFixed(1)}% risk · ${recLabel} stop` : '');
+
+  // Dual SL detail
+  const atrVal  = f2(ts.sl_atr) + (ts.sl_atr_dist != null ? ` (${ts.sl_atr_dist.toFixed(1)}%)` : '');
+  const pctVal  = f2(ts.sl_pct) + (ts.sl_pct_dist != null ? ` (${ts.sl_pct_dist.toFixed(1)}%)` : '');
+  const capNote = ts.atr_capped ? ' ⚠ capped' : '';
+
+  set('ts-sl-atr-val', el => {
+    el.textContent = atrVal + capNote;
+    el.style.color = ts.sl_recommended === 'atr' ? 'var(--fg)' : 'var(--muted)';
+    el.title = ts.atr_capped ? 'ATR SL was too wide and capped to max % for this timeframe' : '';
+  });
+  set('ts-sl-pct-val', el => {
+    el.textContent = pctVal;
+    el.style.color = ts.sl_recommended === 'pct' ? 'var(--fg)' : 'var(--muted)';
+  });
+  set('ts-sl-atr-label', el => el.textContent = `ATR (×${ts.atr_mult?.toFixed(1) ?? '?'})${ts.sl_recommended === 'atr' ? ' ★' : ''}`);
+  set('ts-sl-pct-label', el => el.textContent = `Fixed ${ts.sl_pct_used ?? '?'}%${ts.sl_recommended === 'pct' ? ' ★' : ''}`);
+
+  // R:R pills
+  const setRRPill = (pillId, numId, val, isRec) => {
+    set(numId,  el => el.textContent = fRR(val));
+    set(pillId, el => {
+      el.className = 'ts-rr-pill ' + (val >= 2.0 ? 'good' : val >= 1.3 ? 'ok' : 'bad');
+      el.style.outline = isRec ? '1px solid var(--blue)' : '';
+      el.title = isRec ? 'Recommended (tighter stop)' : '';
+    });
   };
+  setRRPill('ts-rr-atr-pill', 'ts-rr-atr', ts.rr_atr, ts.sl_recommended === 'atr');
+  setRRPill('ts-rr-pct-pill', 'ts-rr-pct', ts.rr_pct, ts.sl_recommended === 'pct');
 
-  if (mainChart) mainChart.destroy();
-  mainChart=new Chart(document.getElementById('mainChart'), {
-    type:'line',
-    data:{labels, datasets},
-    options:{
-      ...shared,
-      scales:{
-        x:{ ticks:{font:{size:10}, color:'#8b949e', maxRotation:0}, grid:{color:'rgba(255,255,255,.04)'} },
-        y:{ ticks:{font:{size:11}, color:'#8b949e', callback:v=>'$'+v.toFixed(2)}, grid:{color:'rgba(255,255,255,.04)'} },
-      },
-    },
+  // Probabilities
+  const pSL = ts.sl_recommended === 'pct' ? (ts.prob_sl_pct || 0) : (ts.prob_sl_atr || 0);
+  set('ts-prob-tp1', el => { el.textContent = fProb(ts.prob_tp1); el.style.color = (ts.prob_tp1||0)>=0.5?'var(--green)':'var(--amber)'; });
+  set('ts-prob-tp2', el => { el.textContent = fProb(ts.prob_tp2); el.style.color = (ts.prob_tp2||0)>=0.35?'var(--green)':'var(--muted)'; });
+  set('ts-prob-sl',  el => { el.textContent = fProb(pSL);         el.style.color = pSL>0.4?'var(--red)':pSL>0.25?'var(--amber)':'var(--muted)'; });
+
+  // Stop-hunt warning
+  set('ts-stophunt-warn', el => {
+    if (pSL > 0.35) {
+      set('ts-stophunt-pct', p => p.textContent = Math.round(pSL*100)+'%');
+      el.style.display = 'block';
+    } else {
+      el.style.display = 'none';
+    }
   });
 
+  // ── Zone-based TP/SL panel ──────────────────────────────────────────
+  const zoneWrap = $('ts-zone-wrap');
+  if (zoneWrap) {
+    const hasZone = ts.zone_tp1 != null && ts.zone_sl != null;
+    zoneWrap.style.display = hasZone ? 'block' : 'none';
+
+    if (hasZone) {
+      // Zone type pill label
+      const zTypeLabels = {
+        demand_bounce: '↑ Demand Bounce',
+        supply_break:  '↑ Supply Break',
+        supply_bounce: '↓ Supply Reject',
+        demand_break:  '↓ Demand Break',
+      };
+      set('ts-zone-type-pill', el => {
+        el.textContent = zTypeLabels[ts.zone_type] || ts.zone_type || '?';
+        const isUp = ts.zone_type?.includes('up') || ts.zone_type === 'demand_bounce' || ts.zone_type === 'supply_break';
+        el.style.background = isUp ? 'rgba(63,185,80,.15)' : 'rgba(248,81,73,.15)';
+        el.style.color = isUp ? 'var(--green)' : 'var(--red)';
+      });
+      set('ts-zone-strength', el => {
+        const s = ts.zone_strength != null ? Math.round(ts.zone_strength * 100) + '%' : '—';
+        el.textContent = 'zone str: ' + s;
+      });
+
+      // Zone TP1
+      set('ts-zone-tp1', el => el.textContent = f2(ts.zone_tp1));
+      set('ts-zone-tp1-sub', el => el.textContent = ts.zone_tp1_dist != null ? `+${ts.zone_tp1_dist.toFixed(1)}% from entry` : '');
+
+      // Zone TP2
+      if (ts.zone_tp2 != null) {
+        set('ts-zone-tp2', el => el.textContent = f2(ts.zone_tp2));
+        set('ts-zone-tp2-sub', el => el.textContent = ts.zone_tp2_dist != null ? `+${ts.zone_tp2_dist.toFixed(1)}% from entry` : '');
+      } else {
+        set('ts-zone-tp2', el => el.textContent = '—');
+        set('ts-zone-tp2-sub', el => el.textContent = 'no 2nd zone');
+      }
+
+      // Zone SL
+      set('ts-zone-sl', el => el.textContent = f2(ts.zone_sl));
+      set('ts-zone-sl-sub', el => el.textContent = ts.zone_sl_dist != null ? `${ts.zone_sl_dist.toFixed(1)}% risk` : '');
+
+      // Zone R:R
+      set('ts-zone-rr', el => {
+        if (ts.zone_rr != null) {
+          el.textContent = ts.zone_rr.toFixed(1) + 'R';
+          el.style.color = ts.zone_rr >= 2.0 ? 'var(--green)' : ts.zone_rr >= 1.3 ? 'var(--amber)' : 'var(--red)';
+        } else {
+          el.textContent = '—';
+          el.style.color = 'var(--muted)';
+        }
+      });
+
+      // Zone context note
+      set('ts-zone-context', el => {
+        const ctxLabel = {
+          at_demand: 'Price at demand zone',
+          at_supply: 'Price at supply zone',
+          between:   'Price between zones',
+          unknown:   '',
+        };
+        el.textContent = ctxLabel[ts.zone_context] || '';
+      });
+    }
+  }
+
+  wrap.style.display = 'block';
+}
+
+// ── Pure-canvas candlestick + MC overlay chart ───────────────────────────
+// No external chart library for candles — raw Canvas2D for pixel-perfect
+// rendering. MC bands drawn as a second pass on the same canvas after candles.
+
+let _lastChartData = null;   // store for resize redraws
+
+function buildCharts(d) {
+  _lastChartData = d;
+  _drawCandleChart(d);
+
+  // Volume chart (Chart.js bar — simple, reliable)
+  const volumes   = d.candles.map(c => c.v);
+  const volColors = d.candles.map(c => c.c >= c.o ? 'rgba(63,185,80,.55)' : 'rgba(248,81,73,.55)');
   if (volChart) volChart.destroy();
-  volChart=new Chart(document.getElementById('volChart'), {
+  volChart = new Chart(document.getElementById('volChart'), {
     type:'bar',
-    data:{ labels:volumes.map(()=>''), datasets:[{data:volumes, backgroundColor:volColors, borderWidth:0}] },
+    data:{ labels: d.candles.map((_,i)=>i),
+           datasets:[{data:volumes, backgroundColor:volColors, borderWidth:0}] },
     options:{
-      ...shared,
+      responsive:true, maintainAspectRatio:false,
+      animation:{duration:0},
+      plugins:{legend:{display:false}, tooltip:{enabled:false}},
       scales:{
         x:{display:false},
-        y:{ ticks:{font:{size:10}, color:'#8b949e',
-              callback:v=> v>=1e6 ? (v/1e6).toFixed(1)+'M' : v>=1e3 ? (v/1e3).toFixed(0)+'K' : v},
-            grid:{color:'rgba(255,255,255,.04)'} },
+        y:{ticks:{font:{size:10},color:'#8b949e',
+             callback:v=>v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':v},
+           grid:{color:'rgba(255,255,255,.04)'}},
       },
     },
   });
+}
+
+// Re-draw on window resize
+window.addEventListener('resize', () => { if (_lastChartData) _drawCandleChart(_lastChartData); });
+
+function _drawCandleChart(d) {
+  const canvas = document.getElementById('candleCanvas');
+  if (!canvas) return;
+
+  // Read size from the parent. If the layout hasn't settled yet (clientWidth=0),
+  // defer by one animation frame and retry — happens on first load.
+  const dpr    = window.devicePixelRatio || 1;
+  const parent = canvas.parentElement;
+  const W = parent.offsetWidth  || parent.clientWidth  || 900;
+  const H = parent.offsetHeight || parent.clientHeight || 360;
+  if (W < 10) {
+    requestAnimationFrame(() => _drawCandleChart(d));
+    return;
+  }
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const candles   = d.candles;
+  const mc        = d.mc;
+  const nHist     = candles.length;
+  const nFwdSteps = mc.median_path ? mc.median_path.length : 1;
+  const nFwd      = nFwdSteps - 1;
+  const totalBars = nHist + nFwd;
+
+  // ── Layout margins ─────────────────────────────────────────────────
+  const PAD_L = 8, PAD_R = 72, PAD_T = 14, PAD_B = 28;
+  const plotW = W - PAD_L - PAD_R;
+  const plotH = H - PAD_T - PAD_B;
+
+  // ── Y range: cover OHLC + MC bands ────────────────────────────────
+  const allH = candles.map(c=>c.h);
+  const allL = candles.map(c=>c.l);
+  const mcTop    = mc.p90_band   || mc.median_path || [];
+  const mcBot    = mc.p10_band   || mc.median_path || [];
+  const yMax0 = Math.max(...allH, ...mcTop.filter(Boolean));
+  const yMin0 = Math.min(...allL, ...mcBot.filter(Boolean));
+  const yPad  = (yMax0 - yMin0) * 0.06;
+  const yMax  = yMax0 + yPad;
+  const yMin  = yMin0 - yPad;
+  const yRange = yMax - yMin;
+
+  const toY = v => PAD_T + plotH * (1 - (v - yMin) / yRange);
+  const toX = i => PAD_L + (i + 0.5) * (plotW / totalBars);
+
+  // ── Background ────────────────────────────────────────────────────
+  ctx.clearRect(0, 0, W, H);
+
+  // ── Grid lines ────────────────────────────────────────────────────
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth   = 1;
+  const nGridY = 6;
+  for (let i = 0; i <= nGridY; i++) {
+    const y = PAD_T + (plotH / nGridY) * i;
+    ctx.beginPath(); ctx.moveTo(PAD_L, y); ctx.lineTo(W - PAD_R, y); ctx.stroke();
+  }
+
+  // ── Y-axis labels ─────────────────────────────────────────────────
+  ctx.fillStyle = '#8b949e';
+  ctx.font = '11px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
+  ctx.textAlign = 'left';
+  for (let i = 0; i <= nGridY; i++) {
+    const v = yMax - (yRange / nGridY) * i;
+    const y = PAD_T + (plotH / nGridY) * i;
+    ctx.fillText('$' + v.toFixed(2), W - PAD_R + 6, y + 4);
+  }
+
+  // ── X-axis labels ─────────────────────────────────────────────────
+  ctx.fillStyle  = '#8b949e';
+  ctx.textAlign  = 'center';
+  ctx.font = '10px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
+  const labelStep = Math.max(1, Math.floor(nHist / 8));
+  for (let i = 0; i < nHist; i++) {
+    if (i % labelStep !== 0) continue;
+    const t = new Date(candles[i].t);
+    const label = t.toLocaleString([], {month:'short', day:'numeric',
+                    hour:'2-digit', minute:'2-digit'});
+    ctx.fillText(label, toX(i), H - 6);
+  }
+  // MC zone label
+  ctx.fillStyle = 'rgba(210,153,34,0.7)';
+  ctx.fillText('MC projection →', toX(nHist + Math.floor(nFwd/2)), H - 6);
+
+  // ── MC band fills (drawn before candles so candles are on top) ────
+  const drawBand = (topArr, botArr, fillColor) => {
+    if (!topArr || !botArr || !topArr.length) return;
+    ctx.beginPath();
+    ctx.moveTo(toX(nHist - 1), toY(topArr[0]));
+    topArr.forEach((v, i) => ctx.lineTo(toX(nHist - 1 + i), toY(v)));
+    for (let i = botArr.length - 1; i >= 0; i--)
+      ctx.lineTo(toX(nHist - 1 + i), toY(botArr[i]));
+    ctx.closePath();
+    ctx.fillStyle = fillColor;
+    ctx.fill();
+  };
+
+  drawBand(mc.p90_band || mc.median_path, mc.p10_band || mc.median_path,
+           'rgba(63,185,80,0.07)');
+  drawBand(mc.upper_band || mc.median_path, mc.lower_band || mc.median_path,
+           'rgba(63,185,80,0.13)');
+
+  // ── Faint sample MC paths ─────────────────────────────────────────
+  ctx.lineWidth = 1;
+  for (const path of (mc.paths || []).slice(0, 30)) {
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(88,166,255,0.04)';
+    path.forEach((v, i) => {
+      const x = toX(nHist - 1 + i), y = toY(v);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+
+  // ── Median MC path (dashed amber) ────────────────────────────────
+  if (mc.median_path && mc.median_path.length) {
+    ctx.beginPath();
+    ctx.strokeStyle = '#d29922';
+    ctx.lineWidth   = 2;
+    ctx.setLineDash([6, 4]);
+    mc.median_path.forEach((v, i) => {
+      const x = toX(nHist - 1 + i), y = toY(v);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // ── Vertical divider: history | MC projection ─────────────────────
+  ctx.strokeStyle = 'rgba(210,153,34,0.25)';
+  ctx.lineWidth   = 1;
+  ctx.setLineDash([4, 4]);
+  const divX = toX(nHist - 1) + (plotW / totalBars) * 0.5;
+  ctx.beginPath(); ctx.moveTo(divX, PAD_T); ctx.lineTo(divX, H - PAD_B); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // ── Candlesticks ─────────────────────────────────────────────────
+  const barW   = plotW / totalBars;
+  const bodyW  = Math.max(1.5, barW * 0.65);   // 65% of slot width
+  const wickW  = Math.max(1, barW * 0.08);      // thin wick
+
+  for (let i = 0; i < nHist; i++) {
+    const c    = candles[i];
+    const isUp = c.c >= c.o;
+    const x    = toX(i);
+    const oY   = toY(c.o);
+    const cY   = toY(c.c);
+    const hY   = toY(c.h);
+    const lY   = toY(c.l);
+
+    const bodyTop = Math.min(oY, cY);
+    const bodyBot = Math.max(oY, cY);
+    const bodyH   = Math.max(1, bodyBot - bodyTop);
+
+    // Wick
+    ctx.strokeStyle = isUp ? '#3fb950' : '#f85149';
+    ctx.lineWidth   = wickW;
+    ctx.beginPath();
+    ctx.moveTo(x, hY);
+    ctx.lineTo(x, lY);
+    ctx.stroke();
+
+    // Body fill
+    ctx.fillStyle = isUp ? 'rgba(63,185,80,0.9)' : 'rgba(248,81,73,0.9)';
+    ctx.fillRect(x - bodyW / 2, bodyTop, bodyW, bodyH);
+
+    // Body border (1px, same hue)
+    ctx.strokeStyle = isUp ? '#3fb950' : '#f85149';
+    ctx.lineWidth   = 0.8;
+    ctx.strokeRect(x - bodyW / 2, bodyTop, bodyW, bodyH);
+  }
+
+  // ── Current price line (horizontal dashed blue) ───────────────────
+  const lastClose = candles[nHist - 1].c;
+  const curY = toY(lastClose);
+  ctx.strokeStyle = 'rgba(88,166,255,0.5)';
+  ctx.lineWidth   = 1;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath(); ctx.moveTo(PAD_L, curY); ctx.lineTo(W - PAD_R, curY); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle  = '#58a6ff';
+  ctx.textAlign  = 'left';
+  ctx.font = 'bold 10px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
+  ctx.fillText('$' + lastClose.toFixed(2), W - PAD_R + 6, curY + 4);
 }
 
 // ── WebSocket ────────────────────────────────────────────────────────────

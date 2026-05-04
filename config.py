@@ -33,6 +33,7 @@ VALID_MC_MODELS: List[str] = [
     "garch",        # GARCH(1,1)-style volatility clustering
     "bootstrap",    # historical-return resampling (preserves real distribution)
     "jump",         # Merton jump-diffusion (Gaussian + Poisson jumps)
+    "ensemble",     # adaptive blend of GARCH + bootstrap + jump (recommended)
 ]
 
 
@@ -79,7 +80,7 @@ class Config:
     interval:      str  = field(default_factory=lambda: _env_str_choice("CANDLE_INTERVAL", "15m", VALID_INTERVALS))
 
     # Monte Carlo
-    n_sim:         int  = field(default_factory=lambda: _env_int("MC_SIMULATIONS",      500, 50, 5000))
+    n_sim:         int  = field(default_factory=lambda: _env_int("MC_SIMULATIONS",    10000, 50, 50000))
     n_forward:     int  = field(default_factory=lambda: _env_int("MC_FORWARD_CANDLES",  10,  1,  100))
     lookback:      int  = field(default_factory=lambda: _env_int("LOOKBACK",            50, 20, 500))
     mc_model:      str  = field(default_factory=lambda: _env_str_choice("MC_MODEL", "garch", VALID_MC_MODELS))

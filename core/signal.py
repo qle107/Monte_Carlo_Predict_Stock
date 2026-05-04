@@ -122,59 +122,83 @@ def _score_trend_bias(bias: float) -> float:
     return float(np.clip((bias - 0.5) * 2.0, -0.4, 0.4))
 
 
+def _score_rsi_divergence(div: float) -> float:
+    """Divergence is a strong mean-reversion signal. ±0.5 max contribution."""
+    return float(np.clip(div * 0.5, -0.5, 0.5))
+
+
+def _score_ema200_dist(dist_pct: float) -> float:
+    """
+    Price far above EMA200 → mildly bearish (overbought long-term).
+    Price far below EMA200 → mildly bullish (oversold long-term).
+    Capped at ±0.25 — this is a slow signal.
+    """
+    return float(np.clip(-dist_pct * 0.012, -0.25, 0.25))
+
+
 # ─── Regime-aware weights ───────────────────────────────────────────────────
 
 # Each row sums to 1.0. Trend regimes lean on slope/MACD/ADX; range regimes
 # lean on RSI/Bollinger; breakout regimes lean on momentum + ADX.
+# v3: rsi_div and ema200 added as small but useful signals.
 _BASE_WEIGHTS = {
-    "rsi":        0.10,
-    "slope":      0.16,
-    "momentum":   0.12,
-    "ema":        0.10,
-    "macd":       0.12,
-    "bollinger":  0.08,
-    "adx":        0.08,
-    "obv":        0.08,
+    "rsi":        0.09,
+    "slope":      0.15,
+    "momentum":   0.11,
+    "ema":        0.09,
+    "macd":       0.11,
+    "bollinger":  0.07,
+    "adx":        0.07,
+    "obv":        0.07,
     "vwap":       0.05,
-    "skew":       0.05,
+    "skew":       0.04,
     "trend_bias": 0.06,
+    "rsi_div":    0.05,   # RSI divergence — mean reversion
+    "ema200":     0.04,   # long-term trend anchor
 }
 
 _REGIME_WEIGHTS = {
     "strong_uptrend": {
-        "rsi": 0.03, "slope": 0.22, "momentum": 0.16, "ema": 0.14,
-        "macd": 0.16, "bollinger": 0.02, "adx": 0.12, "obv": 0.08,
-        "vwap": 0.04, "skew": 0.01, "trend_bias": 0.02,
+        "rsi": 0.03, "slope": 0.20, "momentum": 0.15, "ema": 0.13,
+        "macd": 0.15, "bollinger": 0.02, "adx": 0.11, "obv": 0.07,
+        "vwap": 0.03, "skew": 0.01, "trend_bias": 0.02,
+        "rsi_div": 0.04, "ema200": 0.04,
     },
     "weak_uptrend": {
-        "rsi": 0.06, "slope": 0.20, "momentum": 0.14, "ema": 0.12,
-        "macd": 0.14, "bollinger": 0.04, "adx": 0.10, "obv": 0.10,
+        "rsi": 0.05, "slope": 0.18, "momentum": 0.13, "ema": 0.11,
+        "macd": 0.13, "bollinger": 0.04, "adx": 0.09, "obv": 0.09,
         "vwap": 0.05, "skew": 0.02, "trend_bias": 0.03,
+        "rsi_div": 0.05, "ema200": 0.03,
     },
     "strong_downtrend": {
-        "rsi": 0.03, "slope": 0.22, "momentum": 0.16, "ema": 0.14,
-        "macd": 0.16, "bollinger": 0.02, "adx": 0.12, "obv": 0.08,
-        "vwap": 0.04, "skew": 0.01, "trend_bias": 0.02,
+        "rsi": 0.03, "slope": 0.20, "momentum": 0.15, "ema": 0.13,
+        "macd": 0.15, "bollinger": 0.02, "adx": 0.11, "obv": 0.07,
+        "vwap": 0.03, "skew": 0.01, "trend_bias": 0.02,
+        "rsi_div": 0.04, "ema200": 0.04,
     },
     "weak_downtrend": {
-        "rsi": 0.06, "slope": 0.20, "momentum": 0.14, "ema": 0.12,
-        "macd": 0.14, "bollinger": 0.04, "adx": 0.10, "obv": 0.10,
+        "rsi": 0.05, "slope": 0.18, "momentum": 0.13, "ema": 0.11,
+        "macd": 0.13, "bollinger": 0.04, "adx": 0.09, "obv": 0.09,
         "vwap": 0.05, "skew": 0.02, "trend_bias": 0.03,
+        "rsi_div": 0.05, "ema200": 0.03,
     },
     "breakout_up": {
-        "rsi": 0.02, "slope": 0.20, "momentum": 0.20, "ema": 0.10,
-        "macd": 0.18, "bollinger": 0.02, "adx": 0.16, "obv": 0.08,
+        "rsi": 0.02, "slope": 0.19, "momentum": 0.19, "ema": 0.09,
+        "macd": 0.17, "bollinger": 0.02, "adx": 0.15, "obv": 0.08,
         "vwap": 0.02, "skew": 0.01, "trend_bias": 0.01,
+        "rsi_div": 0.03, "ema200": 0.02,
     },
     "breakout_down": {
-        "rsi": 0.02, "slope": 0.20, "momentum": 0.20, "ema": 0.10,
-        "macd": 0.18, "bollinger": 0.02, "adx": 0.16, "obv": 0.08,
+        "rsi": 0.02, "slope": 0.19, "momentum": 0.19, "ema": 0.09,
+        "macd": 0.17, "bollinger": 0.02, "adx": 0.15, "obv": 0.08,
         "vwap": 0.02, "skew": 0.01, "trend_bias": 0.01,
+        "rsi_div": 0.03, "ema200": 0.02,
     },
     "range_bound": {
-        "rsi": 0.22, "slope": 0.04, "momentum": 0.04, "ema": 0.02,
-        "macd": 0.06, "bollinger": 0.30, "adx": 0.02, "obv": 0.06,
-        "vwap": 0.10, "skew": 0.06, "trend_bias": 0.08,
+        "rsi": 0.20, "slope": 0.03, "momentum": 0.03, "ema": 0.02,
+        "macd": 0.05, "bollinger": 0.27, "adx": 0.02, "obv": 0.05,
+        "vwap": 0.09, "skew": 0.05, "trend_bias": 0.07,
+        "rsi_div": 0.08, "ema200": 0.04,  # divergence is very useful in range
     },
     "choppy":   _BASE_WEIGHTS,
 }
@@ -247,6 +271,9 @@ def compute_signal(ind: Indicators, regime: Optional[Regime] = None) -> Signal:
         "vwap":       _score_vwap(ind.vwap_dist),
         "skew":       _score_skewness(ind.skewness),
         "trend_bias": _score_trend_bias(ind.trend_bias),
+        # v3
+        "rsi_div":    _score_rsi_divergence(ind.rsi_divergence),
+        "ema200":     _score_ema200_dist(ind.ema200_dist),
     }
 
     weights = _weights_for(regime)

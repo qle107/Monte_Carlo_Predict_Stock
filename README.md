@@ -24,7 +24,7 @@ POLYGON_API_KEY=...        # optional, paid
 TICKER=PLTR
 CANDLE_INTERVAL=15m
 MC_MODEL=garch              # gaussian | student_t | garch | bootstrap | jump
-MC_SIMULATIONS=500
+MC_SIMULATIONS=10000
 MC_FORWARD_CANDLES=10
 ```
 

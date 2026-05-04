@@ -21,9 +21,12 @@ from config import VALID_INTERVALS, VALID_MC_MODELS, cfg
 from core import analyse
 from core.backtest import walk_forward
 from core.fetcher import fetch_candles
+from core.scanner import scan_tickers, get_watchlist, WATCHLISTS
 from core.store import SignalStore
+from core.trade_setup import trade_setup_from_analysis, trade_setup_from_scan
+from core.zone_scanner import zone_scan_tickers
 
-from .models import BacktestRequest, ConfigUpdate
+from .models import BacktestRequest, ConfigUpdate, ScanRequest
 
 logger = logging.getLogger(__name__)
 
@@ -117,12 +120,18 @@ async def update_config(update: ConfigUpdate):
             pass
     _poll_task = asyncio.create_task(_poll_loop())
 
-    # Immediate fresh analysis
+    # Immediate fresh analysis — include full result in response so the
+    # frontend can update the chart instantly without waiting for WS broadcast.
     result = await _run_analysis()
     if "error" not in result:
         await _broadcast(result)
 
-    return {"status": "ok", "changed": changed, "config": await get_config()}
+    return {
+        "status":  "ok",
+        "changed": changed,
+        "config":  await get_config(),
+        "result":  result if "error" not in result else None,
+    }
 
 
 @app.get("/api/health")
@@ -144,7 +153,7 @@ async def api_backtest(req: BacktestRequest):
     ticker       = (req.ticker or cfg.ticker).upper().strip()
     interval     = req.interval     or cfg.interval
     n_forward    = req.n_forward    or cfg.n_forward
-    n_sim        = req.n_sim        or min(cfg.n_sim, 200)  # cap for speed
+    n_sim        = req.n_sim        or min(cfg.n_sim, 1000)  # cap for backtest speed
     mc_model     = req.mc_model     or cfg.mc_model
     history_bars = req.history_bars or 200
 
@@ -228,6 +237,106 @@ async def api_export_csv(ticker: Optional[str] = None, limit: int = 1000):
     )
 
 
+# ─── REST: scanner ───────────────────────────────────────────────────────────
+
+@app.get("/api/scan/watchlists")
+async def api_scan_watchlists():
+    """Return available watchlist names and their tickers."""
+    return {name: tickers for name, tickers in WATCHLISTS.items()}
+
+
+@app.post("/api/scan")
+async def api_scan(req: ScanRequest):
+    """
+    Scan a list of tickers (or a named watchlist) for breakouts / breakdowns.
+    Returns ranked results grouped into breakouts / breakdowns / neutral.
+    """
+    if req.tickers:
+        tickers = [t.upper().strip() for t in req.tickers if t.strip()]
+    else:
+        tickers = get_watchlist(req.watchlist or "sp500_large")
+
+    if not tickers:
+        raise HTTPException(status_code=400, detail="No tickers provided")
+    if len(tickers) > 200:
+        raise HTTPException(status_code=400, detail="Max 200 tickers per scan")
+
+    interval   = req.interval or "1d"
+    lookback   = req.lookback or 60
+    extended   = req.extended if req.extended is not None else cfg.extended
+    concurrent = min(req.max_concurrent or 8, 20)
+
+    try:
+        report = await scan_tickers(
+            tickers        = tickers,
+            interval       = interval,
+            lookback       = lookback,
+            extended       = extended,
+            max_concurrent = concurrent,
+            min_score_abs  = req.min_score_abs or 0.0,
+        )
+    except Exception as e:
+        logger.exception("Scan failed")
+        raise HTTPException(status_code=500, detail=f"scan failed: {e}")
+
+    # ── Attach trade setup to every scan result ───────────────────────────
+    def _enrich(items: list) -> list:
+        enriched = []
+        for r in items:
+            try:
+                r["trade_setup"] = trade_setup_from_scan(r)
+            except Exception as ex:
+                r["trade_setup"] = {"valid": False, "side": "none", "reason": str(ex)}
+            enriched.append(r)
+        return enriched
+
+    report["breakouts"]  = _enrich(report.get("breakouts",  []))
+    report["breakdowns"] = _enrich(report.get("breakdowns", []))
+    report["neutral"]    = _enrich(report.get("neutral",    []))
+    report["all"]        = _enrich(report.get("all",        []))
+
+    return report
+
+
+@app.post("/api/zone-scan")
+async def api_zone_scan(req: ScanRequest):
+    """
+    Scan for Demand/Supply Zone + EMA 20/50/200 strategy setups.
+    Uses zone detection + EMA alignment + MC-estimated trade setup.
+    Returns results split by longs / shorts / no_setup.
+    """
+    if req.tickers:
+        tickers = [t.upper().strip() for t in req.tickers if t.strip()]
+    else:
+        tickers = get_watchlist(req.watchlist or "sp500_large")
+
+    if not tickers:
+        raise HTTPException(status_code=400, detail="No tickers provided")
+    if len(tickers) > 200:
+        raise HTTPException(status_code=400, detail="Max 200 tickers per scan")
+
+    interval   = req.interval or "1d"
+    lookback   = req.lookback or 120    # need more bars for EMA200
+    extended   = req.extended if req.extended is not None else cfg.extended
+    concurrent = min(req.max_concurrent or 8, 20)
+    min_score  = float(req.min_score_abs or 0.0)
+
+    try:
+        report = await zone_scan_tickers(
+            tickers        = tickers,
+            interval       = interval,
+            lookback       = lookback,
+            extended       = extended,
+            max_concurrent = concurrent,
+            min_score      = min_score,
+        )
+    except Exception as e:
+        logger.exception("Zone scan failed")
+        raise HTTPException(status_code=500, detail=f"zone scan failed: {e}")
+
+    return report
+
+
 # ─── WebSocket ───────────────────────────────────────────────────────────────
 
 @app.websocket("/ws")
@@ -273,11 +382,21 @@ async def _run_analysis() -> dict:
         result = await loop.run_in_executor(
             None, analyse, df, cfg.n_sim, cfg.n_forward, cfg.mc_model
         )
+        # ── Trade setup ───────────────────────────────────────────────
+        try:
+            trade_setup = trade_setup_from_analysis(
+                cfg.ticker, result, interval=cfg.interval, df=df
+            )
+        except Exception as e:
+            logger.warning("trade_setup failed: %s", e)
+            trade_setup = {"valid": False, "side": "none", "reason": str(e)}
+
         result.update({
-            "ticker":     cfg.ticker,
-            "interval":   cfg.interval,
-            "extended":   cfg.extended,
-            "mc_model":   cfg.mc_model,
+            "ticker":      cfg.ticker,
+            "interval":    cfg.interval,
+            "extended":    cfg.extended,
+            "mc_model":    cfg.mc_model,
+            "trade_setup": trade_setup,
             "config": {
                 "n_sim":        cfg.n_sim,
                 "n_forward":    cfg.n_forward,

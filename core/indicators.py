@@ -46,7 +46,7 @@ class Indicators:
     trend_bias:    float
     vol_regime:    str
 
-    # new
+    # v2 indicators
     macd:          float
     macd_signal:   float
     macd_hist:     float
@@ -55,6 +55,14 @@ class Indicators:
     obv_slope:     float          # %/candle of OBV slope (volume momentum)
     vwap_dist:     float          # (price - vwap) / price * 100
     kurtosis:      float          # excess kurtosis of returns
+
+    # v3 indicators
+    rsi_divergence: float         # +1 bullish div, -1 bearish div, 0 none
+    vol_of_vol:    float          # std of rolling vol (vol regime instability)
+    price_vs_52w:  float          # % distance from 52-week high (negative = below)
+    ema_200:       float          # 200-bar EMA (long-term trend anchor)
+    ema200_dist:   float          # % distance of price from EMA200
+
     returns:       List[float] = field(default_factory=list)   # historical returns (decimal)
 
 
@@ -355,6 +363,112 @@ def _vwap_distance(df: pd.DataFrame) -> float:
         return 0.0
 
 
+# ─── v3 indicators ──────────────────────────────────────────────────────────
+
+def _rsi_divergence(closes: np.ndarray, period: int = 14, lookback: int = 30) -> float:
+    """
+    Detect RSI divergence over the last `lookback` bars.
+    Returns: +1.0 bullish (price lower low, RSI higher low),
+             -1.0 bearish (price higher high, RSI lower high),
+              0.0 no clear divergence.
+    """
+    n = min(lookback, len(closes))
+    if n < period + 5:
+        return 0.0
+    try:
+        window = closes[-n:]
+        # Compute RSI series for the window
+        def rsi_series(c: np.ndarray, p: int) -> np.ndarray:
+            out = np.full(len(c), 50.0)
+            for i in range(p + 1, len(c)):
+                sub = c[i - p: i + 1]
+                deltas = np.diff(sub)
+                gains  = float(deltas[deltas > 0].sum())
+                losses = float(-deltas[deltas < 0].sum())
+                if losses == 0:
+                    out[i] = 100.0 if gains > 0 else 50.0
+                else:
+                    out[i] = 100.0 - 100.0 / (1.0 + gains / losses)
+            return out
+
+        rsi_arr = rsi_series(window, period)
+        mid = n // 2
+
+        price_first_half = window[:mid]
+        price_second_half = window[mid:]
+        rsi_first_half = rsi_arr[:mid]
+        rsi_second_half = rsi_arr[mid:]
+
+        # Bullish: price makes lower low but RSI makes higher low
+        if (price_second_half.min() < price_first_half.min() and
+                rsi_second_half.min() > rsi_first_half.min()):
+            return 1.0
+        # Bearish: price makes higher high but RSI makes lower high
+        if (price_second_half.max() > price_first_half.max() and
+                rsi_second_half.max() < rsi_first_half.max()):
+            return -1.0
+        return 0.0
+    except Exception:
+        return 0.0
+
+
+def _vol_of_vol(rets: np.ndarray, window: int = 10, n_windows: int = 5) -> float:
+    """
+    Volatility of volatility: std of rolling realized vols.
+    High VoV = unstable vol regime → regime change warning.
+    Normalised to [0..1] using a rough empirical scale.
+    """
+    if len(rets) < window * n_windows:
+        return 0.0
+    try:
+        vols = []
+        for i in range(n_windows):
+            start = -(window * (n_windows - i))
+            end   = -(window * (n_windows - i - 1)) or None
+            sub   = rets[start:end]
+            if len(sub) >= 3:
+                vols.append(float(np.std(sub)))
+        if len(vols) < 2:
+            return 0.0
+        vov = float(np.std(vols))
+        return _safe(float(np.clip(vov / 0.01, 0.0, 1.0)), 0.0)
+    except Exception:
+        return 0.0
+
+
+def _price_vs_52w(closes: np.ndarray) -> float:
+    """
+    % distance of current price from the highest close in the window.
+    Negative means below the 52-week (window) high.
+    At all-time-high = 0. Down 10% from ATH = -10.0.
+    """
+    if len(closes) < 2:
+        return 0.0
+    try:
+        high = float(np.max(closes))
+        cur  = float(closes[-1])
+        if high <= 0:
+            return 0.0
+        return _safe((cur / high - 1.0) * 100.0, 0.0)
+    except Exception:
+        return 0.0
+
+
+def _ema200_distance(closes: np.ndarray) -> tuple:
+    """Returns (ema200_value, pct_distance_of_price_from_ema200)."""
+    if len(closes) < 10:
+        return float(closes[-1]), 0.0
+    try:
+        ema200 = float(_ema_series(closes, min(200, len(closes)))[-1])
+        cur    = float(closes[-1])
+        if ema200 <= 0:
+            return ema200, 0.0
+        dist = _safe((cur / ema200 - 1.0) * 100.0, 0.0)
+        return round(ema200, 4), round(dist, 3)
+    except Exception:
+        return float(closes[-1]), 0.0
+
+
 # ─── Public ─────────────────────────────────────────────────────────────────
 
 def compute_indicators(df: pd.DataFrame) -> Indicators:
@@ -366,6 +480,7 @@ def compute_indicators(df: pd.DataFrame) -> Indicators:
     rets  = _returns(closes)
     ema_f = _ema(closes, 9)
     ema_s = _ema(closes, 21)
+    ema200, ema200_dist = _ema200_distance(closes)
 
     cross = "neutral"
     if ema_f > 0 and ema_s > 0:
@@ -376,28 +491,34 @@ def compute_indicators(df: pd.DataFrame) -> Indicators:
     macd_l, macd_s, macd_h = _macd(closes)
 
     return Indicators(
-        rsi          = round(_rsi(closes),                 2),
-        slope        = round(_slope(closes),               4),
-        momentum     = round(_momentum(closes),            4),
-        ema_fast     = round(ema_f,                        4),
-        ema_slow     = round(ema_s,                        4),
-        ema_cross    = cross,
-        atr_pct      = round(_atr_pct(df),                 4),
-        gap_pct      = round(gap,                          2),
-        is_gap_up    = gap_up,
-        is_gap_down  = gap_down,
-        mean_return  = round(_mean_return(rets),           5),
-        std_return   = round(_std_return(rets),            5),
-        skewness     = round(_skewness(rets),              3),
-        trend_bias   = round(_trend_bias(closes),          3),
-        vol_regime   = _vol_regime(rets),
-        macd         = round(macd_l,                       4),
-        macd_signal  = round(macd_s,                       4),
-        macd_hist    = round(macd_h,                       4),
-        bb_position  = round(_bollinger_position(closes),  3),
-        adx          = round(_adx(df),                     2),
-        obv_slope    = round(_obv_slope(df),               4),
-        vwap_dist    = round(_vwap_distance(df),           3),
-        kurtosis     = round(_kurtosis(rets),              3),
-        returns      = [float(r) for r in rets[-200:]],   # cap stored
+        rsi           = round(_rsi(closes),                 2),
+        slope         = round(_slope(closes),               4),
+        momentum      = round(_momentum(closes),            4),
+        ema_fast      = round(ema_f,                        4),
+        ema_slow      = round(ema_s,                        4),
+        ema_cross     = cross,
+        atr_pct       = round(_atr_pct(df),                 4),
+        gap_pct       = round(gap,                          2),
+        is_gap_up     = gap_up,
+        is_gap_down   = gap_down,
+        mean_return   = round(_mean_return(rets),           5),
+        std_return    = round(_std_return(rets),            5),
+        skewness      = round(_skewness(rets),              3),
+        trend_bias    = round(_trend_bias(closes),          3),
+        vol_regime    = _vol_regime(rets),
+        macd          = round(macd_l,                       4),
+        macd_signal   = round(macd_s,                       4),
+        macd_hist     = round(macd_h,                       4),
+        bb_position   = round(_bollinger_position(closes),  3),
+        adx           = round(_adx(df),                     2),
+        obv_slope     = round(_obv_slope(df),               4),
+        vwap_dist     = round(_vwap_distance(df),           3),
+        kurtosis      = round(_kurtosis(rets),              3),
+        # v3
+        rsi_divergence= round(_rsi_divergence(closes),      1),
+        vol_of_vol    = round(_vol_of_vol(rets),            3),
+        price_vs_52w  = round(_price_vs_52w(closes),        2),
+        ema_200       = ema200,
+        ema200_dist   = ema200_dist,
+        returns       = [float(r) for r in rets[-200:]],   # cap stored
     )

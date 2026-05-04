@@ -138,8 +138,11 @@ def _donchian(df: pd.DataFrame, n: int = 20) -> tuple[float, float, float, bool,
     """
     Returns (position, high, low, breakout_up, breakout_down).
        position = -1 at lower band, +1 at upper, 0 at midline.
-       breakout_up   = current close > previous-N-bars max
-       breakout_down = current close < previous-N-bars min
+       breakout_up   = current close > previous-N-bars max  (any of n=20 OR n=10)
+       breakout_down = current close < previous-N-bars min  (any of n=20 OR n=10)
+
+    Also fires breakout_up when price is within 1.5% of the N-bar high and
+    ADX is strong — catches "just broke out and now consolidating at highs" scenarios.
     """
     if len(df) < n + 2:
         c = float(df["close"].iloc[-1]) if len(df) else 0.0
@@ -156,9 +159,27 @@ def _donchian(df: pd.DataFrame, n: int = 20) -> tuple[float, float, float, bool,
         pos = (cur_close - (hi + lo) / 2.0) / (rng / 2.0)
         pos = float(np.clip(pos, -1.5, 1.5))
 
-        breakout_up   = cur_high > hi   # bar made a new N-bar high
-        breakout_down = cur_low  < lo
-        return pos, hi, lo, breakout_up, breakout_down
+        brk_up   = cur_high > hi   # primary: new N-bar high
+        brk_down = cur_low  < lo
+
+        # Secondary check on shorter window (10 bars) — catches recent breakouts
+        if not brk_up and len(df) >= 12:
+            prev10 = df.iloc[-11:-1]
+            hi10   = float(prev10["high"].max())
+            lo10   = float(prev10["low"].min())
+            if cur_high > hi10:
+                brk_up = True
+            if cur_low < lo10:
+                brk_down = True
+
+        # Tertiary: price held near N-bar high (post-breakout consolidation)
+        # If close is within 3% of the N-bar high, treat as near-breakout territory
+        if not brk_up and hi > 0:
+            pct_from_hi = (hi - cur_close) / hi
+            if pct_from_hi < 0.03 and cur_close > (hi + lo) / 2.0:
+                brk_up = True
+
+        return pos, hi, lo, brk_up, brk_down
     except Exception:
         c = float(df["close"].iloc[-1]) if len(df) else 0.0
         return 0.0, c, c, False, False
@@ -211,6 +232,10 @@ def _range_compression(df: pd.DataFrame, n: int = 20) -> float:
     """
     1.0 when the recent range is unusually tight relative to the long-term
     daily range; 0.0 when range is unusually wide. Used to flag consolidation.
+
+    Gap-up correction: if price gapped up significantly (>3%) at any point
+    in the recent window, the "tight recent range" is actually post-breakout
+    consolidation — not a range-bound setup. Return a reduced compression value.
     """
     if len(df) < n * 2:
         return 0.5
@@ -218,14 +243,33 @@ def _range_compression(df: pd.DataFrame, n: int = 20) -> float:
         c = df["close"].to_numpy(float)
         h = df["high"].to_numpy(float)
         l = df["low"].to_numpy(float)
+
+        # Detect large gaps in recent N bars (open vs prev close)
+        if "open" in df.columns:
+            opens  = df["open"].to_numpy(float)
+            closes = c
+            # Bar-to-bar gap: open of bar vs close of previous bar
+            gap_pcts = np.abs(opens[1:] - closes[:-1]) / np.clip(closes[:-1], 1e-9, None)
+            max_gap = float(np.max(gap_pcts[-n:])) if len(gap_pcts) >= n else 0.0
+        else:
+            # Estimate from close-to-close jumps as proxy
+            rets = np.abs(np.diff(c[-n - 1:]) / np.clip(c[-n - 2:-1], 1e-9, None))
+            max_gap = float(np.max(rets)) if len(rets) > 0 else 0.0
+
         # Recent N-bar high/low spread vs long N*2-bar
         recent_spread = float(np.max(h[-n:]) - np.min(l[-n:]))
         long_spread   = float(np.max(h[-2 * n:]) - np.min(l[-2 * n:]))
         if long_spread <= 0 or not np.isfinite(long_spread):
             return 0.5
         ratio = recent_spread / long_spread
-        # ratio ~ 0.5 means recent half = totally normal; <0.3 = compressed
-        return float(np.clip(1.0 - (ratio - 0.3) / 0.7, 0.0, 1.0))
+        rc = float(np.clip(1.0 - (ratio - 0.3) / 0.7, 0.0, 1.0))
+
+        # If there was a significant gap (>3%), suppress compression reading
+        # — this is post-breakout consolidation, not a true range
+        if max_gap > 0.03:
+            rc = rc * max(0.0, 1.0 - (max_gap - 0.03) / 0.10)
+
+        return float(np.clip(rc, 0.0, 1.0))
     except Exception:
         return 0.5
 
@@ -234,15 +278,38 @@ def _range_compression(df: pd.DataFrame, n: int = 20) -> float:
 
 def _label_regime(trend: float, range_score: float,
                   brk_up: bool, brk_dn: bool, adx: float) -> str:
-    """Map underlying scores into a single regime label."""
-    if brk_up   and trend > 0.1: return "breakout_up"
-    if brk_dn   and trend < -0.1: return "breakout_down"
-    if range_score > 0.6 and abs(trend) < 0.25:
+    """Map underlying scores into a single regime label.
+
+    Priority order (highest to lowest):
+      1. Donchian breakout with directional trend
+      2. Strong trend confirmed by ADX — overrides range_bound
+      3. Range-bound (only when ADX is weak — avoids mislabelling
+         post-breakout consolidations as range-bound)
+      4. Choppy / weak trend fallthrough
+    """
+    # 1. Breakout signals (Donchian fired + mild directional lean)
+    if brk_up and trend > -0.05:   return "breakout_up"    # allow near-zero trend
+    if brk_dn and trend <  0.05:   return "breakout_down"
+
+    # 2. Strong trend confirmed by ADX — never call this range_bound
+    if adx > 30:
+        if trend >  0.10: return "strong_uptrend" if trend > 0.35 else "weak_uptrend"
+        if trend < -0.10: return "strong_downtrend" if trend < -0.35 else "weak_downtrend"
+
+    # 3. Range-bound — only when ADX is genuinely weak (< 25) AND trend is flat
+    if range_score > 0.6 and abs(trend) < 0.25 and adx < 25:
         return "range_bound"
+
+    # 4. Moderate ADX (20-30) with directional trend
+    if adx > 20:
+        if trend >  0.10: return "weak_uptrend"
+        if trend < -0.10: return "weak_downtrend"
+
+    # 5. Weak / choppy
     if abs(trend) < 0.15 and range_score < 0.4:
         return "choppy"
-    if trend >  0.45 or (trend > 0.25 and adx > 25): return "strong_uptrend"
-    if trend < -0.45 or (trend < -0.25 and adx > 25): return "strong_downtrend"
+    if trend >  0.45: return "strong_uptrend"
+    if trend < -0.45: return "strong_downtrend"
     if trend >  0.15: return "weak_uptrend"
     if trend < -0.15: return "weak_downtrend"
     return "choppy"
@@ -376,10 +443,12 @@ def detect_regime(df: pd.DataFrame, adx: float = 0.0,
     # ── Range score (0..1) ──────────────────────────────────────────────
     # High when: low |trend|, low Hurst, high range_compression, low ADX,
     # and price near Donchian midline.
+    # ADX > 25 strongly suppresses range_score — a trending stock is not range-bound.
+    adx_range_penalty = min(1.0, adx / 30.0)   # 0 at ADX=0, 1.0 at ADX=30+
     range_pieces = [
         1.0 - min(1.0, abs(trend_score) * 2.0),
         1.0 - min(1.0, abs(hurst - 0.5) * 2.0),
-        rc,
+        rc * (1.0 - adx_range_penalty * 0.6),   # ADX dampens compression weight
         1.0 - min(1.0, adx / 40.0),
         1.0 - min(1.0, abs(don_pos)),
     ]

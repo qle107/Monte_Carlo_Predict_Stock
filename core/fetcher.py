@@ -50,11 +50,24 @@ _INTERVAL_MINUTES = {
 def _lookback_days(interval: str, n_candles: int, buffer: float = 1.6) -> int:
     """
     How many calendar days to request to reliably get n_candles.
-    buffer=1.6 accounts for weekends, holidays, and session gaps.
+
+    For daily ('1d') bars:
+      1 trading day ≈ 1 calendar day, but weekends + holidays mean we need
+      ~1.45× more calendar days. We also add a fixed 10-day cushion so that
+      weekend/holiday runs never return 0 rows.
+
+    For intraday bars:
+      candles_per_trading_day = 390 min / interval_min
+      calendar_days_needed    = (n_candles / cpd) * buffer + 3
     """
+    if interval == "1d":
+        # Each trading day = 1 bar; ~5/7 calendar days are trading days.
+        needed = max(int(n_candles * 1.5) + 10, 14)   # always ≥14 calendar days
+        return min(needed, _YF_MAX_DAYS.get("1d", 3650))
+
     mins   = _INTERVAL_MINUTES.get(interval, 15)
-    cpd    = 390 / mins                           # candles per trading day
-    needed = max(int((n_candles / cpd) * buffer) + 1, 2)
+    cpd    = 390.0 / mins                         # candles per trading day
+    needed = max(int((n_candles / cpd) * buffer) + 3, 5)
     return min(needed, _YF_MAX_DAYS.get(interval, 60))
 
 
@@ -105,6 +118,9 @@ def _session_label(df: pd.DataFrame) -> str:
         return current_session()
 
     h, m = last_et.hour, last_et.minute
+    # Daily bars arrive as midnight UTC (= 7pm/8pm ET) — treat as regular
+    if h == 0 and m == 0:
+        return "regular"
     if (h > 9 or (h == 9 and m >= 30)) and h < 16:
         return "regular"
     if 4 <= h < 9 or (h == 9 and m < 30):
@@ -116,16 +132,28 @@ def _session_label(df: pd.DataFrame) -> str:
 
 # ── Regular-hours filter ─────────────────────────────────────────────────────
 
-def _filter_regular_hours(df: pd.DataFrame) -> pd.DataFrame:
-    """Strip candles outside 9:30am–4:00pm ET."""
+def _filter_regular_hours(df: pd.DataFrame, interval: str = "") -> pd.DataFrame:
+    """
+    Strip candles outside 9:30am–4:00pm ET.
+    For daily bars the index is date-only (midnight UTC) — skip filtering,
+    otherwise we'd remove every row.
+    """
+    # Daily bars: midnight timestamps have hour==0, filtering would wipe them.
+    if interval == "1d" or interval == "4h":
+        return df
     try:
         et   = df.index.tz_convert("America/New_York")
+        # If ALL bars are at midnight it's a daily feed — don't filter
+        if (et.hour == 0).all():
+            return df
         mask = (
             (et.hour > 9) | ((et.hour == 9) & (et.minute >= 30))
         ) & (
             (et.hour < 16) | ((et.hour == 16) & (et.minute == 0))
         )
-        return df[mask]
+        filtered = df[mask]
+        # Safety: if filtering removed everything, return original
+        return filtered if len(filtered) > 0 else df
     except Exception:
         return df
 
@@ -154,7 +182,7 @@ def _yfinance(ticker: str, interval: str, n: int, extended: bool) -> pd.DataFram
     df.index = pd.to_datetime(df.index, utc=True)
     df = df[["open", "high", "low", "close", "volume"]].dropna()
     if not extended:
-        df = _filter_regular_hours(df)
+        df = _filter_regular_hours(df, interval=interval)
     return df.tail(n)
 
 
@@ -194,7 +222,7 @@ def _alpaca(ticker: str, interval: str, n: int, extended: bool) -> pd.DataFrame:
     bars.index = pd.to_datetime(bars.index, utc=True)
     bars = bars[["open", "high", "low", "close", "volume"]].dropna()
     if not extended:
-        bars = _filter_regular_hours(bars)
+        bars = _filter_regular_hours(bars, interval=interval)
     return bars.tail(n)
 
 
@@ -228,7 +256,7 @@ def _polygon(ticker: str, interval: str, n: int, extended: bool) -> pd.DataFrame
     ]
     df = pd.DataFrame(rows).set_index("timestamp")
     if not extended:
-        df = _filter_regular_hours(df)
+        df = _filter_regular_hours(df, interval=interval)
     return df.tail(n)
 
 

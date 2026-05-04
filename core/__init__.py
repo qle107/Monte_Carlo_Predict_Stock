@@ -31,7 +31,7 @@ from .montecarlo import run as run_mc
 
 def analyse(
     df: pd.DataFrame,
-    n_simulations: int = 500,
+    n_simulations: int = 10000,
     n_forward:     int = 10,
     mc_model:      str = "garch",
 ) -> dict:
