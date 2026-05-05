@@ -263,8 +263,276 @@ header h1 { font-size:15px; font-weight:600; }
     </button>
     <button class="hdr-btn" onclick="window.open('/api/export.csv','_blank')">CSV</button>
     <button class="hdr-btn" id="settings-btn" onclick="toggleSettings()">Settings</button>
+    <button class="hdr-btn" id="portfolio-btn" onclick="togglePortfolio()" style="border-color:rgba(88,166,255,.4);color:#58a6ff;">📊 Portfolio</button>
   </div>
 </header>
+
+<!-- ── Portfolio Drawer ───────────────────────────────────────────────── -->
+<div id="portfolio-drawer" style="
+  display:none;
+  position:fixed;inset:0;z-index:9999;
+  background:#0e1117;
+  overflow-y:auto;
+  animation:slideIn .25s ease;
+">
+  <style>
+    @keyframes slideIn { from{transform:translateY(30px);opacity:0} to{transform:translateY(0);opacity:1} }
+
+    /* ── Portfolio Drawer Styles ── */
+    #portfolio-drawer { --bg:#0e1117; --surface:#161b22; --surface2:#1c2128;
+      --border:rgba(255,255,255,0.08); --text:#e6edf3; --text2:#8b949e;
+      --accent:#58a6ff; --green:#3fb950; --red:#f85149; --yellow:#d29922;
+      --radius:10px; --shadow:0 2px 16px rgba(0,0,0,.5);
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:14px; color:var(--text);
+    }
+    #pt-header {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:12px 20px; border-bottom:1px solid var(--border);
+      background:var(--surface); position:sticky; top:0; z-index:10;
+    }
+    #pt-header .logo { display:flex; align-items:center; gap:10px; font-weight:700; font-size:16px; }
+    #pt-header .logo-icon { width:30px;height:30px;background:var(--accent);border-radius:8px;
+      display:flex;align-items:center;justify-content:center;color:#0e1117;font-size:14px; }
+    #pt-close { background:transparent;border:1px solid rgba(255,255,255,.15);color:var(--text);
+      border-radius:6px;padding:5px 14px;font-size:13px;cursor:pointer; }
+    #pt-close:hover { background:rgba(255,255,255,.07); }
+    #pt-header-actions { display:flex; gap:8px; align-items:center; }
+    .pt-live-badge { display:flex;align-items:center;gap:6px;font-size:12px;color:var(--green);font-weight:600; }
+    .pt-live-dot { width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 2s infinite; }
+
+    #pt-body { display:grid; grid-template-columns:220px 1fr; min-height:calc(100vh - 56px); }
+
+    /* Sidebar */
+    #pt-sidebar { background:var(--surface);border-right:1px solid var(--border);
+      padding:16px 12px;display:flex;flex-direction:column;gap:6px; }
+    .pt-sidebar-title { font-size:11px;font-weight:700;text-transform:uppercase;
+      letter-spacing:.08em;color:var(--text2);padding:0 8px 8px; }
+    .pt-pf-item { padding:9px 12px;border-radius:7px;cursor:pointer;font-size:13px;
+      font-weight:500;display:flex;align-items:center;justify-content:space-between;transition:background .15s; }
+    .pt-pf-item:hover { background:var(--surface2); }
+    .pt-pf-item.active { background:rgba(88,166,255,.18);color:var(--accent); }
+    .pt-pf-del { opacity:0;font-size:13px;color:var(--red);cursor:pointer;padding:2px 5px;border-radius:4px; }
+    .pt-pf-edit-btn { opacity:0;font-size:12px;color:var(--text2);cursor:pointer;padding:2px 5px;border-radius:4px; }
+    .pt-pf-item:hover .pt-pf-del, .pt-pf-item:hover .pt-pf-edit-btn { opacity:1; }
+    .pt-pf-item.active .pt-pf-del { opacity:1;color:rgba(248,81,73,.7); }
+    .pt-pf-item.active .pt-pf-edit-btn { opacity:1; }
+    .pt-pf-name-input { flex:1;background:transparent;border:none;border-bottom:1px solid var(--accent);
+      color:var(--text);font-size:13px;font-weight:500;outline:none;padding:1px 2px;min-width:0; }
+    .pt-new-form { display:flex;gap:6px;margin-top:4px; }
+    .pt-new-form input { flex:1;padding:7px 10px;border:1px solid rgba(255,255,255,.1);
+      border-radius:7px;background:var(--surface2);color:var(--text);font-size:12px; }
+    .pt-new-form input:focus { outline:none;border-color:var(--accent); }
+    .pt-sidebar-footer { margin-top:auto;display:flex;flex-direction:column;gap:6px; }
+    .pt-sidebar-footer button { background:transparent;border:1px solid rgba(255,255,255,.1);
+      color:var(--text2);border-radius:7px;padding:7px 10px;font-size:12px;cursor:pointer;text-align:left; }
+    .pt-sidebar-footer button:hover { color:var(--text);border-color:rgba(255,255,255,.2); }
+
+    /* Main */
+    #pt-main { padding:20px;display:flex;flex-direction:column;gap:20px;overflow-y:auto; }
+
+    /* Cards */
+    .pt-summary-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px; }
+    .pt-card { background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+      padding:16px;box-shadow:var(--shadow); }
+    .pt-card .lbl { font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px; }
+    .pt-card .val { font-size:22px;font-weight:700; }
+    .pt-card .sub { font-size:12px;color:var(--text2);margin-top:3px; }
+    .pt-green { color:var(--green); } .pt-red { color:var(--red); }
+
+    /* Add form */
+    .pt-section { background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow); }
+    .pt-section-title { font-size:14px;font-weight:700;margin-bottom:14px; }
+    .pt-form { display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end; }
+    .pt-fg { display:flex;flex-direction:column;gap:4px; }
+    .pt-fg label { font-size:11px;font-weight:600;color:var(--text2); }
+    .pt-fg input, .pt-fg select { padding:8px 11px;border:1px solid rgba(255,255,255,.1);
+      border-radius:7px;background:var(--surface2);color:var(--text);font-size:13px;min-width:120px; }
+    .pt-fg input:focus, .pt-fg select:focus { outline:none;border-color:var(--accent); }
+    .pt-btn { padding:8px 16px;border-radius:7px;border:none;cursor:pointer;font-size:13px;
+      font-weight:600;transition:opacity .15s,transform .1s; }
+    .pt-btn:hover { opacity:.85; } .pt-btn:active { transform:scale(.97); }
+    .pt-btn-primary { background:var(--accent);color:#0e1117; }
+    .pt-btn-secondary { background:var(--surface2);color:var(--text);border:1px solid rgba(255,255,255,.1); }
+    .pt-btn-sm { padding:5px 11px;font-size:12px; }
+    .pt-hint { font-size:11px;color:var(--text2);margin-top:3px;min-height:15px; }
+    .pt-hint.loading { color:var(--yellow); } .pt-hint.ok { color:var(--green); } .pt-hint.err { color:var(--red); }
+
+    /* Settings */
+    #pt-api-panel { display:none; }
+
+    /* Table */
+    .pt-table-wrap { background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden; }
+    .pt-table-hdr { padding:14px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border); }
+    .pt-tbl { width:100%;border-collapse:collapse; }
+    .pt-tbl thead th { padding:10px 14px;text-align:left;font-size:10px;font-weight:700;
+      text-transform:uppercase;letter-spacing:.06em;color:var(--text2);
+      background:var(--surface2);border-bottom:1px solid var(--border);white-space:nowrap; }
+    .pt-tbl thead th:not(:first-child) { text-align:right; }
+    .pt-tbl tbody tr { border-bottom:1px solid var(--border);transition:background .1s; }
+    .pt-tbl tbody tr:last-child { border-bottom:none; }
+    .pt-tbl tbody tr:hover { background:var(--surface2); }
+    .pt-tbl tbody td { padding:11px 14px;font-size:13px; }
+    .pt-tbl tbody td:not(:first-child) { text-align:right; }
+    .pt-ticker-sym { font-weight:700;font-size:14px; }
+    .pt-ticker-date { font-size:10px;color:var(--text2); }
+    .pt-pos { color:var(--green);font-weight:600; } .pt-neg { color:var(--red);font-weight:600; }
+    .pt-muted { color:var(--text2); }
+    .pt-alert-badge { display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700; }
+    .pt-alert-up { background:rgba(63,185,80,.15);color:var(--green); }
+    .pt-alert-dn { background:rgba(248,81,73,.15);color:var(--red); }
+    .pt-live-val { font-weight:600; }
+    .pt-live-val.loading { color:var(--text2);font-style:italic; }
+    .pt-row-del { background:none;border:none;cursor:pointer;color:var(--text2);padding:3px 6px;border-radius:4px;font-size:14px; }
+    .pt-row-del:hover { color:var(--red);background:rgba(248,81,73,.1); }
+    .pt-row-edit { background:none;border:none;cursor:pointer;color:var(--text2);padding:3px 6px;border-radius:4px;font-size:13px; }
+    .pt-row-edit:hover { color:var(--accent);background:rgba(88,166,255,.1); }
+    .pt-edit-row td { background:var(--surface2);padding:10px 14px; }
+    .pt-edit-form { display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap; }
+    .pt-edit-form .pt-fg label { font-size:10px; }
+    .pt-edit-form input { padding:6px 9px;border:1px solid rgba(255,255,255,.15);border-radius:6px;background:var(--surface);color:var(--text);font-size:12px;width:120px; }
+    .pt-edit-form input:focus { outline:none;border-color:var(--accent); }
+    .pt-empty { text-align:center;padding:40px 20px;color:var(--text2); }
+
+    /* Bottom grid */
+    .pt-bottom-grid { display:grid;grid-template-columns:1fr 300px;gap:20px; }
+    .pt-chart-card { background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow); }
+    .pt-chart-wrap { position:relative;height:260px;display:flex;justify-content:center; }
+
+    /* Alert threshold */
+    .pt-alert-ctrl { display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2); }
+    .pt-alert-ctrl input { width:52px;padding:4px 8px;border:1px solid rgba(255,255,255,.1);
+      border-radius:6px;background:var(--surface2);color:var(--text);font-size:12px; }
+
+    /* Toast */
+    #pt-toast { position:fixed;bottom:20px;right:20px;background:var(--surface);
+      border:1px solid var(--border);border-radius:9px;padding:11px 16px;box-shadow:var(--shadow);
+      font-size:13px;font-weight:500;z-index:99999;transform:translateY(60px);opacity:0;
+      transition:transform .3s,opacity .3s;max-width:300px; }
+    #pt-toast.show { transform:translateY(0);opacity:1; }
+    #pt-toast.success { border-left:3px solid var(--green); }
+    #pt-toast.error { border-left:3px solid var(--red); }
+    #pt-toast.info { border-left:3px solid var(--accent); }
+
+    @media(max-width:800px){
+      #pt-body{grid-template-columns:1fr}
+      #pt-sidebar{flex-direction:row;flex-wrap:wrap;border-right:none;border-bottom:1px solid var(--border)}
+      .pt-bottom-grid{grid-template-columns:1fr}
+    }
+  </style>
+
+  <!-- DRAWER HEADER -->
+  <div id="pt-header">
+    <div class="logo"><div class="logo-icon">📊</div> Portfolio Tracker</div>
+    <div id="pt-header-actions">
+      <div class="pt-live-badge"><div class="pt-live-dot"></div> Live</div>
+      <button class="pt-btn pt-btn-secondary pt-btn-sm" onclick="ptExport()">⬇ Export</button>
+      <label class="pt-btn pt-btn-secondary pt-btn-sm" style="cursor:pointer">
+        ⬆ Import <input type="file" accept=".json" onchange="ptImport(event)" style="display:none">
+      </label>
+      <button id="pt-close" onclick="togglePortfolio()">✕ Close</button>
+    </div>
+  </div>
+
+  <div id="pt-body">
+    <!-- SIDEBAR -->
+    <div id="pt-sidebar">
+      <div class="pt-sidebar-title">Portfolios</div>
+      <div id="pt-pf-list"></div>
+      <div class="pt-new-form">
+        <input type="text" id="pt-new-name" placeholder="New portfolio…" maxlength="30"
+          onkeydown="if(event.key==='Enter')ptCreatePortfolio()" />
+        <button class="pt-btn pt-btn-primary pt-btn-sm" onclick="ptCreatePortfolio()">+</button>
+      </div>
+      <div class="pt-sidebar-footer">
+        <button onclick="ptToggleApi()">⚙ API Keys (Alpaca)</button>
+      </div>
+    </div>
+
+    <!-- MAIN -->
+    <div id="pt-main">
+      <!-- API PANEL -->
+      <div class="pt-section" id="pt-api-panel">
+        <div class="pt-section-title">⚙️ Alpaca API Keys <span style="font-size:11px;color:var(--text2);font-weight:400">(optional — falls back to Yahoo Finance)</span></div>
+        <div class="pt-form">
+          <div class="pt-fg"><label>API Key ID</label><input type="text" id="pt-key-id" placeholder="PKXXXXXX…" style="min-width:200px"/></div>
+          <div class="pt-fg"><label>Secret Key</label><input type="password" id="pt-secret" placeholder="••••••••" style="min-width:200px"/></div>
+          <button class="pt-btn pt-btn-primary" onclick="ptSaveKeys()">Save</button>
+          <button class="pt-btn pt-btn-secondary" onclick="ptClearKeys()">Clear</button>
+        </div>
+        <p style="font-size:11px;color:var(--text2);margin-top:8px">Keys stored in browser localStorage only — never transmitted except to Alpaca's API.</p>
+      </div>
+
+      <!-- SUMMARY -->
+      <div class="pt-summary-grid">
+        <div class="pt-card"><div class="lbl">Portfolio Value</div><div class="val" id="pt-sum-val">—</div></div>
+        <div class="pt-card"><div class="lbl">Total Cost</div><div class="val" id="pt-sum-cost">—</div></div>
+        <div class="pt-card"><div class="lbl">Total P&amp;L</div><div class="val" id="pt-sum-pnl">—</div><div class="sub" id="pt-sum-pnl-pct">—</div></div>
+        <div class="pt-card"><div class="lbl">Holdings</div><div class="val" id="pt-sum-n">0</div></div>
+      </div>
+
+      <!-- ADD FORM -->
+      <div class="pt-section">
+        <div class="pt-section-title">➕ Add Position</div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
+          <div class="pt-fg">
+            <label>Ticker</label>
+            <input type="text" id="pt-in-ticker" placeholder="AAPL, TSLA…" maxlength="10" style="width:120px"
+              oninput="this.value=this.value.toUpperCase()"
+              onblur="if(this.value.trim()) ptFetchPrice()" />
+          </div>
+          <div class="pt-fg">
+            <label>Date <span style="font-size:10px;color:var(--text2)">(blank = yesterday)</span></label>
+            <input type="date" id="pt-in-date" style="width:150px"
+              onchange="if(document.getElementById('pt-in-ticker').value.trim()) ptFetchPrice()" />
+          </div>
+          <div class="pt-fg">
+            <label>Entry Price $</label>
+            <input type="number" id="pt-in-price" placeholder="Auto-fetch" step="0.01" min="0" style="width:130px"/>
+            <span class="pt-hint" id="pt-price-hint" style="display:none"></span>
+          </div>
+          <div class="pt-fg">
+            <label>Amount Invested $</label>
+            <input type="number" id="pt-in-shares" placeholder="e.g. 1000" step="any" min="0.01" style="width:130px"/>
+          </div>
+          <button class="pt-btn pt-btn-secondary" onclick="ptFetchPrice()" id="pt-fetch-btn">🔄 Fetch</button>
+          <button class="pt-btn pt-btn-primary" onclick="ptAddPosition()">Add Position</button>
+        </div>
+      </div>
+
+      <!-- TABLE -->
+      <div class="pt-table-wrap">
+        <div class="pt-table-hdr">
+          <span style="font-size:14px;font-weight:700">📋 Holdings</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <div class="pt-alert-ctrl">
+              Alert ±<input type="number" id="pt-threshold" value="5" min="0.1" max="100" step="0.5"
+                onchange="ptSaveState();ptRenderTable()" />%
+            </div>
+            <button class="pt-btn pt-btn-secondary pt-btn-sm" onclick="ptRefreshAll()">🔄 Refresh</button>
+          </div>
+        </div>
+        <div id="pt-table-wrap">
+          <div class="pt-empty">📂 No positions yet. Add your first stock above.</div>
+        </div>
+      </div>
+
+      <!-- BOTTOM -->
+      <div class="pt-bottom-grid">
+        <div class="pt-chart-card">
+          <div class="pt-section-title">🥧 Allocation</div>
+          <div class="pt-chart-wrap"><canvas id="pt-pie"></canvas></div>
+        </div>
+        <div class="pt-chart-card">
+          <div class="pt-section-title">🏆 Top Movers</div>
+          <div id="pt-movers" style="display:flex;flex-direction:column;gap:8px;padding-top:4px">
+            <div style="color:var(--text2);font-size:12px">No holdings yet</div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /pt-main -->
+  </div><!-- /pt-body -->
+  <div id="pt-toast"></div>
+</div><!-- /portfolio-drawer -->
 
 <div id="warning-banner">
   <strong>⚠ News/Gap detected</strong> — <span id="warning-text"></span>
@@ -2756,6 +3024,373 @@ async function loadZoneTicker(ticker) {
   await applySettings();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+</script>
+
+<!-- ── Portfolio Tracker Logic ─────────────────────────────────────── -->
+<script>
+(function(){
+'use strict';
+const LS = 'mctrader_portfolio_v1';
+
+// ── State ──────────────────────────────────────────────────────────────
+function defState(){ return { portfolios:[{id:uid(),name:'My Portfolio',positions:[]}], activeId:null, threshold:5, alpacaKeyId:'', alpacaSecret:'' }; }
+let PS = (function(){
+  try{ const r=localStorage.getItem(LS); if(r){ const s=JSON.parse(r); if(!s.activeId&&s.portfolios.length) s.activeId=s.portfolios[0].id; return s; } } catch(e){}
+  const s=defState(); s.activeId=s.portfolios[0].id; return s;
+})();
+
+function ptSaveState(){ PS.threshold=parseFloat(document.getElementById('pt-threshold').value)||5; localStorage.setItem(LS,JSON.stringify(PS)); }
+function uid(){ return Math.random().toString(36).slice(2,9)+Date.now().toString(36); }
+function ptActive(){ return PS.portfolios.find(p=>p.id===PS.activeId); }
+
+// ── Drawer toggle ──────────────────────────────────────────────────────
+function togglePortfolio(){
+  const d=document.getElementById('portfolio-drawer');
+  const btn=document.getElementById('portfolio-btn');
+  const open=d.style.display==='none'||d.style.display==='';
+  d.style.display=open?'block':'none';
+  btn.classList.toggle('active',open);
+  if(open){ ptRender(); setTimeout(()=>{ const p=ptActive(); if(p&&p.positions.length) ptRefreshAll(); },600); }
+}
+window.togglePortfolio=togglePortfolio;
+
+// ── Portfolio CRUD ─────────────────────────────────────────────────────
+function ptCreatePortfolio(){
+  const inp=document.getElementById('pt-new-name');
+  const name=inp.value.trim(); if(!name) return;
+  const p={id:uid(),name,positions:[]};
+  PS.portfolios.push(p); PS.activeId=p.id; inp.value='';
+  ptSaveState(); ptRender(); ptToast('Portfolio "'+name+'" created','success');
+}
+window.ptCreatePortfolio=ptCreatePortfolio;
+
+function ptSwitchPortfolio(id){ PS.activeId=id; ptSaveState(); ptRender(); }
+window.ptSwitchPortfolio=ptSwitchPortfolio;
+
+function ptStartRename(id){
+  const label=document.getElementById('pt-pf-label-'+id);
+  const input=document.getElementById('pt-pf-input-'+id);
+  if(!label||!input) return;
+  label.style.display='none';
+  input.style.display='block';
+  input.focus(); input.select();
+}
+window.ptStartRename=ptStartRename;
+
+function ptSaveName(id){
+  const input=document.getElementById('pt-pf-input-'+id);
+  if(!input) return;
+  const newName=input.value.trim();
+  if(newName){
+    const p=PS.portfolios.find(x=>x.id===id);
+    if(p) p.name=newName;
+    ptSaveState();
+  }
+  ptRenderSidebar();
+}
+window.ptSaveName=ptSaveName;
+
+function ptCancelRename(id){
+  ptRenderSidebar();
+}
+window.ptCancelRename=ptCancelRename;
+
+function ptDeletePortfolio(id){
+  if(PS.portfolios.length===1){ ptToast('Cannot delete last portfolio','error'); return; }
+  const p=PS.portfolios.find(x=>x.id===id);
+  if(!confirm('Delete portfolio "'+p.name+'"?')) return;
+  PS.portfolios=PS.portfolios.filter(x=>x.id!==id);
+  if(PS.activeId===id) PS.activeId=PS.portfolios[0].id;
+  ptSaveState(); ptRender();
+}
+window.ptDeletePortfolio=ptDeletePortfolio;
+
+function ptRenderSidebar(){
+  const list=document.getElementById('pt-pf-list'); list.innerHTML='';
+  PS.portfolios.forEach(p=>{
+    const div=document.createElement('div');
+    div.className='pt-pf-item'+(p.id===PS.activeId?' active':'');
+    div.innerHTML=`
+      <span id="pt-pf-label-${p.id}" onclick="ptSwitchPortfolio('${p.id}')" style="flex:1;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name)}</span>
+      <input id="pt-pf-input-${p.id}" class="pt-pf-name-input" style="display:none" value="${esc(p.name)}"
+        onkeydown="if(event.key==='Enter')ptSaveName('${p.id}');if(event.key==='Escape')ptCancelRename('${p.id}')"
+        onblur="ptSaveName('${p.id}')" />
+      <span class="pt-pf-edit-btn" onclick="event.stopPropagation();ptStartRename('${p.id}')" title="Rename">✏️</span>
+      <span class="pt-pf-del" onclick="event.stopPropagation();ptDeletePortfolio('${p.id}')" title="Delete">✕</span>`;
+    list.appendChild(div);
+  });
+}
+
+// ── API Keys ───────────────────────────────────────────────────────────
+function ptToggleApi(){ const el=document.getElementById('pt-api-panel'); const open=el.style.display==='none'||el.style.display===''; el.style.display=open?'block':'none'; if(open){ document.getElementById('pt-key-id').value=PS.alpacaKeyId||''; document.getElementById('pt-secret').value=PS.alpacaSecret||''; } }
+window.ptToggleApi=ptToggleApi;
+function ptSaveKeys(){ PS.alpacaKeyId=document.getElementById('pt-key-id').value.trim(); PS.alpacaSecret=document.getElementById('pt-secret').value.trim(); ptSaveState(); ptToast('API keys saved','success'); }
+window.ptSaveKeys=ptSaveKeys;
+function ptClearKeys(){ PS.alpacaKeyId=''; PS.alpacaSecret=''; document.getElementById('pt-key-id').value=''; document.getElementById('pt-secret').value=''; ptSaveState(); ptToast('Cleared','info'); }
+window.ptClearKeys=ptClearKeys;
+
+// ── Price fetching ─────────────────────────────────────────────────────
+function ptYesterday(){
+  const d=new Date(); d.setDate(d.getDate()-1);
+  if(d.getDay()===0) d.setDate(d.getDate()-2);
+  if(d.getDay()===6) d.setDate(d.getDate()-1);
+  return d.toISOString().slice(0,10);
+}
+
+async function ptFetchAlpacaHist(ticker,date,keyId,secret){
+  const s=date+'T00:00:00Z', e=date+'T23:59:59Z';
+  const url=`https://data.alpaca.markets/v2/stocks/${ticker}/bars?timeframe=1Day&start=${encodeURIComponent(s)}&end=${encodeURIComponent(e)}&adjustment=raw&feed=sip`;
+  const r=await fetch(url,{headers:{'APCA-API-KEY-ID':keyId,'APCA-API-SECRET-KEY':secret}});
+  if(!r.ok) throw new Error('Alpaca '+r.status);
+  const d2=await r.json(); const bars=d2.bars;
+  if(bars&&bars.length>0) return bars[0].c; return null;
+}
+
+async function ptFetchYahooHist(ticker,date){
+  // Route through the local Python backend to avoid CORS
+  const r=await fetch(`/api/portfolio/price/historical?ticker=${encodeURIComponent(ticker)}&date=${encodeURIComponent(date)}`);
+  if(!r.ok) throw new Error('Proxy hist '+r.status);
+  const data=await r.json();
+  return data.close ?? null;
+}
+
+async function ptFetchLive(ticker){
+  if(PS.alpacaKeyId&&PS.alpacaSecret){
+    try{
+      const url=`https://data.alpaca.markets/v2/stocks/${ticker}/quotes/latest`;
+      const r=await fetch(url,{headers:{'APCA-API-KEY-ID':PS.alpacaKeyId,'APCA-API-SECRET-KEY':PS.alpacaSecret}});
+      if(r.ok){ const d=await r.json(); const q=d.quote; if(q&&q.ap) return (q.ap+q.bp)/2; }
+    } catch(e){}
+  }
+  // Route through local backend proxy to avoid CORS
+  try{
+    const r=await fetch(`/api/portfolio/price/live?ticker=${encodeURIComponent(ticker)}`);
+    if(r.ok){ const data=await r.json(); return data.price ?? null; }
+  } catch(e){}
+  return null;
+}
+
+async function ptFetchPrice(){
+  const ticker=document.getElementById('pt-in-ticker').value.trim().toUpperCase();
+  const dateVal=document.getElementById('pt-in-date').value||ptYesterday();
+  if(!ticker){ ptToast('Enter a ticker first','error'); return; }
+  const hint=document.getElementById('pt-price-hint');
+  const btn=document.getElementById('pt-fetch-btn');
+  hint.style.display='none'; btn.disabled=true;
+  let price=null, src='';
+  if(PS.alpacaKeyId&&PS.alpacaSecret){ try{ price=await ptFetchAlpacaHist(ticker,dateVal,PS.alpacaKeyId,PS.alpacaSecret); if(price) src='Alpaca'; }catch(e){} }
+  if(!price){ try{ price=await ptFetchYahooHist(ticker,dateVal); if(price) src='Yahoo Finance'; }catch(e){} }
+  btn.disabled=false;
+  if(price){ document.getElementById('pt-in-price').value=price.toFixed(2); ptToast(`✓ $${price.toFixed(2)} on ${dateVal} via ${src}`,'success'); }
+  else { ptToast('Could not fetch price — enter manually','error'); }
+}
+window.ptFetchPrice=ptFetchPrice;
+
+async function ptAddPosition(){
+  const ticker=document.getElementById('pt-in-ticker').value.trim().toUpperCase();
+  const dateVal=document.getElementById('pt-in-date').value||ptYesterday();
+  let price=parseFloat(document.getElementById('pt-in-price').value);
+  const amount=parseFloat(document.getElementById('pt-in-shares').value);
+  if(!ticker){ ptToast('Enter a ticker','error'); return; }
+  if(!price||price<=0){ ptToast('Fetching price…','info'); await ptFetchPrice(); price=parseFloat(document.getElementById('pt-in-price').value); if(!price||price<=0){ ptToast('Enter price manually','error'); return; } }
+  if(!amount||amount<=0){ ptToast('Enter amount invested','error'); return; }
+  const shares=amount/price;
+  const pf=ptActive(); if(!pf){ ptToast('Select a portfolio','error'); return; }
+  const pos={id:uid(),ticker,date:dateVal,entryPrice:price,shares,amount,livePrice:null,liveFetchedAt:null};
+  pf.positions.push(pos);
+  ptSaveState();
+  document.getElementById('pt-in-ticker').value='';
+  document.getElementById('pt-in-date').value='';
+  document.getElementById('pt-in-price').value='';
+  document.getElementById('pt-in-shares').value='';
+  document.getElementById('pt-price-hint').style.display='none';
+  ptToast(`Added ${ticker} — $${ptFmt(amount)} invested @ $${price.toFixed(2)}`,'success');
+  ptRender(); ptRefreshLiveFor(pos);
+}
+window.ptAddPosition=ptAddPosition;
+
+function ptRemovePosition(id){
+  const p=ptActive(); if(!p) return;
+  p.positions=p.positions.filter(x=>x.id!==id);
+  ptSaveState(); ptRender(); ptToast('Position removed','info');
+}
+window.ptRemovePosition=ptRemovePosition;
+
+function ptToggleEdit(id){
+  const row=document.getElementById('pt-edit-'+id);
+  if(!row) return;
+  row.style.display=row.style.display==='none'?'table-row':'none';
+}
+window.ptToggleEdit=ptToggleEdit;
+
+function ptSaveEdit(id){
+  const p=ptActive(); if(!p) return;
+  const pos=p.positions.find(x=>x.id===id); if(!pos) return;
+  const newDate =document.getElementById('pt-ed-date-'+id)?.value || pos.date;
+  const newPrice=parseFloat(document.getElementById('pt-ed-price-'+id)?.value);
+  const newAmt  =parseFloat(document.getElementById('pt-ed-amt-'+id)?.value);
+  if(!newPrice||newPrice<=0){ ptToast('Invalid entry price','error'); return; }
+  if(!newAmt||newAmt<=0){ ptToast('Invalid amount','error'); return; }
+  pos.date=newDate;
+  pos.entryPrice=newPrice;
+  pos.amount=newAmt;
+  pos.shares=newAmt/newPrice;
+  ptSaveState(); ptRender(); ptToast('Position updated','success');
+}
+window.ptSaveEdit=ptSaveEdit;
+
+// ── Live refresh ───────────────────────────────────────────────────────
+async function ptRefreshLiveFor(pos){
+  const price=await ptFetchLive(pos.ticker);
+  if(price){ pos.livePrice=price; pos.liveFetchedAt=Date.now(); }
+  ptSaveState(); ptRenderTable(); ptRenderSummary(); ptRenderChart();
+}
+async function ptRefreshAll(){
+  const p=ptActive(); if(!p||!p.positions.length) return;
+  ptToast('Refreshing live prices…','info');
+  await Promise.all(p.positions.map(pos=>ptRefreshLiveFor(pos)));
+  ptToast('Live prices updated','success');
+}
+window.ptRefreshAll=ptRefreshAll;
+setInterval(()=>{ if(document.getElementById('portfolio-drawer').style.display==='block'){ const p=ptActive(); if(p&&p.positions.length) ptRefreshAll(); } }, 60000);
+
+// ── Render ─────────────────────────────────────────────────────────────
+function ptRender(){ ptRenderSidebar(); ptRenderSummary(); ptRenderTable(); ptRenderChart(); }
+
+function ptRenderSummary(){
+  const p=ptActive(); const pos=p?.positions||[];
+  let cost=0,val=0;
+  pos.forEach(x=>{ cost+=x.entryPrice*x.shares; val+=(x.livePrice??x.entryPrice)*x.shares; });
+  const pnl=val-cost, pct=cost>0?(pnl/cost*100):0;
+  const cls=pnl>=0?'pt-green':'pt-red', sign=pnl>=0?'+':'';
+  document.getElementById('pt-sum-val').textContent=pos.length?'$'+ptFmt(val):'—';
+  document.getElementById('pt-sum-cost').textContent=pos.length?'$'+ptFmt(cost):'—';
+  const pnlEl=document.getElementById('pt-sum-pnl');
+  pnlEl.textContent=pos.length?sign+'$'+ptFmt(pnl):'—';
+  pnlEl.className='val '+(pos.length?cls:'');
+  document.getElementById('pt-sum-pnl-pct').textContent=pos.length?sign+pct.toFixed(2)+'%':'—';
+  document.getElementById('pt-sum-n').textContent=pos.length;
+}
+
+function ptRenderTable(){
+  const wrap=document.getElementById('pt-table-wrap');
+  const p=ptActive(); const pos=p?.positions||[];
+  const thr=parseFloat(document.getElementById('pt-threshold').value)||5;
+  if(!pos.length){ wrap.innerHTML='<div class="pt-empty">📂 No positions yet. Add your first stock above.</div>'; document.getElementById('pt-movers').innerHTML='<div style="color:var(--text2);font-size:12px">No holdings yet</div>'; return; }
+  const movers=[];
+  let rows='';
+  pos.forEach(pos=>{
+    const live=pos.livePrice, entry=pos.entryPrice;
+    const cost=entry*pos.shares, lval=(live??entry)*pos.shares;
+    const pnl=lval-cost, pct=pnl/cost*100;
+    const cls=pnl>=0?'pt-pos':'pt-neg', sign=pnl>=0?'+':'';
+    const chg=live?((live-entry)/entry*100):0;
+    let badge='';
+    if(live&&Math.abs(chg)>=thr){ const dir=chg>=0?'pt-alert-up':'pt-alert-dn'; badge=`<span class="pt-alert-badge ${dir}">${chg>=0?'▲':'▼'}${Math.abs(chg).toFixed(1)}%</span>`; }
+    const liveCell=live?`<span class="pt-live-val">$${ptFmt(live)}</span>`:'<span class="pt-live-val loading">—</span>';
+    const ago=pos.liveFetchedAt?`<div style="font-size:10px;color:var(--text2)">${ptTimeAgo(pos.liveFetchedAt)}</div>`:'';
+    const amt = pos.amount ?? cost;
+    rows+=`<tr id="pt-row-${pos.id}">
+      <td><div class="pt-ticker-sym">${esc(pos.ticker)}</div><div class="pt-ticker-date">${pos.date}</div></td>
+      <td>$${ptFmt(amt)}</td>
+      <td style="font-size:12px;color:var(--text2)">${pos.shares.toFixed(4)}</td>
+      <td>$${ptFmt(entry)}</td>
+      <td>${liveCell}${ago}</td>
+      <td>$${ptFmt(lval)}</td>
+      <td class="${cls}">${sign}$${ptFmt(pnl)}</td>
+      <td class="${cls}">${sign}${pct.toFixed(2)}%</td>
+      <td>${badge}</td>
+      <td style="white-space:nowrap">
+        <button class="pt-row-edit" onclick="ptToggleEdit('${pos.id}')" title="Edit">✏️</button>
+        <button class="pt-row-del" onclick="ptRemovePosition('${pos.id}')" title="Remove">✕</button>
+      </td>
+    </tr>
+    <tr id="pt-edit-${pos.id}" class="pt-edit-row" style="display:none">
+      <td colspan="10">
+        <div class="pt-edit-form">
+          <div class="pt-fg"><label>Date</label><input type="date" id="pt-ed-date-${pos.id}" value="${pos.date}" max="${new Date().toISOString().slice(0,10)}" /></div>
+          <div class="pt-fg"><label>Entry Price $</label><input type="number" id="pt-ed-price-${pos.id}" value="${entry.toFixed(2)}" step="0.01" min="0" /></div>
+          <div class="pt-fg"><label>Amount Invested $</label><input type="number" id="pt-ed-amt-${pos.id}" value="${amt.toFixed(2)}" step="any" min="0.01" /></div>
+          <button class="pt-btn pt-btn-primary pt-btn-sm" onclick="ptSaveEdit('${pos.id}')">✓ Save</button>
+          <button class="pt-btn pt-btn-secondary pt-btn-sm" onclick="ptToggleEdit('${pos.id}')">Cancel</button>
+        </div>
+      </td>
+    </tr>`;
+    if(live) movers.push({ticker:pos.ticker,pct:chg});
+  });
+  wrap.innerHTML=`<table class="pt-tbl"><thead><tr>
+    <th>Symbol</th><th>Invested</th><th>Shares</th><th>Entry</th><th>Live</th>
+    <th>Value</th><th>P&L $</th><th>P&L %</th><th>Alert</th><th></th>
+  </tr></thead><tbody>${rows}</tbody></table>`;
+  const movDiv=document.getElementById('pt-movers');
+  if(!movers.length){ movDiv.innerHTML='<div style="color:var(--text2);font-size:12px">Waiting for live prices…</div>'; return; }
+  movers.sort((a,b)=>Math.abs(b.pct)-Math.abs(a.pct));
+  movDiv.innerHTML=movers.slice(0,5).map(m=>{
+    const cls=m.pct>=0?'pt-pos':'pt-neg', sign=m.pct>=0?'+':'';
+    return `<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)"><span style="font-weight:700">${esc(m.ticker)}</span><span class="${cls}">${sign}${m.pct.toFixed(2)}%</span></div>`;
+  }).join('');
+}
+
+let ptPieInst=null;
+function ptRenderChart(){
+  const p=ptActive(); const pos=p?.positions||[];
+  const canvas=document.getElementById('pt-pie');
+  if(!canvas) return;
+  const ctx=canvas.getContext('2d');
+  if(ptPieInst){ ptPieInst.destroy(); ptPieInst=null; }
+  if(!pos.length){ ctx.clearRect(0,0,canvas.width,canvas.height); return; }
+  const palette=['#58a6ff','#bc8cff','#3fb950','#d29922','#f85149','#06b6d4','#ec4899','#84cc16','#f97316','#8b5cf6'];
+  const labels=[], data=[], colors=[];
+  pos.forEach((x,i)=>{ labels.push(x.ticker); data.push(parseFloat(((x.livePrice??x.entryPrice)*x.shares).toFixed(2))); colors.push(palette[i%palette.length]); });
+  ptPieInst=new Chart(ctx,{type:'doughnut',data:{labels,datasets:[{data,backgroundColor:colors,borderWidth:2,borderColor:'#0e1117'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#e6edf3',font:{size:11}}},tooltip:{callbacks:{label:c=>` ${c.label}: $${ptFmt(c.parsed)} (${(c.parsed/data.reduce((a,b)=>a+b,0)*100).toFixed(1)}%)`}}}}});
+}
+
+// ── Import / Export ────────────────────────────────────────────────────
+function ptExport(){
+  const d=JSON.stringify({portfolios:PS.portfolios,exportedAt:new Date().toISOString()},null,2);
+  const blob=new Blob([d],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download='portfolios_'+new Date().toISOString().slice(0,10)+'.json'; a.click(); URL.revokeObjectURL(url);
+  ptToast('Exported','success');
+}
+window.ptExport=ptExport;
+
+function ptImport(evt){
+  const file=evt.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const parsed=JSON.parse(e.target.result);
+      const incoming=parsed.portfolios||(Array.isArray(parsed)?parsed:null);
+      if(!incoming) throw new Error('Invalid format');
+      if(!confirm(`Import ${incoming.length} portfolio(s)?`)) return;
+      incoming.forEach(p=>{ if(!p.id) p.id=uid(); if(!PS.portfolios.find(x=>x.id===p.id)) PS.portfolios.push(p); });
+      PS.activeId=PS.portfolios[0].id; ptSaveState(); ptRender(); ptToast('Imported '+incoming.length+' portfolio(s)','success');
+    } catch(ex){ ptToast('Import failed: '+ex.message,'error'); }
+    evt.target.value='';
+  };
+  reader.readAsText(file);
+}
+window.ptImport=ptImport;
+
+// ── Helpers ────────────────────────────────────────────────────────────
+function ptFmt(n){ if(isNaN(n)||n===null) return '—'; return Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function ptTimeAgo(ts){ const s=Math.floor((Date.now()-ts)/1000); if(s<60) return s+'s ago'; if(s<3600) return Math.floor(s/60)+'m ago'; return Math.floor(s/3600)+'h ago'; }
+
+let ptToastTimer;
+function ptToast(msg,type='info'){
+  const el=document.getElementById('pt-toast');
+  el.textContent=msg; el.className='show '+type;
+  clearTimeout(ptToastTimer); ptToastTimer=setTimeout(()=>{ el.className=type; },3000);
+}
+
+// ── Init ───────────────────────────────────────────────────────────────
+if(!PS.activeId&&PS.portfolios.length) PS.activeId=PS.portfolios[0].id;
+document.getElementById('pt-threshold').value=PS.threshold||5;
+document.getElementById('pt-in-date').max=new Date().toISOString().slice(0,10);
+
+})();
 </script>
 </body>
 </html>

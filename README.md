@@ -257,7 +257,7 @@ The dashboard is a single-page app served at `/`. Key panels:
 
 | Panel | What it shows |
 |-------|---------------|
-| **Header** | Live ticker, signal badge, connection status, Reload / CSV / Settings |
+| **Header** | Live ticker, signal badge, connection status, Reload / CSV / Settings / **📊 Portfolio** |
 | **Regime banner** | Current market regime + Hurst, R², Donchian position, HH/LL counts |
 | **Potential bars** | MC-estimated up / down / flat potential for next N candles |
 | **Candlestick chart** | OHLCV candles + MC confidence cone (P25–P75 inner, P10–P90 outer) |
@@ -277,22 +277,62 @@ the main chart for a consistent comparison.
 
 ---
 
+## Portfolio Tracker
+
+Click the **📊 Portfolio** button in the top-right header to open the portfolio tracker overlay. It sits on top of the dashboard and can be closed at any time to return to the charts.
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **Multiple portfolios** | Create, rename, and delete named portfolios from the sidebar |
+| **Add positions** | Enter a ticker + date → entry price is auto-fetched (closing price for that day) |
+| **Amount invested** | Enter how much money you put in — shares are calculated automatically (`amount ÷ entry price`) |
+| **Live price tracking** | Prices refresh automatically every 60 seconds via your backend proxy |
+| **P&L tracking** | Per-position and portfolio-total P&L in both $ and % |
+| **Allocation chart** | Doughnut chart showing portfolio breakdown by current value |
+| **Top movers** | Ranked list of your biggest % movers |
+| **Alert badges** | Highlights any position that has moved ±N% from your entry (threshold is adjustable) |
+| **Inline editing** | Click ✏️ on any holding to edit the date, entry price, or amount invested in-place |
+| **Portfolio rename** | Click ✏️ next to any portfolio name in the sidebar to rename it |
+| **Import / Export** | Export all portfolios as a JSON file; import previously saved portfolios |
+| **Browser persistence** | All data is stored in `localStorage` — no server or database needed |
+
+### How price fetching works
+
+The portfolio tracker routes all price requests through your local Python backend to avoid browser CORS restrictions:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/portfolio/price/historical?ticker=AAPL&date=2026-05-04` | Returns the closing price for a ticker on a given date (finds nearest trading day automatically) |
+| `GET /api/portfolio/price/live?ticker=AAPL` | Returns the latest market price |
+
+Both endpoints use `yfinance` server-side. If you have Alpaca API keys configured (via the ⚙ API Keys button in the portfolio sidebar), Alpaca is tried first for live prices with Yahoo Finance as fallback.
+
+### Data storage
+
+Portfolio data is stored entirely in your browser's `localStorage` under the key `mctrader_portfolio_v1`. Nothing is sent to or stored on the server. Use the **Export JSON** button to back up your portfolios or move them to another browser.
+
+---
+
 ## API reference
 
 ```
-GET  /                       dashboard HTML
-GET  /api/health             liveness check
-GET  /api/signal             trigger fresh analysis + broadcast
-GET  /api/config             current config + valid choices
-POST /api/config             update any config field (validated)
-POST /api/backtest           walk-forward backtest over recent history
-GET  /api/history            recent persisted signals (newest first)
-GET  /api/metrics            aggregate accuracy stats per ticker
-GET  /api/export.csv         CSV dump of signal history
-POST /api/scan               breakout/breakdown scanner
-GET  /api/scan/watchlists    list available watchlists + tickers
-POST /api/zone-scan          Zone + EMA strategy scanner
-WS   /ws                     server-push: new analysis on every poll
+GET  /                                              dashboard HTML
+GET  /api/health                                    liveness check
+GET  /api/signal                                    trigger fresh analysis + broadcast
+GET  /api/config                                    current config + valid choices
+POST /api/config                                    update any config field (validated)
+POST /api/backtest                                  walk-forward backtest over recent history
+GET  /api/history                                   recent persisted signals (newest first)
+GET  /api/metrics                                   aggregate accuracy stats per ticker
+GET  /api/export.csv                                CSV dump of signal history
+POST /api/scan                                      breakout/breakdown scanner
+GET  /api/scan/watchlists                           list available watchlists + tickers
+POST /api/zone-scan                                 Zone + EMA strategy scanner
+GET  /api/portfolio/price/historical?ticker=&date=  historical close price (portfolio tracker)
+GET  /api/portfolio/price/live?ticker=              latest market price (portfolio tracker)
+WS   /ws                                            server-push: new analysis on every poll
 ```
 
 `POST /api/config` body (all fields optional):
@@ -355,7 +395,7 @@ override with `DB_PATH`). The dashboard reads it for `/api/history` and
 ---
 
 ## Screenshots
-
+[Recording 2026-05-04 221112.mp4](resource_image/Recording%202026-05-04%20221112.mp4)
 ### QQQ simulation
 ![img_1.png](resource_image/img_1.png)
 
@@ -372,6 +412,18 @@ override with `DB_PATH`). The dashboard reads it for `/api/history` and
 
 ## Changelog
 
+### 2026-05-05 — Portfolio Tracker
+- Added full portfolio tracker overlay accessible via the **Portfolio** button in the dashboard header
+- Multiple named portfolios with create, rename, and delete support; all data persisted in browser `localStorage`
+- Add positions by ticker + date with auto-fetched historical closing price; enter amount invested instead of shares (shares calculated as `amount ÷ entry price`)
+- Live price refresh every 60 seconds; manual refresh button available
+- Per-position and portfolio-total P&L in $ and %; doughnut allocation chart; top movers panel
+- Configurable alert threshold: highlights positions that have moved ±N% from entry price
+- Inline row editing: click  `edit`️ on any holding to edit date, entry price, and amount in-place
+- Portfolio rename: click `edit` on any portfolio name in the sidebar to rename it
+- Import / Export portfolios as JSON
+- Added `GET /api/portfolio/price/historical` and `GET /api/portfolio/price/live` proxy endpoints to bypass browser CORS on Yahoo Finance; both use `yfinance` server-side with Alpaca as optional primary source
+![img.png](resource_image/Portfolio.png)
 ### 2026-05-04 — Zone + EMA Strategy Scanner (redesigned table)
 - Redesigned Zone Scanner table: replaced Entry/Zone SL/TP1/TP2/R:R columns with per-EMA columns (EMA 20, EMA 50, EMA 200) and structured Support/Resistance zone columns
 - Each EMA column shows: value, % distance from price (green above / red below), and a `↑✦` / `↓✦` cross indicator when a golden or death cross fired in the last 5 bars (checks EMA20/50, EMA50/200, EMA20/200 pairs)

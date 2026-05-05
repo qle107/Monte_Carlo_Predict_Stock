@@ -238,6 +238,72 @@ async def api_export_csv(ticker: Optional[str] = None, limit: int = 1000):
     )
 
 
+# ─── REST: portfolio price proxy ─────────────────────────────────────────────
+
+@app.get("/api/portfolio/price/historical")
+async def portfolio_price_historical(ticker: str, date: str):
+    """
+    Return the closing price for `ticker` on `date` (YYYY-MM-DD).
+    Used by the portfolio tracker to avoid CORS issues with Yahoo Finance.
+    """
+    import yfinance as yf
+    from datetime import timedelta, date as date_type
+    try:
+        target = date_type.fromisoformat(date)
+        # Fetch a window around the target date to handle weekends/holidays
+        start = (target - timedelta(days=5)).isoformat()
+        end   = (target + timedelta(days=2)).isoformat()
+        df = await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: yf.download(ticker.upper(), start=start, end=end, progress=False, auto_adjust=True)
+        )
+        if df.empty:
+            raise HTTPException(status_code=404, detail=f"No data for {ticker}")
+        # Get the closest trading day on or before target
+        df.index = df.index.tz_localize(None) if df.index.tzinfo else df.index
+        import pandas as pd
+        target_ts = pd.Timestamp(target)
+        available = df.index[df.index <= target_ts]
+        if available.empty:
+            available = df.index  # fallback: use first available
+        row = df.loc[available[-1]]
+        close = float(row["Close"].iloc[0] if hasattr(row["Close"], "iloc") else row["Close"])
+        return {"ticker": ticker.upper(), "date": str(available[-1].date()), "close": round(close, 4)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("portfolio historical price failed for %s on %s: %s", ticker, date, e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/portfolio/price/live")
+async def portfolio_price_live(ticker: str):
+    """
+    Return the latest market price for `ticker`.
+    Used by the portfolio tracker to avoid CORS issues with Yahoo Finance.
+    """
+    import yfinance as yf
+    try:
+        t = yf.Ticker(ticker.upper())
+        info = await asyncio.get_running_loop().run_in_executor(None, lambda: t.fast_info)
+        price = getattr(info, "last_price", None) or getattr(info, "regular_market_price", None)
+        if price is None:
+            # fallback: grab last close from 5d history
+            df = await asyncio.get_running_loop().run_in_executor(
+                None, lambda: t.history(period="5d", auto_adjust=True)
+            )
+            if not df.empty:
+                price = float(df["Close"].iloc[-1])
+        if price is None:
+            raise HTTPException(status_code=404, detail=f"No live price for {ticker}")
+        return {"ticker": ticker.upper(), "price": round(float(price), 4)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("portfolio live price failed for %s: %s", ticker, e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ─── REST: scanner ───────────────────────────────────────────────────────────
 
 @app.get("/api/scan/watchlists")
