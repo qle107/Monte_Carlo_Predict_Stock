@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
+import numpy as np
 import pandas as pd
 
 from .fetcher    import fetch_candles, get_latest_price
@@ -27,6 +28,18 @@ from .indicators import compute_indicators
 from .regime     import detect_regime
 from .signal     import compute_signal
 from .montecarlo import run as run_mc
+
+
+def _df_to_candles(df: pd.DataFrame) -> list:
+    """Vectorised OHLCV serialisation — avoids slow iterrows()."""
+    ts_list = [t.isoformat() for t in df.index]
+    o = df["open"].round(4).tolist()
+    h = df["high"].round(4).tolist()
+    l = df["low"].round(4).tolist()
+    c = df["close"].round(4).tolist()
+    v = df["volume"].astype(int).tolist()
+    return [{"t": t, "o": oi, "h": hi, "l": li, "c": ci, "v": vi}
+            for t, oi, hi, li, ci, vi in zip(ts_list, o, h, l, c, v)]
 
 
 def analyse(
@@ -50,15 +63,7 @@ def analyse(
         kurtosis_excess = ind.kurtosis,
     )
 
-    candles = [
-        {"t": ts.isoformat(),
-         "o": round(float(row["open"]),  4),
-         "h": round(float(row["high"]),  4),
-         "l": round(float(row["low"]),   4),
-         "c": round(float(row["close"]), 4),
-         "v": int(row["volume"])}
-        for ts, row in df.iterrows()
-    ]
+    candles = _df_to_candles(df)
 
     attrs       = getattr(df, "attrs", {})
     session     = attrs.get("session",     "unknown")
@@ -73,15 +78,23 @@ def analyse(
     ind_dict = asdict(ind)
     ind_dict.pop("returns", None)
 
+    # Serialise MC result — exclude paths_full (numpy array, not JSON-safe).
+    # paths_full is stored on the MCResult object for callers that need it
+    # (e.g. trade_setup_from_analysis in server.py).
+    mc_dict = asdict(mc)
+    mc_dict.pop("paths_full", None)   # remove numpy array before JSON serialisation
+
     return {
         "current_price": current_price,
         "indicators":    ind_dict,
         "regime":        asdict(reg),
         "signal":        asdict(sig),
-        "mc":            asdict(mc),
+        "mc":            mc_dict,
         "candles":       candles,
         "warnings":      warnings,
         "session":       session,
         "session_now":   session_now,
         "extended":      extended,
+        # Internal: pass full MC paths for trade_setup (popped in server.py before broadcast)
+        "_mc_paths_full": mc.paths_full,
     }

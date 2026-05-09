@@ -13,6 +13,7 @@ import logging
 import sqlite3
 import threading
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 logger = logging.getLogger(__name__)
@@ -187,6 +188,97 @@ class SignalStore:
             "first_ts":    row["first_ts"],
             "last_ts":     row["last_ts"],
             "label_counts": labels,
+        }
+
+    def prune(self, days: int = 30) -> int:
+        """
+        Delete signal rows older than `days` days.
+        Returns the number of rows deleted.
+
+        Safe to call on a schedule (e.g. daily) to keep the DB small.
+        """
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(days=days)
+        ).strftime("%Y-%m-%dT%H:%M:%S")
+        try:
+            with self._cur() as conn:
+                cur = conn.execute(
+                    "DELETE FROM signals WHERE ts < ?", (cutoff,)
+                )
+                deleted = cur.rowcount
+                conn.execute("PRAGMA wal_checkpoint(PASSIVE);")
+            if deleted:
+                logger.info("SignalStore.prune: deleted %d rows older than %d days", deleted, days)
+            return deleted
+        except sqlite3.Error as e:
+            logger.warning("SignalStore.prune failed: %s", e)
+            return 0
+
+    def accuracy_window(
+        self,
+        ticker: Optional[str] = None,
+        limit: int = 200,
+    ) -> dict:
+        """
+        Compute directional accuracy for the most recent `limit` rows that
+        have a non-neutral label (Buy / Sell).
+
+        For each consecutive pair of signals we use the *next* recorded price
+        as the realised outcome — a simple but honest measure of whether
+        the model's directional call was correct at the time of the next update.
+
+        Returns
+        -------
+        {
+          "n_calls": int,           # Buy/Sell signals evaluated
+          "hit_rate": float|None,   # % correct (None if no data)
+          "avg_prob_up_on_buys": float|None,
+          "avg_prob_up_on_sells": float|None,
+        }
+        """
+        rows = self.recent(ticker=ticker, limit=limit + 1)  # +1 to get next price
+        if len(rows) < 2:
+            return {"n_calls": 0, "hit_rate": None,
+                    "avg_prob_up_on_buys": None, "avg_prob_up_on_sells": None}
+
+        # rows are DESC by ts — reverse to get chronological order
+        rows = list(reversed(rows))
+
+        correct = 0
+        total   = 0
+        buy_probs:  List[float] = []
+        sell_probs: List[float] = []
+
+        for i in range(len(rows) - 1):
+            row      = rows[i]
+            next_row = rows[i + 1]
+            label    = row.get("label", "")
+            price    = float(row.get("price", 0.0) or 0.0)
+            next_p   = float(next_row.get("price", 0.0) or 0.0)
+
+            if not ("Buy" in label or "Sell" in label):
+                continue
+            if price <= 0 or next_p <= 0:
+                continue
+
+            up_call = "Buy" in label
+            realised_up = next_p > price
+
+            if up_call:
+                buy_probs.append(float(row.get("prob_up", 50.0) or 50.0))
+                if realised_up:
+                    correct += 1
+            else:
+                sell_probs.append(float(row.get("prob_up", 50.0) or 50.0))
+                if not realised_up:
+                    correct += 1
+            total += 1
+
+        return {
+            "n_calls":              total,
+            "hit_rate":             round(correct / total * 100, 2) if total else None,
+            "avg_prob_up_on_buys":  round(sum(buy_probs)  / len(buy_probs),  2) if buy_probs  else None,
+            "avg_prob_up_on_sells": round(sum(sell_probs) / len(sell_probs), 2) if sell_probs else None,
         }
 
     def close(self) -> None:

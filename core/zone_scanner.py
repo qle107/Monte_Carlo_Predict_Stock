@@ -55,6 +55,7 @@ from .regime      import detect_regime
 from .signal      import compute_signal
 from .zones       import detect_zones, ZoneResult, Zone
 from .trade_setup import compute_trade_setup, to_dict as ts_to_dict
+from config import cfg
 
 logger = logging.getLogger(__name__)
 
@@ -510,10 +511,10 @@ async def _zone_scan_one(
 
 async def zone_scan_tickers(
     tickers:       List[str],
-    interval:      str  = "1d",
-    lookback:      int  = 100,   # need more bars for EMA200
-    extended:      bool = False,
-    max_concurrent: int = 8,
+    interval:      str   = "1d",
+    lookback:      int   = 100,   # need more bars for EMA200
+    extended:      bool  = False,
+    max_concurrent: int  = None,  # defaults to cfg.scan_max_concurrent
     min_score:     float = 0.0,
 ) -> dict:
     """
@@ -522,7 +523,9 @@ async def zone_scan_tickers(
     Returns dict with keys:
       longs, shorts, no_setup, all, meta
     """
-    loop = asyncio.get_event_loop()
+    if max_concurrent is None:
+        max_concurrent = cfg.scan_max_concurrent
+    loop = asyncio.get_running_loop()
     sem  = asyncio.Semaphore(max_concurrent)
 
     async def _throttled(t: str) -> ZoneScanResult:

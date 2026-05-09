@@ -33,8 +33,10 @@ import numpy as np
 
 from .fetcher     import fetch_candles
 from .indicators  import compute_indicators
+from .montecarlo  import run as run_mc
 from .regime      import detect_regime
 from .signal      import compute_signal
+from config import cfg
 
 logger = logging.getLogger(__name__)
 
@@ -256,20 +258,67 @@ async def _scan_one(
 
 # ─── Public: scan watchlist ───────────────────────────────────────────────────
 
+async def _run_mc_on_result(
+    result: ScanResult,
+    interval: str,
+    lookback: int,
+    extended: bool,
+    loop: asyncio.AbstractEventLoop,
+    n_sim: int = 500,
+    n_forward: int = 10,
+    mc_model: str = "garch",
+) -> ScanResult:
+    """
+    Re-fetch candles for one ScanResult and run a fast MC (n_sim=500) to
+    produce accurate prob_up / prob_down estimates. Mutates in place.
+    Returns the updated ScanResult.
+    """
+    try:
+        df  = await loop.run_in_executor(
+            None, fetch_candles, result.ticker, interval, lookback, extended
+        )
+        ind = await loop.run_in_executor(None, compute_indicators, df)
+        reg = await loop.run_in_executor(None, detect_regime, df, ind.adx, ind.obv_slope)
+        sig = await loop.run_in_executor(None, compute_signal, ind, reg)
+        price = float(df["close"].iloc[-1])
+
+        mc = await loop.run_in_executor(
+            None, run_mc,
+            price, sig, n_sim, n_forward, mc_model,
+            ind.returns, ind.kurtosis,
+        )
+        result.prob_up   = round(float(mc.prob_up),   1)
+        result.prob_down = round(float(mc.prob_down), 1)
+    except Exception as e:
+        logger.debug("[scanner MC] %s failed: %s", result.ticker, e)
+    return result
+
+
 async def scan_tickers(
     tickers:         List[str],
     interval:        str  = "1d",
     lookback:        int  = 60,
     extended:        bool = False,
-    max_concurrent:  int  = 8,
-    min_score_abs:   float = 0.0,   # filter: only return |score| >= this
+    max_concurrent:  int  = None,   # defaults to cfg.scan_max_concurrent
+    min_score_abs:   float = None,  # defaults to cfg.scan_min_score
+    mc_top_n:        int  = 5,      # run fast MC on top N results (0 to disable)
+    mc_n_sim:        int  = 500,    # simulations for top-N MC pass
+    mc_n_forward:    int  = 10,     # forward candles for top-N MC
+    mc_model:        str  = "garch",
 ) -> Dict[str, Any]:
     """
     Scan tickers concurrently. Returns a structured report with:
       - breakouts:  top bullish signals (score > 0)
       - breakdowns: top bearish signals (score < 0)
       - all:        full ranked list
+
+    If mc_top_n > 0, a fast Monte Carlo is run on the top mc_top_n results
+    (by absolute score) to produce accurate prob_up / prob_down estimates.
     """
+    if max_concurrent is None:
+        max_concurrent = cfg.scan_max_concurrent
+    if min_score_abs is None:
+        min_score_abs = cfg.scan_min_score
     loop = asyncio.get_running_loop()
     sem  = asyncio.Semaphore(max_concurrent)
 
@@ -280,7 +329,6 @@ async def scan_tickers(
     t_start = time.monotonic()
     tasks   = [asyncio.create_task(_throttled(t)) for t in tickers]
     results = await asyncio.gather(*tasks)
-    elapsed = round((time.monotonic() - t_start) * 1000)
 
     # Filter errors
     valid   = [r for r in results if r.direction != "error"]
@@ -292,6 +340,26 @@ async def scan_tickers(
 
     # Sort by score descending
     ranked = sorted(valid, key=lambda r: r.score, reverse=True)
+
+    # ── Fast MC on top-N results ──────────────────────────────────────────
+    if mc_top_n > 0 and ranked:
+        # Pick top N by |score| (covers both strong breakouts and breakdowns)
+        by_abs = sorted(ranked, key=lambda r: abs(r.score), reverse=True)
+        top_n  = by_abs[:mc_top_n]
+        mc_sem = asyncio.Semaphore(min(mc_top_n, 3))   # limit concurrency for MC
+
+        async def _mc_throttled(r: ScanResult) -> ScanResult:
+            async with mc_sem:
+                return await _run_mc_on_result(
+                    r, interval, lookback, extended, loop,
+                    n_sim=mc_n_sim, n_forward=mc_n_forward, mc_model=mc_model,
+                )
+
+        mc_tasks = [asyncio.create_task(_mc_throttled(r)) for r in top_n]
+        await asyncio.gather(*mc_tasks)
+        # Results are mutated in place — ranked already references the same objects
+
+    elapsed = round((time.monotonic() - t_start) * 1000)
 
     breakouts  = [r for r in ranked if r.score >  0.20]
     breakdowns = [r for r in ranked if r.score < -0.20]

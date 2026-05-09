@@ -45,6 +45,7 @@ import numpy as np
 
 from .indicators import Indicators, _safe
 from .regime import Regime
+from config import cfg
 
 
 # ─── Dataclass ──────────────────────────────────────────────────────────────
@@ -204,10 +205,54 @@ _REGIME_WEIGHTS = {
 }
 
 
+def _load_custom_base_weights() -> Optional[Dict[str, float]]:
+    """
+    Load custom base weights from cfg.signal_base_weights if set.
+    Format: comma-separated floats in the fixed order:
+      rsi, slope, momentum, ema, macd, bollinger, adx, obv, vwap, skew, trend_bias, rsi_div, ema200
+    Returns None if not set or if parsing fails.
+    """
+    raw = (cfg.signal_base_weights or "").strip()
+    if not raw:
+        return None
+    keys = ["rsi", "slope", "momentum", "ema", "macd", "bollinger",
+            "adx", "obv", "vwap", "skew", "trend_bias", "rsi_div", "ema200"]
+    try:
+        vals = [float(v.strip()) for v in raw.split(",")]
+        if len(vals) != len(keys):
+            import logging
+            logging.getLogger(__name__).warning(
+                "signal: SIGNAL_BASE_WEIGHTS has %d values, expected %d — using defaults",
+                len(vals), len(keys),
+            )
+            return None
+        total = sum(vals)
+        if abs(total - 1.0) > 0.01:
+            import logging
+            logging.getLogger(__name__).warning(
+                "signal: SIGNAL_BASE_WEIGHTS sums to %.3f (expected 1.0) — normalising",
+                total,
+            )
+            vals = [v / total for v in vals]
+        return dict(zip(keys, vals))
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning(
+            "signal: failed to parse SIGNAL_BASE_WEIGHTS=%r — using defaults", raw
+        )
+        return None
+
+
 def _weights_for(regime: Optional[Regime]) -> Dict[str, float]:
+    # Allow runtime override of base weights via config
+    custom_base = _load_custom_base_weights()
+    base = custom_base if custom_base is not None else _BASE_WEIGHTS
     if regime is None:
-        return _BASE_WEIGHTS
-    return _REGIME_WEIGHTS.get(regime.regime, _BASE_WEIGHTS)
+        return base
+    # For choppy, always use base (don't use the regime map)
+    if regime.regime == "choppy":
+        return base
+    return _REGIME_WEIGHTS.get(regime.regime, base)
 
 
 # ─── Confidence (entropy-aware + regime amplifier) ──────────────────────────
@@ -313,15 +358,19 @@ def compute_signal(ind: Indicators, regime: Optional[Regime] = None) -> Signal:
             vol_adj = float(np.clip(vol_adj * 1.25, 0.003, 0.06))
 
     # 4. Gap / news override ────────────────────────────────────────────────
+    # On gap days: suppress BOTH the signal adjustment AND the base drift.
+    # The base drift (historical mean) is irrelevant when a gap event occurred —
+    # post-gap price action is driven by news, not the historical drift regime.
+    # We zero out drift entirely and inflate vol to represent the uncertainty.
     gap_warning = ""
     if ind.is_gap_up or ind.is_gap_down:
         direction = "UP" if ind.is_gap_up else "DOWN"
         gap_warning = (
             f"GAP {direction} {ind.gap_pct:+.1f}% detected — likely news-driven. "
-            f"Signal adjustment suppressed; base historical drift preserved. "
+            f"Drift bias zeroed (historical drift unreliable post-gap). "
             f"MC volatility inflated to reflect elevated uncertainty."
         )
-        drift_bias = float(np.clip(base_drift, -2.0 * std_dec, 2.0 * std_dec))
+        drift_bias = 0.0   # zero drift — gap day mean reversion is unpredictable
         signal_adj = 0.0
         vol_adj    = float(np.clip(vol_adj * 1.6, 0.003, 0.06))
 

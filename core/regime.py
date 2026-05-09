@@ -40,6 +40,8 @@ from typing import Dict, List
 import numpy as np
 import pandas as pd
 
+from config import cfg
+
 
 # ─── Dataclass ──────────────────────────────────────────────────────────────
 
@@ -377,23 +379,24 @@ def detect_regime(df: pd.DataFrame, adx: float = 0.0,
             components={},
         )
 
-    # Multi-window regression
-    r2_short, slope_short = _r2_and_slope(closes, 10)
-    r2_mid,   slope_mid   = _r2_and_slope(closes, 20)
-    r2_long,  slope_long  = _r2_and_slope(closes, min(50, len(closes)))
+    # Multi-window regression — windows scale with cfg.regime_donchian_n
+    don_n = cfg.regime_donchian_n
+    r2_short, slope_short = _r2_and_slope(closes, max(10, don_n // 2))
+    r2_mid,   slope_mid   = _r2_and_slope(closes, don_n)
+    r2_long,  slope_long  = _r2_and_slope(closes, min(don_n * 2 + 10, len(closes)))
 
     # Hurst on log-prices
     log_close = np.log(np.clip(closes, 1e-9, None))
-    hurst = _hurst(log_close, max_lag=min(20, len(closes) // 4))
+    hurst = _hurst(log_close, max_lag=min(cfg.regime_hurst_lags, len(closes) // 4))
 
     # Donchian
-    don_pos, don_hi, don_lo, brk_up, brk_dn = _donchian(df, n=20)
+    don_pos, don_hi, don_lo, brk_up, brk_dn = _donchian(df, n=don_n)
 
     # HH/HL counts
-    hh, hl, lh, ll = _hh_hl_counts(df, lookback=3, last_pivots=6)
+    hh, hl, lh, ll = _hh_hl_counts(df, lookback=cfg.regime_pivot_wing, last_pivots=6)
 
     # Range compression
-    rc = _range_compression(df, n=20)
+    rc = _range_compression(df, n=don_n)
 
     # ── Component scores ────────────────────────────────────────────────
     # Each is in [-1, 1] (signed = direction); range_score is [0, 1].

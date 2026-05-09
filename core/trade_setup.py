@@ -58,15 +58,22 @@ import numpy as np
 import pandas as pd
 
 from .zones import detect_zones, ZoneResult
+from config import cfg
 
 
 # ─── Thresholds ──────────────────────────────────────────────────────────────
+# These are read from cfg at call time so live config changes take effect.
+# The module-level constants below are kept as documentation / fallbacks only.
 
-_MIN_SCORE      = 0.20   # minimum |score| to consider an entry
-_MIN_ADX        = 15.0   # trend strength gate
-_MIN_CONF       = 0.30   # signal confidence gate
-_MIN_MC_PROB    = 0.40   # MC directional probability gate (only applied when MC data available)
-_MIN_RR         = 1.0    # minimum acceptable risk:reward
+def _min_score()    -> float: return cfg.min_score
+def _min_adx()      -> float: return cfg.min_adx
+def _min_conf()     -> float: return cfg.min_conf
+def _min_mc_prob()  -> float: return cfg.min_mc_prob
+def _min_rr()       -> float: return cfg.min_rr
+def _rsi_overbought() -> float: return cfg.rsi_overbought
+def _rsi_oversold()   -> float: return cfg.rsi_oversold
+def _min_score_choppy() -> float: return cfg.min_score_choppy
+def _fixed_max_pct()  -> float: return cfg.sl_max_pct
 
 # ATR multipliers per regime type.
 # Also covers scanner direction strings ("bullish", "bearish", "trending_up", etc.)
@@ -113,7 +120,6 @@ _FIXED_BASE_PCT = {
     "breakdown":        0.030,
     "neutral":          0.050,
 }
-_FIXED_MAX_PCT  = 0.05   # hard ceiling: never risk more than 5% on fixed-% stop
 _FIXED_ATR_MULT = 1.5    # fixed-% SL = max(base, ATR × 1.5) — covers 1.5 ATR of noise
 
 # Maximum ATR-SL distance as a fraction of price, per timeframe.
@@ -186,6 +192,16 @@ class TradeSetup:
     score:        Optional[float] = None
     confidence:   Optional[float] = None
 
+    # ── Position sizing ──────────────────────────────────────────────────
+    # Expressed as % of account equity to risk on this trade.
+    # kelly_fraction       : raw Kelly % (may be aggressive — use half-Kelly)
+    # kelly_half           : half-Kelly (recommended sizing)
+    # fixed_frac           : fixed-fractional sizing (risk 1% of equity)
+    # Both require knowing the per-trade win probability and avg W/L.
+    kelly_fraction:  Optional[float] = None   # raw Kelly f  (%)
+    kelly_half:      Optional[float] = None   # half-Kelly   (%)
+    fixed_frac:      Optional[float] = None   # fixed-frac 1% equity (%)
+
 
 def to_dict(ts: TradeSetup) -> dict:
     return asdict(ts)
@@ -226,27 +242,27 @@ def compute_trade_setup(
     side     = "long" if is_long else "short"
 
     # ── Gate 1: Score magnitude ──────────────────────────────────────
-    if abs(score) < _MIN_SCORE:
+    if abs(score) < _min_score():
         return TradeSetup(
             ticker=ticker, side="none", valid=False, direction=direction, regime=regime,
             score=round(score, 4), confidence=round(confidence, 3),
-            reason=f"Score {score:+.2f} below threshold ±{_MIN_SCORE} — no clear directional edge",
+            reason=f"Score {score:+.2f} below threshold ±{_min_score()} — no clear directional edge",
         )
 
     # ── Gate 2: ADX (trend strength) ────────────────────────────────
-    if adx < _MIN_ADX:
+    if adx < _min_adx():
         return TradeSetup(
             ticker=ticker, side="none", valid=False, direction=direction, regime=regime,
             score=round(score, 4), confidence=round(confidence, 3),
-            reason=f"ADX {adx:.1f} < {_MIN_ADX} — trend too weak, avoid choppy conditions",
+            reason=f"ADX {adx:.1f} < {_min_adx()} — trend too weak, avoid choppy conditions",
         )
 
     # ── Gate 3: Signal confidence ────────────────────────────────────
-    if confidence < _MIN_CONF:
+    if confidence < _min_conf():
         return TradeSetup(
             ticker=ticker, side="none", valid=False, direction=direction, regime=regime,
             score=round(score, 4), confidence=round(confidence, 3),
-            reason=f"Confidence {confidence:.0%} below {_MIN_CONF:.0%} — signals conflicting",
+            reason=f"Confidence {confidence:.0%} below {_min_conf():.0%} — signals conflicting",
         )
 
     # ── Gate 4: MC directional probability ──────────────────────────
@@ -261,34 +277,34 @@ def compute_trade_setup(
     _prob_d = prob_down / 100.0 if prob_down > 1.0 else prob_down
     mc_available = (_prob_u + _prob_d) > 0.50   # sum > 50% → real MC data present
     mc_dir_prob  = _prob_u if is_long else _prob_d
-    if mc_available and mc_dir_prob < _MIN_MC_PROB:
+    if mc_available and mc_dir_prob < _min_mc_prob():
         return TradeSetup(
             ticker=ticker, side="none", valid=False, direction=direction, regime=regime,
             score=round(score, 4), confidence=round(confidence, 3),
-            reason=f"MC {side} probability {mc_dir_prob:.0%} < {_MIN_MC_PROB:.0%} — MC disagrees",
+            reason=f"MC {side} probability {mc_dir_prob:.0%} < {_min_mc_prob():.0%} — MC disagrees",
         )
 
     # ── Gate 5: RSI extremes ─────────────────────────────────────────
-    if is_long and rsi > 82:
+    if is_long and rsi > _rsi_overbought():
         return TradeSetup(
             ticker=ticker, side="none", valid=False, direction=direction, regime=regime,
             score=round(score, 4), confidence=round(confidence, 3),
-            reason=f"RSI {rsi:.1f} > 82 — severely overbought, wait for pullback",
+            reason=f"RSI {rsi:.1f} > {_rsi_overbought():.0f} — severely overbought, wait for pullback",
         )
-    if is_short and rsi < 18:
+    if is_short and rsi < _rsi_oversold():
         return TradeSetup(
             ticker=ticker, side="none", valid=False, direction=direction, regime=regime,
             score=round(score, 4), confidence=round(confidence, 3),
-            reason=f"RSI {rsi:.1f} < 18 — severely oversold, wait for bounce first",
+            reason=f"RSI {rsi:.1f} < {_rsi_oversold():.0f} — severely oversold, wait for bounce first",
         )
 
     # ── Gate 6: Regime sanity ────────────────────────────────────────
     # Don't go long in a choppy or range-bound market unless score is very strong
-    if regime in ("choppy", "range_bound") and abs(score) < 0.45:
+    if regime in ("choppy", "range_bound") and abs(score) < _min_score_choppy():
         return TradeSetup(
             ticker=ticker, side="none", valid=False, direction=direction, regime=regime,
             score=round(score, 4), confidence=round(confidence, 3),
-            reason=f"Regime '{regime}' — need score ≥ 0.45 for non-trending market, got {score:+.2f}",
+            reason=f"Regime '{regime}' — need score ≥ {_min_score_choppy()} for non-trending market, got {score:+.2f}",
         )
 
     # ── All gates passed: compute levels ────────────────────────────
@@ -323,7 +339,7 @@ def compute_trade_setup(
     #   • Hard cap at 5% — beyond that the trade risk/reward collapses
     base_pct    = _FIXED_BASE_PCT.get(direction, _FIXED_BASE_PCT.get(regime, 0.030))
     atr_suggest = atr_pct * _FIXED_ATR_MULT        # e.g. ATR=1.5% → suggest 2.25%
-    sl_pct_val  = min(_FIXED_MAX_PCT, max(base_pct, atr_suggest))
+    sl_pct_val  = min(_fixed_max_pct(), max(base_pct, atr_suggest))
     # Also floor at base to avoid tiny SL on very stable stocks
     sl_pct_val  = max(sl_pct_val, base_pct)
 
@@ -484,11 +500,11 @@ def compute_trade_setup(
 
     # ── Gate 7: Minimum R:R ──────────────────────────────────────────
     # Gate uses best_rr — if at least one SL method gives acceptable R:R, allow entry.
-    if best_rr < _MIN_RR:
+    if best_rr < _min_rr():
         return TradeSetup(
             ticker=ticker, side="none", valid=False, direction=direction, regime=regime,
             score=round(score, 4), confidence=round(confidence, 3),
-            reason=f"R:R too low — ATR:{rr_atr:.1f}R, Fixed:{rr_pct:.1f}R (need ≥{_MIN_RR}R). TP targets not far enough.",
+            reason=f"R:R too low — ATR:{rr_atr:.1f}R, Fixed:{rr_pct:.1f}R (need ≥{_min_rr()}R). TP targets not far enough.",
         )
 
     # ── Probabilities of hitting TP / SL (path-aware) ───────────────
@@ -558,11 +574,42 @@ def compute_trade_setup(
     # Which SL has better R:R? (tighter stop = better R:R)
     sl_recommended = "pct" if rr_pct >= rr_atr else "atr"
 
+    # ── Position sizing ──────────────────────────────────────────────
+    # Kelly criterion: f = (p·b − q) / b
+    #   p = probability of winning (prob_tp1 from MC)
+    #   q = 1 - p
+    #   b = win/loss ratio: reward / risk  (use best R:R)
+    # Fixed-fractional: risk 1% of equity per trade, size = 1% / SL%
+    kelly_fraction = kelly_half = fixed_frac = None
+    p_win = prob_tp1 if prob_tp1 is not None else (mc_dir_prob if mc_available else 0.5)
+    p_win = float(np.clip(p_win, 0.01, 0.99))
+    p_lose = 1.0 - p_win
+    best_rr_for_kelly = best_rr if best_rr > 0 else 1.0
+
+    raw_kelly = (p_win * best_rr_for_kelly - p_lose) / best_rr_for_kelly
+    if raw_kelly > 0:
+        kelly_fraction = round(float(np.clip(raw_kelly, 0.0, 1.0)) * 100, 2)
+        kelly_half     = round(kelly_fraction / 2.0, 2)
+    else:
+        kelly_fraction = 0.0
+        kelly_half     = 0.0
+
+    # Fixed-fractional: risk exactly 1% of account equity
+    # position_size_pct = risk_fraction / stop_loss_fraction
+    # (if SL is 2%, and we risk 1% equity → we put 50% of equity in)
+    sl_dist_for_sizing = min(sl_atr_dist, sl_pct_dist) / 100.0  # use tighter stop
+    if sl_dist_for_sizing > 0:
+        fixed_frac = round(min(0.01 / sl_dist_for_sizing, 1.0) * 100, 2)  # as % of equity
+    else:
+        fixed_frac = None
+
     # ── Build reason string ──────────────────────────────────────────
-    direction_label = direction.replace("_", " ").title()
+    direction_label = (direction or "unknown").replace("_", " ").title()
     cap_note  = f" [ATR capped at {max_atr_pct*100:.0f}%]" if atr_was_capped else ""
-    zone_note = f" · Zone: {zone_type_str.replace('_',' ')} (str={zone_strength_val:.2f})" \
-                if zone_type_str else ""
+    zone_note = (
+        f" · Zone: {zone_type_str.replace('_', ' ')} (str={zone_strength_val:.2f})"
+        if zone_type_str is not None and zone_strength_val is not None else ""
+    )
     reason_parts = [
         f"{direction_label} confirmed",
         f"ADX {adx:.0f}",
@@ -618,16 +665,22 @@ def compute_trade_setup(
         zone_type      = zone_type_str,
         zone_strength  = zone_strength_val,
         zone_context   = zone_context_str,
+
+        # Position sizing
+        kelly_fraction = kelly_fraction,
+        kelly_half     = kelly_half,
+        fixed_frac     = fixed_frac,
     )
 
 
 # ─── Convenience wrapper for the main analyse() output ───────────────────────
 
 def trade_setup_from_analysis(
-    ticker:   str,
-    result:   dict,
-    interval: str = "15m",
-    df:       Optional[pd.DataFrame] = None,   # OHLCV for zone detection
+    ticker:         str,
+    result:         dict,
+    interval:       str = "15m",
+    df:             Optional[pd.DataFrame] = None,   # OHLCV for zone detection
+    mc_paths_full:  Optional[object] = None,         # numpy array (n_sim, n_steps+1)
 ) -> dict:
     """
     Build a TradeSetup directly from the dict returned by core.analyse().
@@ -655,7 +708,9 @@ def trade_setup_from_analysis(
     mc_p25     = mc_d.get("p25_price") or mc_d.get("p25")
     mc_p75     = mc_d.get("p75_price") or mc_d.get("p75")
     mc_p90     = mc_d.get("p90_price") or mc_d.get("p90")
-    mc_paths   = mc_d.get("paths") or None
+    # Prefer the full numpy paths array (all simulations) for accurate probabilities.
+    # Fall back to the chart-sample list only if full paths not provided.
+    mc_paths   = mc_paths_full if mc_paths_full is not None else mc_d.get("paths") or None
 
     label_lower = signal_d.get("label", "").lower()
     if "strong buy" in label_lower or "buy" in label_lower:

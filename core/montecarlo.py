@@ -32,6 +32,84 @@ from typing import List, Optional, Sequence
 import numpy as np
 
 from .signal import Signal
+from config import cfg
+
+# ─── GARCH parameter calibration ────────────────────────────────────────────
+
+def _calibrate_garch(recent_returns: Optional[Sequence[float]],
+                     base_alpha: float, base_beta: float
+                     ) -> tuple[float, float]:
+    """
+    Adaptively scale GARCH α and β based on the detected volatility regime:
+      • Low vol   (σ < 0.5× long-run): more mean-reversion → lower α, higher β
+      • Normal vol: use config defaults
+      • High vol  (σ > 1.5× long-run): more vol clustering → higher α, lower β
+
+    Returns (alpha, beta) that still satisfy α+β < 1 for stationarity.
+    """
+    if recent_returns is None or len(recent_returns) < 20:
+        return base_alpha, base_beta
+
+    arr = np.asarray(recent_returns, dtype=float)
+    arr = arr[np.isfinite(arr)]
+    if len(arr) < 20:
+        return base_alpha, base_beta
+
+    # Recent (short) vs long-run volatility
+    recent_vol = float(np.std(arr[-10:]))
+    longrun_vol = float(np.std(arr))
+    if longrun_vol <= 0:
+        return base_alpha, base_beta
+
+    ratio = recent_vol / longrun_vol
+
+    if ratio < 0.5:
+        # Low vol regime: vol clustering is less prominent
+        # Reduce α (less reactive to shocks), increase β (more persistence)
+        alpha = base_alpha * 0.70
+        beta  = min(base_beta * 1.05, 0.95 - alpha)
+    elif ratio > 1.5:
+        # High vol regime: strong clustering, shocks matter more
+        # Increase α (more reactive), reduce β slightly
+        alpha = min(base_alpha * 1.40, 0.30)
+        beta  = min(base_beta * 0.95, 0.95 - alpha)
+    else:
+        # Normal vol: use config as-is
+        alpha, beta = base_alpha, base_beta
+
+    # Safety clamp: α+β must be < 1
+    if alpha + beta >= 1.0:
+        scale = 0.97 / (alpha + beta)
+        alpha *= scale
+        beta  *= scale
+
+    return float(np.clip(alpha, 0.01, 0.49)), float(np.clip(beta, 0.10, 0.94))
+
+
+# ─── Return clipping calibration ─────────────────────────────────────────────
+
+def _adaptive_clip(recent_returns: Optional[Sequence[float]],
+                   base_clip: float) -> float:
+    """
+    Adapt return clipping threshold based on empirical tail quantiles.
+    Widens clip for fat-tailed return distributions, tightens for stable ones.
+    Base clip is the config default (e.g. 0.25 = ±25%).
+    """
+    if recent_returns is None or len(recent_returns) < 20:
+        return base_clip
+
+    arr = np.asarray(recent_returns, dtype=float)
+    arr = arr[np.isfinite(arr)]
+    if len(arr) < 20:
+        return base_clip
+
+    # Use empirical 99th percentile magnitude as the natural clip boundary
+    p99 = float(np.percentile(np.abs(arr), 99))
+    # Give 3× headroom above the 99th percentile for jumps
+    natural_clip = p99 * 3.0
+    # But never go below 0.05 (always allow 5% moves) or above base_clip
+    return float(np.clip(natural_clip, 0.05, base_clip))
+
 
 # ─── Volatility utilities ────────────────────────────────────────────────────
 
@@ -85,7 +163,8 @@ class MCResult:
     lower_band:   List[float]    # P25 path  (per-step)
     p90_band:     List[float]
     p10_band:     List[float]
-    paths:        List[List[float]]
+    paths:        List[List[float]]   # chart sample (100 paths)
+    paths_full:   object             # numpy array (n_sim, n_steps+1) for trade_setup
     median_path:  List[float]
     model:        str
 
@@ -114,16 +193,24 @@ def _innov_student_t(rng, n_sim, n_steps, kurtosis_excess: float):
     return raw
 
 
-def _simulate_garch(rng, n_sim, n_steps, base_sigma, recent_returns):
+def _simulate_garch(rng, n_sim, n_steps, base_sigma, recent_returns,
+                    alpha: float = None, beta: float = None):
     """
     GARCH(1,1)-style sigma path. Returns (innovations, sigma_per_step).
     Innovations are Normal but variance evolves per step.
 
        σ²_t = ω + α · ε²_{t-1} + β · σ²_{t-1}
        Standard params for short timeframes: α=0.1, β=0.85, ω = (1 - α - β) σ²_LR
+
+    alpha and beta default to cfg.garch_alpha / cfg.garch_beta when not supplied.
     """
-    alpha = 0.1
-    beta  = 0.85
+    alpha = cfg.garch_alpha if alpha is None else alpha
+    beta  = cfg.garch_beta  if beta  is None else beta
+    # Enforce stationarity: α + β < 1
+    if alpha + beta >= 1.0:
+        scale = 0.98 / (alpha + beta)
+        alpha *= scale
+        beta  *= scale
     omega_factor = 1.0 - alpha - beta
 
     # Long-run variance ≈ recent realised variance (use base_sigma)
@@ -171,13 +258,17 @@ def _simulate_bootstrap(rng, n_sim, n_steps, recent_returns: Sequence[float], dr
 
 
 def _simulate_jump(rng, n_sim, n_steps, drift, sigma,
-                   jump_intensity: float = 0.03,   # ~3% of bars have a jump
+                   jump_intensity: float = None,   # ~3% of bars have a jump
                    jump_mean: float = 0.0,
-                   jump_sigma_mult: float = 3.0):
+                   jump_sigma_mult: float = None):
     """
     Merton jump-diffusion innovations:
       r_t = drift + σ·Z_t + 1[Poisson] · (μ_J + σ_J · N(0,1))
     """
+    if jump_intensity is None:
+        jump_intensity = cfg.jump_intensity
+    if jump_sigma_mult is None:
+        jump_sigma_mult = cfg.jump_sigma_mult
     z = rng.standard_normal((n_sim, n_steps))
     diffusion = drift + sigma * z
 
@@ -251,6 +342,14 @@ def run(
     # ── Blended volatility (improved over raw ATR-based vol) ─────────────
     sigma = _blend_vol(float(signal.vol_adj), recent_returns, kurtosis_excess)
 
+    # ── Regime-calibrated GARCH parameters ──────────────────────────────
+    garch_alpha, garch_beta = _calibrate_garch(
+        recent_returns, cfg.garch_alpha, cfg.garch_beta
+    )
+
+    # ── Adaptive return clipping ─────────────────────────────────────────
+    clip_val = _adaptive_clip(recent_returns, float(cfg.mc_clip))
+
     # ── Pick model ───────────────────────────────────────────────────────
     if model == "gaussian":
         eps = _innov_gaussian(rng, n_sim, n_step)
@@ -259,7 +358,8 @@ def run(
         eps = _innov_student_t(rng, n_sim, n_step, kurtosis_excess)
         returns = drift + sigma * eps
     elif model == "garch":
-        eps, sigma_path = _simulate_garch(rng, n_sim, n_step, sigma, recent_returns)
+        eps, sigma_path = _simulate_garch(rng, n_sim, n_step, sigma, recent_returns,
+                                          alpha=garch_alpha, beta=garch_beta)
         returns = drift + sigma_path * eps
     elif model == "bootstrap":
         if recent_returns is None or len(recent_returns) < 10:
@@ -282,8 +382,8 @@ def run(
         returns = drift + sigma * eps
 
     # ── Build price paths ───────────────────────────────────────────────
-    # Clip per-step returns to ±25% so a single step can't blow up the whole path
-    returns = np.clip(returns, -0.25, 0.25)
+    # Clip per-step returns — adaptive based on empirical tail quantiles
+    returns = np.clip(returns, -clip_val, clip_val)
 
     factors = np.cumprod(1.0 + returns, axis=1)
     paths   = np.hstack([
@@ -299,12 +399,9 @@ def run(
     prob_down = float(np.mean(final < current_price - band))
     prob_flat = max(0.0, 1.0 - prob_up - prob_down)   # never negative
 
-    # ── Percentiles & summary stats ─────────────────────────────────────
-    p10  = float(np.percentile(final, 10))
-    p25  = float(np.percentile(final, 25))
-    p75  = float(np.percentile(final, 75))
-    p90  = float(np.percentile(final, 90))
-    med  = float(np.median(final))
+    # ── Percentiles & summary stats — single batched call ───────────────
+    p10, p25, med, p75, p90 = np.percentile(final, [10, 25, 50, 75, 90])
+    p10, p25, med, p75, p90 = float(p10), float(p25), float(med), float(p75), float(p90)
     mean = float(np.mean(final))
     expected_return = (mean / current_price - 1.0) * 100 if current_price else 0.0
 
@@ -313,18 +410,20 @@ def run(
     worst_n = max(1, int(round(n_sim * 0.05)))
     cvar_5 = float(np.mean(np.sort(rets_final)[:worst_n])) * 100
 
-    # Per-step P10/P25/P75/P90 bands (for the dashboard cone)
-    band_p10 = np.percentile(paths, 10, axis=0)
-    band_p25 = np.percentile(paths, 25, axis=0)
-    band_p75 = np.percentile(paths, 75, axis=0)
-    band_p90 = np.percentile(paths, 90, axis=0)
-
-    median_path_arr = np.percentile(paths, 50, axis=0)
+    # Per-step bands — single batched percentile pass over all paths
+    _path_pcts = np.percentile(paths, [10, 25, 50, 75, 90], axis=0)
+    band_p10, band_p25, median_path_arr, band_p75, band_p90 = _path_pcts
     median_path = [round(float(v), 4) for v in median_path_arr]
 
-    # Subsample paths for the chart (lighter payload)
-    idx = rng.choice(n_sim, size=min(100, n_sim), replace=False)
-    paths_sample = [[round(float(v), 4) for v in paths[i]] for i in idx]
+    # Full paths stored as 2-D numpy array for accurate probability calculations
+    # (trade_setup uses all paths for path-aware SL/TP hit detection).
+    # Subsample a smaller set for the chart payload only.
+    chart_idx    = rng.choice(n_sim, size=min(100, n_sim), replace=False)
+    paths_sample = [[round(float(v), 4) for v in paths[i]] for i in chart_idx]
+
+    # Full paths (all simulations × all steps) — used by trade_setup for
+    # accurate stop-hunt probability. Rounded to 4dp to reduce memory.
+    paths_full = paths  # shape (n_sim, n_steps+1) — passed as-is (numpy array)
 
     return MCResult(
         prob_up         = round(prob_up   * 100, 1),
@@ -342,7 +441,8 @@ def run(
         lower_band      = [round(float(v), 4) for v in band_p25],
         p90_band        = [round(float(v), 4) for v in band_p90],
         p10_band        = [round(float(v), 4) for v in band_p10],
-        paths           = paths_sample,
+        paths           = paths_sample,   # chart only (100 paths)
+        paths_full      = paths_full,     # all paths (numpy array) for trade_setup
         median_path     = median_path,
         model           = model,
     )

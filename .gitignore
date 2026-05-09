@@ -285,5 +285,32 @@ poetry.toml
 
 # LSP config files
 pyrightconfig.json
+# ========================================
+# Project-specific sensitive files
+# ========================================
 
+# Cookies and authentication tokens
+x_cookies.json
+*cookies*.json
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+mc_trader.db
+
+# API keys and credentials (beyond .env)
+config.local.py
+.env.local
+.env.*.local
+secrets.json
+*_secret*.json
+
+# Temporary test files
+_synctest.txt
+_test_bash_write.txt
+
+# Portfolio and generated reports
+portfolio_tracker.html
+resource_image/
 # End of https://www.toptal.com/developers/gitignore/api/python,pycharm

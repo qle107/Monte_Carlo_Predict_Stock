@@ -55,15 +55,20 @@ from typing import List, Optional
 import numpy as np
 import pandas as pd
 
+from config import cfg
+
 
 # ─── Tunables ────────────────────────────────────────────────────────────────
+# These are now read from cfg at runtime so they can be tuned without code changes.
+# Accessor functions ensure live config changes take effect on each call.
 
-_PIVOT_WING      = 4      # bars each side for pivot detection
-_CLUSTER_ATR     = 0.8    # merge pivots within 0.8 × ATR
-_TOUCH_BAND_ATR  = 0.6    # price within 0.6 × ATR of zone level = "touch"
-_BREAK_THRESH    = 0.5    # zone broken if price closes >0.5×ATR through it
-_MAX_ZONES       = 5      # max demand + max supply zones returned
-_ZONE_HALF_ATR   = 0.3    # zone edge = level ± 0.3 × ATR
+def _PIVOT_WING()     -> int:   return cfg.zone_pivot_window
+def _CLUSTER_ATR()    -> float: return cfg.zone_cluster_atr
+def _TOUCH_BAND_ATR() -> float: return cfg.zone_touch_atr
+def _BREAK_THRESH()   -> float: return cfg.zone_break_atr
+def _MAX_ZONES_D()    -> int:   return cfg.zone_max_demand
+def _MAX_ZONES_S()    -> int:   return cfg.zone_max_supply
+def _ZONE_HALF_ATR()  -> float: return cfg.zone_width_atr
 
 
 # ─── Dataclasses ─────────────────────────────────────────────────────────────
@@ -165,7 +170,7 @@ def _cluster(
 
     # Sort by price
     sorted_p = sorted(pivots, key=lambda x: x[1])
-    half = atr * _CLUSTER_ATR
+    half = atr * _CLUSTER_ATR()
 
     zones: List[Zone] = []
     cluster_idxs: List[int] = [sorted_p[0][0]]
@@ -176,8 +181,8 @@ def _cluster(
         bar_idx = max(idxs)   # most recent
         return Zone(
             level     = round(level, 4),
-            low       = round(level - atr * _ZONE_HALF_ATR, 4),
-            high      = round(level + atr * _ZONE_HALF_ATR, 4),
+            low       = round(level - atr * _ZONE_HALF_ATR(), 4),
+            high      = round(level + atr * _ZONE_HALF_ATR(), 4),
             strength  = 0.0,   # filled in later
             touches   = 0,
             fresh     = True,
@@ -211,7 +216,7 @@ def _score_zones(
     """
     Mutates each Zone in-place: fills touches, fresh, strength.
     """
-    touch_band = atr * _TOUCH_BAND_ATR
+    touch_band = atr * _TOUCH_BAND_ATR()
 
     for z in zones:
         touches   = 0
@@ -265,7 +270,7 @@ def _remove_broken(
     below it (on a bar AFTER the zone formed).
     A supply zone is broken if price closed above it by that margin.
     """
-    thresh = atr * _BREAK_THRESH
+    thresh = atr * _BREAK_THRESH()
     surviving = []
 
     for z in zones:
@@ -318,7 +323,7 @@ def detect_zones(df: pd.DataFrame) -> ZoneResult:
         atr    = _atr(df)
 
         # ── 1. Find swing pivots ──────────────────────────────────────
-        pivot_highs, pivot_lows = _find_pivots(highs, lows, wing=_PIVOT_WING)
+        pivot_highs, pivot_lows = _find_pivots(highs, lows, wing=_PIVOT_WING())
 
         # ── 2. Cluster into zones ─────────────────────────────────────
         demand_zones = _cluster(pivot_lows,  atr, "demand")
@@ -335,11 +340,11 @@ def detect_zones(df: pd.DataFrame) -> ZoneResult:
         # ── 5. Sort by strength desc, limit ──────────────────────────
         demand_zones.sort(key=lambda z: z.strength, reverse=True)
         supply_zones.sort(key=lambda z: z.strength, reverse=True)
-        demand_zones = demand_zones[:_MAX_ZONES]
-        supply_zones = supply_zones[:_MAX_ZONES]
+        demand_zones = demand_zones[:_MAX_ZONES_D()]
+        supply_zones = supply_zones[:_MAX_ZONES_S()]
 
         # ── 6. Find nearest demand (below price) / supply (above price) ─
-        touch_band = atr * _TOUCH_BAND_ATR
+        touch_band = atr * _TOUCH_BAND_ATR()
 
         # Nearest demand BELOW current price (sorted by level desc = closest first)
         below = sorted(

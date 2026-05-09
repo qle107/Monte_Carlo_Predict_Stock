@@ -12,11 +12,76 @@ Extended hours (pre-market 4am–9:30am ET, after-hours 4pm–8pm ET):
 
 import os
 import logging
+import time
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+# ── In-process TTL cache ──────────────────────────────────────────────────────
+# Prevents duplicate network round-trips when the scanner fetches the same
+# ticker concurrently (e.g. scan pass + MC top-N pass both need AAPL/1d/60).
+# Cache is keyed by (ticker, interval, lookback, extended) and expires after
+# _CACHE_TTL seconds.  Thread-safe via a single RLock.
+
+_CACHE_TTL     = 30.0          # seconds before a cached DataFrame is evicted
+_cache_lock    = threading.RLock()
+_cache: dict   = {}            # key → (df, expire_time)
+
+
+def _cache_get(key: tuple) -> Optional[pd.DataFrame]:
+    with _cache_lock:
+        entry = _cache.get(key)
+        if entry is None:
+            return None
+        df, exp = entry
+        if time.monotonic() > exp:
+            del _cache[key]
+            return None
+        return df.copy()   # return a copy so callers can't mutate the cache
+
+
+def _cache_put(key: tuple, df: pd.DataFrame) -> None:
+    with _cache_lock:
+        # Evict expired entries to prevent unbounded growth
+        now = time.monotonic()
+        expired = [k for k, (_, exp) in _cache.items() if now > exp]
+        for k in expired:
+            del _cache[k]
+        _cache[key] = (df.copy(), now + _CACHE_TTL)
+
+
+def clear_fetch_cache() -> None:
+    """Flush the entire in-process fetch cache (useful in tests)."""
+    with _cache_lock:
+        _cache.clear()
+
+# ── Retry helper ─────────────────────────────────────────────────────────────
+
+_RETRY_ATTEMPTS = 3
+_RETRY_BASE_S   = 1.0   # first sleep = 1 s, then 2 s, then 4 s
+
+
+def _with_retry(fn, *args, label: str = "fetch"):
+    """
+    Call fn(*args) up to _RETRY_ATTEMPTS times with exponential back-off.
+    Raises the last exception if all attempts fail.
+    """
+    last_exc: Exception = RuntimeError("no attempts made")
+    for attempt in range(_RETRY_ATTEMPTS):
+        try:
+            return fn(*args)
+        except Exception as exc:
+            last_exc = exc
+            if attempt < _RETRY_ATTEMPTS - 1:
+                sleep_s = _RETRY_BASE_S * (2 ** attempt)
+                logger.debug("[fetcher] %s attempt %d failed (%s) — retrying in %.1fs",
+                             label, attempt + 1, exc, sleep_s)
+                time.sleep(sleep_s)
+    raise last_exc
+
 
 # ── Session timing constants (US Eastern) ────────────────────────────────────
 # Pre-market:  04:00 – 09:29
@@ -282,9 +347,16 @@ def fetch_candles(
     session_now  = current_session()
 
     if use_extended and not extended:
-        logger.info(
+        logger.debug(
             f"[fetcher] Market is {session_now} — auto-enabling extended hours"
         )
+
+    # ── Check TTL cache first ────────────────────────────────────────────────
+    cache_key = (ticker.upper(), interval, lookback, use_extended)
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        logger.debug("[fetcher] %s %s — cache hit (%d rows)", ticker, interval, len(cached))
+        return cached
 
     sources = []
     if os.getenv("ALPACA_API_KEY", "") not in ("", "your_key_here"):
@@ -296,7 +368,8 @@ def fetch_candles(
     last_err = None
     for name, fn in sources:
         try:
-            df = fn(ticker, interval, lookback, use_extended)
+            df = _with_retry(fn, ticker, interval, lookback, use_extended,
+                             label=f"{name}/{ticker}")
 
             # Validate result
             if df is None or len(df) < 5:
@@ -315,10 +388,22 @@ def fetch_candles(
             df.attrs["session"]      = session
             df.attrs["session_now"]  = session_now   # current clock session
             df.attrs["extended"]     = use_extended
+
+            # ── Store in cache ────────────────────────────────────────────────
+            _cache_put(cache_key, df)
             return df
 
         except Exception as e:
-            logger.warning(f"[fetcher] {name} failed: {e}")
+            # Strip HTML bodies and long tracebacks — log a one-line summary only
+            err_str = str(e)
+            if "<html" in err_str.lower() or len(err_str) > 120:
+                # Extract HTTP status code if present (e.g. "401", "403", "429")
+                import re as _re
+                status = _re.search(r'\b([45]\d{2})\b', err_str)
+                short  = f"HTTP {status.group(1)}" if status else err_str[:80].replace("\n", " ").strip()
+                logger.warning(f"[fetcher] {name} unavailable — {short}")
+            else:
+                logger.warning(f"[fetcher] {name} failed: {err_str}")
             last_err = e
 
     raise RuntimeError(f"All data sources failed. Last error: {last_err}")

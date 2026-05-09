@@ -1,13 +1,12 @@
-
 uvicorn
 websockets
 yfinance
 pandas
 numpy
 alpaca-py
-python-dotenv
+python-dotenv>=1.2.2
 httpx
 fastapi
+scipy
 # Dev / tests
-pytest
-httpx
+pytest>=9.0.3
