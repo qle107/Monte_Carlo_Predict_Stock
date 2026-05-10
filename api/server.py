@@ -6,12 +6,19 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import hashlib
 import io
 import logging
+import xml.etree.ElementTree as ET
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import date as _date, datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Optional, Set
+
+import httpx
+import pandas as pd
+import yfinance as yf
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Header
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -27,7 +34,7 @@ from core.scanner import scan_tickers, get_watchlist, WATCHLISTS
 from core.signal import compute_signal
 from core.store import SignalStore
 from core.trade_setup import trade_setup_from_analysis, trade_setup_from_scan
-from core.sentiment import get_sentiment
+from core.sentiment import fetch_global_market_sentiment, get_sentiment
 from core.zone_scanner import zone_scan_tickers
 from core.zones import detect_zones
 from core.volume_profile import compute_volume_profile
@@ -44,13 +51,15 @@ clients:       Set[WebSocket]            = set()
 _last_result:  dict                      = {}
 _poll_task:    Optional[asyncio.Task]    = None
 _store:        Optional[SignalStore]     = None
+_analysis_lock: Optional[asyncio.Lock]  = None   # guards _run_analysis — set in lifespan
 
 
 # ─── Lifespan (replaces deprecated @app.on_event) ───────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _poll_task, _store
+    global _poll_task, _store, _analysis_lock
     _store = SignalStore(cfg.db_path)
+    _analysis_lock = asyncio.Lock()          # must be created inside the running loop
     _poll_task = asyncio.create_task(_poll_loop())
     logger.info("Lifespan startup complete (db=%s)", cfg.db_path)
     try:
@@ -130,13 +139,17 @@ async def update_config(update: ConfigUpdate, api_key: Optional[str] = Header(No
             await _poll_task
         except (asyncio.CancelledError, Exception):
             pass
-    _poll_task = asyncio.create_task(_poll_loop())
 
     # Immediate fresh analysis — include full result in response so the
     # frontend can update the chart instantly without waiting for WS broadcast.
+    # We run this BEFORE restarting the poll loop so the loop's first pass hits
+    # the fetcher's TTL cache instead of launching a duplicate network request.
     result = await _run_analysis()
     if "error" not in result:
         await _broadcast(result)
+
+    # Restart the poll loop only after the analysis completes (cache is warm).
+    _poll_task = asyncio.create_task(_poll_loop())
 
     return {
         "status":  "ok",
@@ -285,10 +298,8 @@ async def portfolio_price_historical(ticker: str, date: str):
     Return the closing price for `ticker` on `date` (YYYY-MM-DD).
     Used by the portfolio tracker to avoid CORS issues with Yahoo Finance.
     """
-    import yfinance as yf
-    from datetime import timedelta, date as date_type
     try:
-        target = date_type.fromisoformat(date)
+        target = _date.fromisoformat(date)
         # Fetch a window around the target date to handle weekends/holidays
         start = (target - timedelta(days=5)).isoformat()
         end   = (target + timedelta(days=2)).isoformat()
@@ -300,7 +311,6 @@ async def portfolio_price_historical(ticker: str, date: str):
             raise HTTPException(status_code=404, detail=f"No data for {ticker}")
         # Get the closest trading day on or before target
         df.index = df.index.tz_localize(None) if df.index.tzinfo else df.index
-        import pandas as pd
         target_ts = pd.Timestamp(target)
         available = df.index[df.index <= target_ts]
         if available.empty:
@@ -321,7 +331,6 @@ async def portfolio_price_live(ticker: str):
     Return the latest market price for `ticker`.
     Used by the portfolio tracker to avoid CORS issues with Yahoo Finance.
     """
-    import yfinance as yf
     try:
         t = yf.Ticker(ticker.upper())
         info = await asyncio.get_running_loop().run_in_executor(None, lambda: t.fast_info)
@@ -514,7 +523,6 @@ async def api_global_sentiment(force: int = 0):
     Market-wide social sentiment — no specific ticker.
     Covers Reddit hot posts + Google News market headlines + Cramer market view.
     """
-    from core.sentiment import fetch_global_market_sentiment
     try:
         result = await fetch_global_market_sentiment(force_refresh=bool(force))
         return result
@@ -534,12 +542,6 @@ async def api_news(ticker: Optional[str] = None, limit: int = 20):
       - VIX level from yfinance (^VIX)
     Returns articles sorted newest-first, deduplicated by title similarity.
     """
-    import yfinance as yf
-    import xml.etree.ElementTree as ET
-    import hashlib
-    import httpx
-    from datetime import datetime, timezone, timedelta
-
     articles = []
     loop     = asyncio.get_running_loop()
     symbol   = (ticker or "").upper().strip()
@@ -590,7 +592,6 @@ async def api_news(ticker: Optional[str] = None, limit: int = 20):
                 pub_str = (item.findtext("pubDate") or "").strip()
                 source  = (item.findtext("source") or "Google News").strip()
                 try:
-                    from email.utils import parsedate_to_datetime
                     dt = parsedate_to_datetime(pub_str).astimezone(timezone.utc) if pub_str else None
                 except Exception:
                     dt = None
@@ -653,10 +654,6 @@ async def api_fear_greed():
     Returns current score (0–100), label, and previous values.
     Falls back to VIX-derived estimate if CNN endpoint is unreachable.
     """
-    import httpx
-    import yfinance as yf
-    from datetime import datetime, timezone
-
     loop = asyncio.get_running_loop()
 
     # Try CNN F&G first
@@ -900,142 +897,159 @@ async def _htf_confirmation(ticker: str, base_interval: str,
 
 async def _run_analysis() -> dict:
     global _last_result
-    try:
-        loop = asyncio.get_running_loop()
 
-        # Fetch enough bars to cover both display history and MC analysis window.
-        display_bars = max(cfg.lookback, cfg.chart_bars)
-        df_full = await loop.run_in_executor(
-            None, fetch_candles, cfg.ticker, cfg.interval, display_bars, cfg.extended
-        )
+    # ── Deduplication guard ───────────────────────────────────────────────────
+    # If another coroutine is already in the middle of a full analysis, return
+    # the cached result immediately rather than launching a redundant fetch.
+    # This eliminates the duplicate that arises when update_config runs
+    # _run_analysis() and then the newly-restarted poll loop fires within
+    # milliseconds — both would otherwise miss the fetcher TTL cache.
+    if _analysis_lock is not None and _analysis_lock.locked():
+        if _last_result:
+            logger.debug("[server] _run_analysis skipped — already in flight, returning cached result")
+            return _last_result
+        # No cached result yet — wait for the in-flight call to finish then return
+        async with _analysis_lock:
+            return _last_result
 
-        # Slice to the analysis window (lookback candles) for MC + indicators.
-        df = df_full.tail(cfg.lookback).copy()
-        df.attrs = df_full.attrs
-
-        # Pre-compute returns for HMM now (fast, avoids duplicate work in executor)
-        _returns_for_hmm = df["close"].pct_change().dropna().values.tolist()
-
-        # ── Launch all independent tasks concurrently ─────────────────────
-        # analyse, detect_zones, volume_profile, HMM, and HTF confirmation
-        # are all independent of each other — run them in parallel.
-        raw = await asyncio.gather(
-            loop.run_in_executor(None, analyse, df, cfg.n_sim, cfg.n_forward, cfg.mc_model),
-            loop.run_in_executor(None, detect_zones, df),
-            loop.run_in_executor(None, compute_volume_profile, df_full),
-            loop.run_in_executor(None, analyse_hmm, _returns_for_hmm),
-            _htf_confirmation(cfg.ticker, cfg.interval, cfg.extended, loop),
-            return_exceptions=True,
-        )
-        result_raw, zone_raw, vp_raw, hmm_raw, htf_data = raw
-
-        # ── Unpack analyse result (must succeed) ──────────────────────────
-        if isinstance(result_raw, BaseException):
-            raise result_raw
-        result = result_raw
-
-        # ── Unpack zone result ────────────────────────────────────────────
-        if isinstance(zone_raw, BaseException):
-            logger.warning("zone detect failed: %s", zone_raw)
-            zones_data = {"demand_zones": [], "supply_zones": [],
-                          "nearest_demand": None, "nearest_supply": None,
-                          "price_context": "unknown", "atr": 0.0}
-        else:
-            zones_data = zone_raw.to_dict()
-
-        # ── Unpack volume profile ─────────────────────────────────────────
-        if isinstance(vp_raw, BaseException):
-            logger.debug("volume profile in _run_analysis failed: %s", vp_raw)
-            vp_data = None
-        else:
-            vp_data = vp_raw.to_dict() if vp_raw else None
-
-        # ── Unpack HMM result ─────────────────────────────────────────────
-        if isinstance(hmm_raw, BaseException):
-            logger.debug("hmm in _run_analysis failed: %s", hmm_raw)
-            hmm_data = None
-        else:
-            hmm_data = hmm_raw.to_dict() if hmm_raw else None
-
-        # ── Unpack HTF confirmation ───────────────────────────────────────
-        if isinstance(htf_data, BaseException):
-            logger.debug("HTF confirmation failed: %s", htf_data)
-            htf_data = {"available": False, "reason": str(htf_data)}
-
-        # ── Override candles with full display history ────────────────────
-        if len(df_full) > len(df):
-            result["candles"] = _df_to_candles(df_full)
-
-        # ── Trade setup (needs analyse result — runs after gather) ────────
-        mc_paths_full = result.pop("_mc_paths_full", None)
+    lock_ctx = _analysis_lock if _analysis_lock is not None else asyncio.Lock()
+    async with lock_ctx:
         try:
-            trade_setup = trade_setup_from_analysis(
-                cfg.ticker, result, interval=cfg.interval, df=df,
-                mc_paths_full=mc_paths_full,
+            loop = asyncio.get_running_loop()
+
+            # Fetch enough bars to cover both display history and MC analysis window.
+            display_bars = max(cfg.lookback, cfg.chart_bars)
+            df_full = await loop.run_in_executor(
+                None, fetch_candles, cfg.ticker, cfg.interval, display_bars, cfg.extended
             )
-        except Exception as e:
-            logger.warning("trade_setup failed: %s", e)
-            trade_setup = {"valid": False, "side": "none", "reason": str(e)}
 
-        # ── HTF alignment (needs both analyse + HTF results) ──────────────
-        if htf_data.get("available"):
-            base_comp = float(result.get("signal", {}).get("composite", 0.0))
-            htf_comp  = float(htf_data.get("composite", 0.0))
-            if base_comp > 0.05 and htf_comp > 0.05:
-                htf_data["alignment"] = "confirm_bullish"
-            elif base_comp < -0.05 and htf_comp < -0.05:
-                htf_data["alignment"] = "confirm_bearish"
-            elif base_comp * htf_comp < 0:
-                htf_data["alignment"] = "conflict"
+            # Slice to the analysis window (lookback candles) for MC + indicators.
+            df = df_full.tail(cfg.lookback).copy()
+            df.attrs = df_full.attrs
+
+            # Pre-compute returns for HMM now (fast, avoids duplicate work in executor)
+            _returns_for_hmm = df["close"].pct_change().dropna().values.tolist()
+
+            # ── Launch all independent tasks concurrently ─────────────────────
+            # analyse, detect_zones, volume_profile, HMM, and HTF confirmation
+            # are all independent of each other — run them in parallel.
+            raw = await asyncio.gather(
+                loop.run_in_executor(None, analyse, df, cfg.n_sim, cfg.n_forward, cfg.mc_model),
+                loop.run_in_executor(None, detect_zones, df),
+                loop.run_in_executor(None, compute_volume_profile, df_full),
+                loop.run_in_executor(None, analyse_hmm, _returns_for_hmm),
+                _htf_confirmation(cfg.ticker, cfg.interval, cfg.extended, loop),
+                return_exceptions=True,
+            )
+            result_raw, zone_raw, vp_raw, hmm_raw, htf_data = raw
+
+            # ── Unpack analyse result (must succeed) ──────────────────────────
+            if isinstance(result_raw, BaseException):
+                raise result_raw
+            result = result_raw
+
+            # ── Unpack zone result ────────────────────────────────────────────
+            if isinstance(zone_raw, BaseException):
+                logger.warning("zone detect failed: %s", zone_raw)
+                zones_data = {"demand_zones": [], "supply_zones": [],
+                              "nearest_demand": None, "nearest_supply": None,
+                              "price_context": "unknown", "atr": 0.0}
             else:
-                htf_data["alignment"] = "neutral"
+                zones_data = zone_raw.to_dict()
 
-        result.update({
-            "ticker":         cfg.ticker,
-            "interval":       cfg.interval,
-            "extended":       cfg.extended,
-            "mc_model":       cfg.mc_model,
-            "trade_setup":    trade_setup,
-            "zones":          zones_data,
-            "volume_profile": vp_data,
-            "hmm":            hmm_data,
-            "htf":            htf_data,
-            "config": {
-                "n_sim":        cfg.n_sim,
-                "n_forward":    cfg.n_forward,
-                "lookback":     cfg.lookback,
-                "chart_bars":   cfg.chart_bars,
-                "poll_seconds": cfg.poll_seconds,
-                "extended":     cfg.extended,
-                "mc_model":     cfg.mc_model,
-            },
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        })
-        _last_result = result
+            # ── Unpack volume profile ─────────────────────────────────────────
+            if isinstance(vp_raw, BaseException):
+                logger.debug("volume profile in _run_analysis failed: %s", vp_raw)
+                vp_data = None
+            else:
+                vp_data = vp_raw.to_dict() if vp_raw else None
 
-        # Persist
-        if _store is not None:
+            # ── Unpack HMM result ─────────────────────────────────────────────
+            if isinstance(hmm_raw, BaseException):
+                logger.debug("hmm in _run_analysis failed: %s", hmm_raw)
+                hmm_data = None
+            else:
+                hmm_data = hmm_raw.to_dict() if hmm_raw else None
+
+            # ── Unpack HTF confirmation ───────────────────────────────────────
+            if isinstance(htf_data, BaseException):
+                logger.debug("HTF confirmation failed: %s", htf_data)
+                htf_data = {"available": False, "reason": str(htf_data)}
+
+            # ── Override candles with full display history ────────────────────
+            if len(df_full) > len(df):
+                result["candles"] = _df_to_candles(df_full)
+
+            # ── Trade setup (needs analyse result — runs after gather) ────────
+            mc_paths_full = result.pop("_mc_paths_full", None)
             try:
-                _store.record(result)
+                trade_setup = trade_setup_from_analysis(
+                    cfg.ticker, result, interval=cfg.interval, df=df,
+                    mc_paths_full=mc_paths_full,
+                )
             except Exception as e:
-                logger.warning("store.record failed: %s", e)
+                logger.warning("trade_setup failed: %s", e)
+                trade_setup = {"valid": False, "side": "none", "reason": str(e)}
 
-        sig = result["signal"]
-        reg = result.get("regime", {}) or {}
-        warn_str = f"  ⚠ {result['warnings'][0]}" if result.get("warnings") else ""
-        logger.info(
-            "%s %s [%s]  price=%.2f  regime=%s  pot up/dn/flat=%.0f/%.0f/%.0f  signal=%s (conf=%.0f%%)%s",
-            cfg.ticker, cfg.interval, cfg.mc_model,
-            result["current_price"],
-            reg.get("regime", "?"),
-            reg.get("potential_up", 0), reg.get("potential_down", 0), reg.get("potential_flat", 0),
-            sig["label"], sig["confidence"] * 100,
-            warn_str,
-        )
-        return result
-    except Exception as e:
-        logger.exception("Analysis failed")
-        return {"error": str(e)}
+            # ── HTF alignment (needs both analyse + HTF results) ──────────────
+            if htf_data.get("available"):
+                base_comp = float(result.get("signal", {}).get("composite", 0.0))
+                htf_comp  = float(htf_data.get("composite", 0.0))
+                if base_comp > 0.05 and htf_comp > 0.05:
+                    htf_data["alignment"] = "confirm_bullish"
+                elif base_comp < -0.05 and htf_comp < -0.05:
+                    htf_data["alignment"] = "confirm_bearish"
+                elif base_comp * htf_comp < 0:
+                    htf_data["alignment"] = "conflict"
+                else:
+                    htf_data["alignment"] = "neutral"
+
+            result.update({
+                "ticker":         cfg.ticker,
+                "interval":       cfg.interval,
+                "extended":       cfg.extended,
+                "mc_model":       cfg.mc_model,
+                "trade_setup":    trade_setup,
+                "zones":          zones_data,
+                "volume_profile": vp_data,
+                "hmm":            hmm_data,
+                "htf":            htf_data,
+                "config": {
+                    "n_sim":        cfg.n_sim,
+                    "n_forward":    cfg.n_forward,
+                    "lookback":     cfg.lookback,
+                    "chart_bars":   cfg.chart_bars,
+                    "poll_seconds": cfg.poll_seconds,
+                    "extended":     cfg.extended,
+                    "mc_model":     cfg.mc_model,
+                },
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+            _last_result = result
+
+            # Persist
+            if _store is not None:
+                try:
+                    _store.record(result)
+                except Exception as e:
+                    logger.warning("store.record failed: %s", e)
+
+            sig = result["signal"]
+            reg = result.get("regime", {}) or {}
+            warn_str = f"  ⚠ {result['warnings'][0]}" if result.get("warnings") else ""
+            logger.info(
+                "%s %s [%s]  price=%.2f  regime=%s  pot up/dn/flat=%.0f/%.0f/%.0f  signal=%s (conf=%.0f%%)%s",
+                cfg.ticker, cfg.interval, cfg.mc_model,
+                result["current_price"],
+                reg.get("regime", "?"),
+                reg.get("potential_up", 0), reg.get("potential_down", 0), reg.get("potential_flat", 0),
+                sig["label"], sig["confidence"] * 100,
+                warn_str,
+            )
+            return result
+        except Exception as e:
+            logger.exception("Analysis failed")
+            return {"error": str(e)}
 
 
 # ─── Poll loop ──────────────────────────────────────────────────────────────
@@ -1043,6 +1057,11 @@ async def _run_analysis() -> dict:
 async def _poll_loop():
     logger.info("Poll loop started: %s %s every %ds", cfg.ticker, cfg.interval, cfg.poll_seconds)
     try:
+        # Brief yield so the caller (update_config or lifespan) that just ran
+        # _run_analysis() can populate the fetcher TTL cache before we fire.
+        # The deduplication guard in _run_analysis() handles the race, but this
+        # small sleep makes the common case a clean cache-hit instead of a wait.
+        await asyncio.sleep(1)
         while True:
             result = await _run_analysis()
             if "error" not in result:

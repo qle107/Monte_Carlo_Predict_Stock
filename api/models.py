@@ -1,6 +1,4 @@
-"""
-api/models.py — Pydantic request/response models.
-"""
+"""api/models.py — Pydantic request/response models."""
 
 from __future__ import annotations
 
@@ -15,7 +13,6 @@ _TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
 
 
 class ConfigUpdate(BaseModel):
-    # ── Core ─────────────────────────────────────────────────────────────
     ticker:       Optional[str]   = None
     interval:     Optional[str]   = None
     n_sim:        Optional[int]   = None
@@ -26,14 +23,12 @@ class ConfigUpdate(BaseModel):
     extended:     Optional[bool]  = None
     mc_model:     Optional[str]   = None
 
-    # ── Monte Carlo model parameters ─────────────────────────────────────
     garch_alpha:      Optional[float] = None
     garch_beta:       Optional[float] = None
     mc_clip:          Optional[float] = None
     jump_intensity:   Optional[float] = None
     jump_sigma_mult:  Optional[float] = None
 
-    # ── Trade setup gates ─────────────────────────────────────────────────
     min_score:        Optional[float] = None
     min_adx:          Optional[float] = None
     min_conf:         Optional[float] = None
@@ -44,7 +39,6 @@ class ConfigUpdate(BaseModel):
     rsi_oversold:     Optional[float] = None
     sl_max_pct:       Optional[float] = None
 
-    # ── Indicator periods ─────────────────────────────────────────────────
     rsi_period:       Optional[int]   = None
     ema_fast:         Optional[int]   = None
     ema_slow:         Optional[int]   = None
@@ -62,7 +56,6 @@ class ConfigUpdate(BaseModel):
     vwap_period:      Optional[int]   = None
     rsi_div_lookback: Optional[int]   = None
 
-    # ── Zone detection ────────────────────────────────────────────────────
     zone_pivot_window:  Optional[int]   = None
     zone_cluster_atr:   Optional[float] = None
     zone_touch_atr:     Optional[float] = None
@@ -71,27 +64,19 @@ class ConfigUpdate(BaseModel):
     zone_max_supply:    Optional[int]   = None
     zone_width_atr:     Optional[float] = None
 
-    # ── Backtest ──────────────────────────────────────────────────────────
     backtest_band_pct:   Optional[float] = None
     backtest_commission: Optional[float] = None
     backtest_slippage:   Optional[float] = None
 
-    # ── Scanner ───────────────────────────────────────────────────────────
     scan_min_score:      Optional[float] = None
     scan_max_concurrent: Optional[int]   = None
 
-    # ── Regime ───────────────────────────────────────────────────────────
     regime_hurst_lags:  Optional[int] = None
     regime_donchian_n:  Optional[int] = None
     regime_pivot_wing:  Optional[int] = None
 
-    # ── Signal weights ────────────────────────────────────────────────────
-    signal_base_weights: Optional[str] = None
+    signal_base_weights: Optional[str]   = None
     gap_threshold:       Optional[float] = None
-
-    # ── Validators ───────────────────────────────────────────────────────
-    # Use `v is not None` (not `if v`) so a value of 0 is still validated
-    # rather than silently passing through.
 
     @field_validator("ticker")
     @classmethod
@@ -155,13 +140,13 @@ class ConfigUpdate(BaseModel):
 
 class ScanRequest(BaseModel):
     """Request model for POST /api/scan."""
-    tickers:        Optional[List[str]] = None    # explicit list; overrides watchlist
-    watchlist:      Optional[str]       = None    # named watchlist key
-    interval:       Optional[str]       = None    # candle interval (default: 1d)
-    lookback:       Optional[int]       = None    # bars to fetch (default: 60)
+    tickers:        Optional[List[str]] = None
+    watchlist:      Optional[str]       = None
+    interval:       Optional[str]       = None
+    lookback:       Optional[int]       = None
     extended:       Optional[bool]      = None
-    max_concurrent: Optional[int]       = None    # parallel fetches (max 20)
-    min_score_abs:  Optional[float]     = None    # filter weak signals
+    max_concurrent: Optional[int]       = None
+    min_score_abs:  Optional[float]     = None
 
     @field_validator("tickers")
     @classmethod
@@ -201,14 +186,14 @@ class ScanRequest(BaseModel):
 
 
 class BacktestRequest(BaseModel):
-    """Optional explicit overrides for /api/backtest."""
+    """Optional overrides for POST /api/backtest."""
     ticker:       Optional[str]  = None
     interval:     Optional[str]  = None
     lookback:     Optional[int]  = None
     n_forward:    Optional[int]  = None
     n_sim:        Optional[int]  = None
     mc_model:     Optional[str]  = None
-    history_bars: Optional[int]  = None  # how much history to walk-forward over
+    history_bars: Optional[int]  = None
 
     @field_validator("history_bars")
     @classmethod

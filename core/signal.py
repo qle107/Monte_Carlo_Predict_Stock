@@ -37,6 +37,7 @@ Outputs
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass, field
 from typing import Dict, Optional
@@ -46,6 +47,8 @@ import numpy as np
 from .indicators import Indicators, _safe
 from .regime import Regime
 from config import cfg
+
+logger = logging.getLogger(__name__)
 
 
 # ─── Dataclass ──────────────────────────────────────────────────────────────
@@ -158,50 +161,41 @@ _BASE_WEIGHTS = {
     "ema200":     0.04,   # long-term trend anchor
 }
 
+# Strong trend weights are identical for up and down — direction is encoded in
+# the sub-scores themselves, not in the weights.
+_WEIGHTS_STRONG_TREND: Dict[str, float] = {
+    "rsi": 0.03, "slope": 0.20, "momentum": 0.15, "ema": 0.13,
+    "macd": 0.15, "bollinger": 0.02, "adx": 0.11, "obv": 0.07,
+    "vwap": 0.03, "skew": 0.01, "trend_bias": 0.02,
+    "rsi_div": 0.04, "ema200": 0.04,
+}
+_WEIGHTS_WEAK_TREND: Dict[str, float] = {
+    "rsi": 0.05, "slope": 0.18, "momentum": 0.13, "ema": 0.11,
+    "macd": 0.13, "bollinger": 0.04, "adx": 0.09, "obv": 0.09,
+    "vwap": 0.05, "skew": 0.02, "trend_bias": 0.03,
+    "rsi_div": 0.05, "ema200": 0.03,
+}
+_WEIGHTS_BREAKOUT: Dict[str, float] = {
+    "rsi": 0.02, "slope": 0.19, "momentum": 0.19, "ema": 0.09,
+    "macd": 0.17, "bollinger": 0.02, "adx": 0.15, "obv": 0.08,
+    "vwap": 0.02, "skew": 0.01, "trend_bias": 0.01,
+    "rsi_div": 0.03, "ema200": 0.02,
+}
+
 _REGIME_WEIGHTS = {
-    "strong_uptrend": {
-        "rsi": 0.03, "slope": 0.20, "momentum": 0.15, "ema": 0.13,
-        "macd": 0.15, "bollinger": 0.02, "adx": 0.11, "obv": 0.07,
-        "vwap": 0.03, "skew": 0.01, "trend_bias": 0.02,
-        "rsi_div": 0.04, "ema200": 0.04,
-    },
-    "weak_uptrend": {
-        "rsi": 0.05, "slope": 0.18, "momentum": 0.13, "ema": 0.11,
-        "macd": 0.13, "bollinger": 0.04, "adx": 0.09, "obv": 0.09,
-        "vwap": 0.05, "skew": 0.02, "trend_bias": 0.03,
-        "rsi_div": 0.05, "ema200": 0.03,
-    },
-    "strong_downtrend": {
-        "rsi": 0.03, "slope": 0.20, "momentum": 0.15, "ema": 0.13,
-        "macd": 0.15, "bollinger": 0.02, "adx": 0.11, "obv": 0.07,
-        "vwap": 0.03, "skew": 0.01, "trend_bias": 0.02,
-        "rsi_div": 0.04, "ema200": 0.04,
-    },
-    "weak_downtrend": {
-        "rsi": 0.05, "slope": 0.18, "momentum": 0.13, "ema": 0.11,
-        "macd": 0.13, "bollinger": 0.04, "adx": 0.09, "obv": 0.09,
-        "vwap": 0.05, "skew": 0.02, "trend_bias": 0.03,
-        "rsi_div": 0.05, "ema200": 0.03,
-    },
-    "breakout_up": {
-        "rsi": 0.02, "slope": 0.19, "momentum": 0.19, "ema": 0.09,
-        "macd": 0.17, "bollinger": 0.02, "adx": 0.15, "obv": 0.08,
-        "vwap": 0.02, "skew": 0.01, "trend_bias": 0.01,
-        "rsi_div": 0.03, "ema200": 0.02,
-    },
-    "breakout_down": {
-        "rsi": 0.02, "slope": 0.19, "momentum": 0.19, "ema": 0.09,
-        "macd": 0.17, "bollinger": 0.02, "adx": 0.15, "obv": 0.08,
-        "vwap": 0.02, "skew": 0.01, "trend_bias": 0.01,
-        "rsi_div": 0.03, "ema200": 0.02,
-    },
+    "strong_uptrend":   _WEIGHTS_STRONG_TREND,
+    "strong_downtrend": _WEIGHTS_STRONG_TREND,
+    "weak_uptrend":     _WEIGHTS_WEAK_TREND,
+    "weak_downtrend":   _WEIGHTS_WEAK_TREND,
+    "breakout_up":      _WEIGHTS_BREAKOUT,
+    "breakout_down":    _WEIGHTS_BREAKOUT,
     "range_bound": {
         "rsi": 0.20, "slope": 0.03, "momentum": 0.03, "ema": 0.02,
         "macd": 0.05, "bollinger": 0.27, "adx": 0.02, "obv": 0.05,
         "vwap": 0.09, "skew": 0.05, "trend_bias": 0.07,
         "rsi_div": 0.08, "ema200": 0.04,  # divergence is very useful in range
     },
-    "choppy":   _BASE_WEIGHTS,
+    "choppy": _BASE_WEIGHTS,
 }
 
 
@@ -235,8 +229,7 @@ def _load_custom_base_weights() -> Optional[Dict[str, float]]:
     try:
         vals = [float(v.strip()) for v in raw.split(",")]
         if len(vals) != len(keys):
-            import logging
-            logging.getLogger(__name__).warning(
+            logger.warning(
                 "signal: SIGNAL_BASE_WEIGHTS has %d values, expected %d — using defaults",
                 len(vals), len(keys),
             )
@@ -244,8 +237,7 @@ def _load_custom_base_weights() -> Optional[Dict[str, float]]:
             return None
         total = sum(vals)
         if abs(total - 1.0) > 0.01:
-            import logging
-            logging.getLogger(__name__).warning(
+            logger.warning(
                 "signal: SIGNAL_BASE_WEIGHTS sums to %.3f (expected 1.0) — normalising",
                 total,
             )
@@ -253,8 +245,7 @@ def _load_custom_base_weights() -> Optional[Dict[str, float]]:
         _weights_cache_value = dict(zip(keys, vals))
         return _weights_cache_value
     except Exception:
-        import logging
-        logging.getLogger(__name__).warning(
+        logger.warning(
             "signal: failed to parse SIGNAL_BASE_WEIGHTS=%r — using defaults", raw
         )
         _weights_cache_value = None

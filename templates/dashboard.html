@@ -813,6 +813,10 @@ header h1 { font-size:15px; font-weight:600; }
           🌐 Social Sentiment
           <span class="tab-badge" id="tab-sentiment-badge" style="background:rgba(210,153,34,.15);color:var(--amber);">NEW</span>
         </button>
+        <button class="scanner-tab" id="tab-options" onclick="switchScannerTab('options')">
+          📈 Options
+          <span class="tab-badge" id="tab-options-badge" style="background:rgba(63,185,80,.15);color:var(--green);">CHAIN</span>
+        </button>
         <button class="scanner-tab" id="tab-market-structure" onclick="switchScannerTab('market-structure')">
           🔬 Market Structure
           <span class="tab-badge" id="tab-ms-badge" style="background:rgba(188,140,255,.15);color:var(--purple);">QUANT</span>
@@ -1057,10 +1061,10 @@ header h1 { font-size:15px; font-weight:600; }
           <div>
             <div class="scan-title">
               <span class="scan-title-dot" style="background:var(--amber);"></span>
-              Social Sentiment &amp; Options Flow
+              Social Sentiment
             </div>
             <div class="scan-sub" style="margin-top:3px;">
-              Reddit (WSB · options · stocks · investing) · Inverse Cramer (CNBC/Google News) · Live call/put volume — no API keys required
+              Reddit (WSB · stocks · investing) · Inverse Cramer (CNBC/Google News) — no API keys required
             </div>
           </div>
           <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -1119,48 +1123,8 @@ header h1 { font-size:15px; font-weight:600; }
             </div>
           </div>
 
-          <!-- 3-column card grid -->
-          <div class="sent-grid3">
-
-            <!-- ── Options Flow card ── -->
-            <div class="sent-card">
-              <div class="sent-card-hdr">
-                <span>📊 Options Flow</span>
-                <span id="sp-bias-badge" class="sent-badge"></span>
-              </div>
-
-              <div class="sent-kpi4">
-                <div class="sent-kpi">
-                  <div class="sent-kpi-v" id="sp-call-vol" style="color:var(--green)">—</div>
-                  <div class="sent-kpi-l">Calls Vol</div>
-                </div>
-                <div class="sent-kpi">
-                  <div class="sent-kpi-v" id="sp-put-vol" style="color:var(--red)">—</div>
-                  <div class="sent-kpi-l">Puts Vol</div>
-                </div>
-                <div class="sent-kpi">
-                  <div class="sent-kpi-v" id="sp-pcr">—</div>
-                  <div class="sent-kpi-l">P/C Ratio Vol</div>
-                </div>
-                <div class="sent-kpi">
-                  <div class="sent-kpi-v" id="sp-oi-pcr">—</div>
-                  <div class="sent-kpi-l">P/C Ratio OI</div>
-                </div>
-              </div>
-
-              <!-- Call / Put split bar -->
-              <div class="sent-split-labels">
-                <span style="color:var(--green);" id="sp-call-pct-lbl">—</span>
-                <span style="color:var(--muted);font-size:9px;">CALL / PUT SPLIT</span>
-                <span style="color:var(--red);" id="sp-put-pct-lbl">—</span>
-              </div>
-              <div class="sent-split-bar-bg">
-                <div class="sent-split-bar-fill" id="sp-call-bar" style="background:var(--green);"></div>
-              </div>
-
-              <!-- Per-expiry table -->
-              <div id="sp-chains" class="sent-chains"></div>
-            </div>
+          <!-- 2-column card grid (Options Flow moved to Options tab) -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px;">
 
             <!-- ── X / Large Options Activity card ── -->
             <div class="sent-card">
@@ -1178,16 +1142,6 @@ header h1 { font-size:15px; font-weight:600; }
                 </div>
                 <div style="font-size:10px;color:var(--muted);margin-top:4px;">Subreddits: WSB · r/options · r/stocks · r/investing</div>
                 <div id="sp-x-type-bars" style="margin-top:8px;display:flex;flex-direction:column;gap:4px;"></div>
-              </div>
-
-              <!-- Large options activity (shown when X unavailable) -->
-              <div id="sp-x-mode-opts" style="display:none;">
-                <div class="sent-card-hdr">
-                  <span>🔥 Large Options Activity</span>
-                  <span id="sp-opts-activity-badge" class="sent-badge" style="background:rgba(210,153,34,.12);color:var(--amber);"></span>
-                </div>
-                <div style="font-size:10px;color:var(--muted);margin-bottom:8px;">X/Twitter unavailable — showing top volume options contracts</div>
-                <div id="sp-opts-activity-list" style="display:flex;flex-direction:column;gap:4px;"></div>
               </div>
 
               <!-- "Connect X" setup notice -->
@@ -1250,7 +1204,7 @@ header h1 { font-size:15px; font-weight:600; }
                           border-top:1px solid var(--border);padding-top:8px;"></div>
             </div>
 
-          </div><!-- /sent-grid3 -->
+          </div><!-- /2-col card grid -->
 
           <!-- ── Sentiment Type breakdown ──────────────────────────── -->
           <div class="sent-posts-wrap" id="sent-type-section" style="display:none;margin-bottom:14px;">
@@ -1260,64 +1214,6 @@ header h1 { font-size:15px; font-weight:600; }
             <div id="sp-type-bars" style="display:flex;flex-direction:column;gap:8px;"></div>
           </div>
 
-          <!-- ── Hot Strikes & Price Targets ──────────────────────── -->
-          <div class="sent-posts-wrap" id="sent-prices-section" style="display:none;margin-bottom:14px;">
-            <div style="font-size:13px;font-weight:700;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;">
-              <span>🎯 Hot Strikes &amp; Price Levels</span>
-              <span style="font-size:11px;color:var(--muted);font-weight:400;">Derived from market volume &amp; flow</span>
-            </div>
-
-            <!-- Two columns: social mentions | real options flow -->
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
-
-              <!-- Market-derived strike ranking (left panel) -->
-              <div>
-                <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">
-                  Derived from market volume &amp; flow
-                </div>
-                <div class="scan-table-wrap" style="max-height:260px;overflow-y:auto;">
-                  <table style="width:100%;border-collapse:collapse;font-size:12px;">
-                    <thead>
-                      <tr>
-                        <th style="text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Strike</th>
-                        <th style="text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Type</th>
-                        <th style="text-align:right;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Score</th>
-                        <th style="text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Crowd Sent.</th>
-                      </tr>
-                    </thead>
-                    <tbody id="sp-social-prices-tbody"></tbody>
-                  </table>
-                </div>
-              </div>
-
-              <!-- Real options flow hot strikes -->
-              <div>
-                <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">
-                  Real market — top strikes by volume
-                </div>
-                <div class="scan-table-wrap" style="max-height:260px;overflow-y:auto;">
-                  <table style="width:100%;border-collapse:collapse;font-size:12px;">
-                    <thead>
-                      <tr>
-                        <th style="text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Strike</th>
-                        <th style="text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Type</th>
-                        <th style="text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Expiry</th>
-                        <th style="text-align:right;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Price</th>
-                        <th style="text-align:right;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Chg%</th>
-                        <th style="text-align:right;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);" title="Cost per contract (price × 100 shares)">Premium</th>
-                        <th style="text-align:right;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);" title="Total notional flow (price × 100 × volume)">Flow</th>
-                        <th style="text-align:right;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Volume</th>
-                        <th style="text-align:right;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">OI</th>
-                        <th style="text-align:right;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">IV%</th>
-                      </tr>
-                    </thead>
-                    <tbody id="sp-hot-strikes-tbody"></tbody>
-                  </table>
-                </div>
-              </div>
-
-            </div><!-- /2col -->
-          </div><!-- /sent-prices-section -->
 
           <!-- ── Top X posts ────────────────────────────────────────── -->
           <div class="sent-posts-wrap" id="sent-posts-section" style="display:none;">
@@ -1602,7 +1498,7 @@ header h1 { font-size:15px; font-weight:600; }
               Market Structure Analysis
             </div>
             <div class="scan-sub" style="margin-top:3px;">
-              All 4 components below are part of this analysis: Volume Profile · Options GEX + Max Pain · Price Activity (Hawkes) · Market Regime (HMM)
+              Volume Profile · Price Activity (Hawkes) · Market Regime (HMM) — Options GEX &amp; Max Pain moved to the Options tab
             </div>
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -1661,19 +1557,7 @@ header h1 { font-size:15px; font-weight:600; }
             </div>
           </div>
 
-          <!-- Row 2: Options Flow card (full width) -->
-          <div id="ms-options-card" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:14px;">
-            <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.5px;text-transform:uppercase;margin-bottom:10px;">Options Flow — GEX &amp; Max Pain</div>
-            <div id="ms-options-error" style="display:none;color:var(--amber);font-size:12px;"></div>
-            <div id="ms-options-levels" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px;"></div>
-            <!-- GEX bar chart by strike — full width, taller for readability -->
-            <div style="font-size:10px;color:var(--muted);margin-bottom:4px;">Net GEX by strike — green bars = dealer long gamma (dampens moves) · red = short gamma (amplifies moves):</div>
-            <div style="position:relative;height:220px;width:100%;">
-              <canvas id="ms-gex-chart" style="position:absolute;inset:0;width:100%;height:100%;display:block;"></canvas>
-            </div>
-          </div>
-
-          <!-- Row 3: Volume Profile -->
+          <!-- Row 2: Volume Profile -->
           <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:14px;">
             <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.5px;text-transform:uppercase;margin-bottom:2px;">Volume Profile</div>
             <div style="font-size:10px;color:var(--muted);margin-bottom:8px;">Where the most trading happened — key support/resistance levels</div>
@@ -1715,6 +1599,174 @@ header h1 { font-size:15px; font-weight:600; }
 
         </div><!-- /ms-results -->
       </div><!-- /market-structure-panel -->
+
+      <!-- ══ OPTIONS CHAIN & FLOW PANEL ══ -->
+      <div id="options-panel" style="display:none;">
+
+        <div class="scan-toolbar">
+          <div>
+            <div class="scan-title">
+              <span class="scan-title-dot" style="background:var(--green);"></span>
+              Options Chain &amp; Flow
+            </div>
+            <div class="scan-sub" style="margin-top:3px;">
+              Call/Put volume · P/C ratio · GEX &amp; Max Pain · Hot strikes · Per-expiry chains — fetches Sentiment + Market Structure data
+            </div>
+          </div>
+          <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <span id="opts-ticker-badge"
+                  style="display:inline-block;min-width:72px;text-align:center;font-size:13px;font-weight:700;
+                         letter-spacing:.6px;padding:6px 12px;border-radius:6px;
+                         background:var(--surface2);border:1px solid rgba(255,255,255,.12);
+                         color:var(--text);user-select:none;"
+                  title="Global ticker — change via the header or Settings">—</span>
+            <button onclick="runOptionsPanel()" id="opts-run-btn"
+              style="background:linear-gradient(135deg,#1a6b2e,#3fb950);color:#fff;border:none;
+                     border-radius:7px;padding:8px 20px;font-size:13px;font-weight:700;
+                     cursor:pointer;display:flex;align-items:center;gap:8px;
+                     box-shadow:0 2px 8px rgba(63,185,80,.25);transition:opacity .15s,transform .1s;">
+              <span class="spinner" id="opts-spin"></span>
+              <span id="opts-run-label">📈 Fetch Options</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Empty state -->
+        <div id="opts-empty-state" style="text-align:center;padding:52px 24px;color:var(--muted);">
+          <div style="font-size:40px;margin-bottom:12px;">📈</div>
+          <p style="font-size:13px;margin-bottom:8px;">Enter a ticker above and click <strong style="color:var(--text);">Fetch Options</strong>.</p>
+          <p style="font-size:11px;line-height:1.7;">
+            Fetches real <strong>call/put volume &amp; open interest</strong> for the nearest 3 expirations.<br>
+            Shows <strong>GEX by strike</strong>, <strong>Max Pain</strong>, <strong>Call/Put Wall</strong>, and top hot-strike contracts.
+          </p>
+        </div>
+
+        <!-- Error state -->
+        <div id="opts-error-state" style="display:none;text-align:center;padding:32px;color:var(--red);font-size:13px;"></div>
+
+        <!-- Results -->
+        <div id="opts-results" style="display:none;padding-bottom:24px;">
+
+          <!-- Row 1: Call/Put summary + GEX & Max Pain (2-col) -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+
+            <!-- Options Flow summary -->
+            <div class="sent-card">
+              <div class="sent-card-hdr">
+                <span>📊 Options Flow</span>
+                <span id="sp-bias-badge" class="sent-badge"></span>
+              </div>
+              <div class="sent-kpi4">
+                <div class="sent-kpi">
+                  <div class="sent-kpi-v" id="sp-call-vol" style="color:var(--green)">—</div>
+                  <div class="sent-kpi-l">Calls Vol</div>
+                </div>
+                <div class="sent-kpi">
+                  <div class="sent-kpi-v" id="sp-put-vol" style="color:var(--red)">—</div>
+                  <div class="sent-kpi-l">Puts Vol</div>
+                </div>
+                <div class="sent-kpi">
+                  <div class="sent-kpi-v" id="sp-pcr">—</div>
+                  <div class="sent-kpi-l">P/C Ratio Vol</div>
+                </div>
+                <div class="sent-kpi">
+                  <div class="sent-kpi-v" id="sp-oi-pcr">—</div>
+                  <div class="sent-kpi-l">P/C Ratio OI</div>
+                </div>
+              </div>
+              <!-- Call / Put split bar -->
+              <div class="sent-split-labels">
+                <span style="color:var(--green);" id="sp-call-pct-lbl">—</span>
+                <span style="color:var(--muted);font-size:9px;">CALL / PUT SPLIT</span>
+                <span style="color:var(--red);" id="sp-put-pct-lbl">—</span>
+              </div>
+              <div class="sent-split-bar-bg">
+                <div class="sent-split-bar-fill" id="sp-call-bar" style="background:var(--green);"></div>
+              </div>
+              <!-- Per-expiry chains -->
+              <div id="sp-chains" class="sent-chains"></div>
+            </div>
+
+            <!-- GEX & Max Pain (from Market Structure) -->
+            <div id="ms-options-card" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;">
+              <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.5px;text-transform:uppercase;margin-bottom:10px;">Options Flow — GEX &amp; Max Pain</div>
+              <div id="ms-options-error" style="display:none;color:var(--amber);font-size:12px;"></div>
+              <div id="ms-options-levels" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px;"></div>
+              <div style="font-size:10px;color:var(--muted);margin-bottom:4px;">Net GEX by strike — green bars = dealer long gamma (dampens moves) · red = short gamma (amplifies moves):</div>
+              <div style="position:relative;height:220px;width:100%;">
+                <canvas id="ms-gex-chart" style="position:absolute;inset:0;width:100%;height:100%;display:block;"></canvas>
+              </div>
+            </div>
+
+          </div><!-- /row1 -->
+
+          <!-- Row 2: Large Options Activity -->
+          <div class="sent-posts-wrap" style="margin-bottom:14px;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+              <span style="font-size:13px;font-weight:700;">🔥 Large Options Activity</span>
+              <span id="sp-opts-activity-badge" class="sent-badge" style="background:rgba(210,153,34,.12);color:var(--amber);"></span>
+            </div>
+            <div id="sp-opts-activity-list" style="display:flex;flex-direction:column;gap:4px;"></div>
+          </div>
+
+          <!-- Row 3: Hot Strikes & Price Levels -->
+          <div class="sent-posts-wrap" id="sent-prices-section" style="margin-bottom:14px;">
+            <div style="font-size:13px;font-weight:700;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;">
+              <span>🎯 Hot Strikes &amp; Price Levels</span>
+              <span style="font-size:11px;color:var(--muted);font-weight:400;">Derived from market volume &amp; flow</span>
+            </div>
+            <!-- Two columns: market-derived ranking | real options flow -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+              <!-- Market-derived strike ranking -->
+              <div>
+                <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">
+                  Derived from market volume &amp; flow
+                </div>
+                <div class="scan-table-wrap" style="max-height:260px;overflow-y:auto;">
+                  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                    <thead>
+                      <tr>
+                        <th style="text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Strike</th>
+                        <th style="text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Type</th>
+                        <th style="text-align:right;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Score</th>
+                        <th style="text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Crowd Sent.</th>
+                      </tr>
+                    </thead>
+                    <tbody id="sp-social-prices-tbody"></tbody>
+                  </table>
+                </div>
+              </div>
+              <!-- Real options flow hot strikes -->
+              <div>
+                <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">
+                  Real market — top strikes by volume
+                </div>
+                <div class="scan-table-wrap" style="max-height:260px;overflow-y:auto;">
+                  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                    <thead>
+                      <tr>
+                        <th style="text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Strike</th>
+                        <th style="text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Type</th>
+                        <th style="text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Expiry</th>
+                        <th style="text-align:right;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Price</th>
+                        <th style="text-align:right;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Chg%</th>
+                        <th style="text-align:right;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);" title="Cost per contract (price × 100 shares)">Premium</th>
+                        <th style="text-align:right;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);" title="Total notional flow (price × 100 × volume)">Flow</th>
+                        <th style="text-align:right;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Volume</th>
+                        <th style="text-align:right;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">OI</th>
+                        <th style="text-align:right;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">IV%</th>
+                      </tr>
+                    </thead>
+                    <tbody id="sp-hot-strikes-tbody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div><!-- /2col -->
+          </div><!-- /sent-prices-section -->
+
+        </div><!-- /opts-results -->
+
+      </div><!-- /options-panel -->
 
     </div><!-- /scanner-section -->
 
@@ -2806,6 +2858,13 @@ function _renderSentimentPanel(data) {
   const resultsEl = document.getElementById('sent-results');
   if (!data?.aggregate) return;
   resultsEl.style.display = 'block';
+  // Also reveal the Options panel results div (options data comes from same endpoint)
+  const optsResults = document.getElementById('opts-results');
+  const optsEmpty   = document.getElementById('opts-empty-state');
+  if (optsResults) optsResults.style.display = 'block';
+  if (optsEmpty)   optsEmpty.style.display   = 'none';
+  const optsBadge = document.getElementById('opts-ticker-badge');
+  if (optsBadge) optsBadge.textContent = (data.ticker || currentConfig.ticker || '—').toUpperCase();
 
   const agg    = data.aggregate;
   const label  = agg.label || 'neutral';
@@ -2960,14 +3019,9 @@ function _renderSentimentPanel(data) {
     }
   }
 
-  // ── Helper: switch X card to Options Activity mode ─────────────────────────
+  // ── Helper: populate Large Options Activity list in Options panel ───────────
   function _showOptsActivity(opts) {
-    const modeX    = document.getElementById('sp-x-mode-x');
-    const modeOpts = document.getElementById('sp-x-mode-opts');
-    if (!modeX || !modeOpts) return;
-    if (!opts.available) return; // nothing to show
-    modeX.style.display    = 'none';
-    modeOpts.style.display = 'block';
+    if (!opts.available) return;
 
     const badge = document.getElementById('sp-opts-activity-badge');
     const list  = document.getElementById('sp-opts-activity-list');
@@ -3950,7 +4004,7 @@ function _syncAllTickerInputs(ticker) {
     if (el && el.value.toUpperCase().trim() !== t) el.value = t;
   });
   // Read-only ticker badges in feature panels
-  ['sent-ticker-badge', 'ms-ticker-badge'].forEach(id => {
+  ['sent-ticker-badge', 'ms-ticker-badge', 'opts-ticker-badge'].forEach(id => {
     const el = document.getElementById(id);
     if (el && el.textContent.trim() !== t) el.textContent = t;
   });
@@ -5194,21 +5248,24 @@ fetch('/api/config')
 // ── Tab switcher ──────────────────────────────────────────────────
 function switchScannerTab(tab) {
   const panels = {
-    breakout:          document.getElementById('breakout-scan-panel'),
-    zone:              document.getElementById('zone-scan-panel'),
-    sentiment:         document.getElementById('sentiment-scan-panel'),
+    breakout:           document.getElementById('breakout-scan-panel'),
+    zone:               document.getElementById('zone-scan-panel'),
+    sentiment:          document.getElementById('sentiment-scan-panel'),
+    options:            document.getElementById('options-panel'),
     'market-structure': document.getElementById('market-structure-panel'),
   };
   const tabs = {
-    breakout:          document.getElementById('tab-breakout'),
-    zone:              document.getElementById('tab-zone'),
-    sentiment:         document.getElementById('tab-sentiment'),
+    breakout:           document.getElementById('tab-breakout'),
+    zone:               document.getElementById('tab-zone'),
+    sentiment:          document.getElementById('tab-sentiment'),
+    options:            document.getElementById('tab-options'),
     'market-structure': document.getElementById('tab-market-structure'),
   };
   const styles = {
-    breakout:          { color: 'var(--blue)',   bg: 'rgba(88,166,255,.06)',  border: 'var(--blue)' },
-    zone:              { color: 'var(--purple)', bg: 'rgba(188,140,255,.06)', border: 'var(--purple)' },
-    sentiment:         { color: 'var(--amber)',  bg: 'rgba(210,153,34,.06)',  border: 'var(--amber)' },
+    breakout:           { color: 'var(--blue)',   bg: 'rgba(88,166,255,.06)',  border: 'var(--blue)' },
+    zone:               { color: 'var(--purple)', bg: 'rgba(188,140,255,.06)', border: 'var(--purple)' },
+    sentiment:          { color: 'var(--amber)',  bg: 'rgba(210,153,34,.06)',  border: 'var(--amber)' },
+    options:            { color: 'var(--green)',  bg: 'rgba(63,185,80,.06)',   border: 'var(--green)' },
     'market-structure': { color: 'var(--purple)', bg: 'rgba(188,140,255,.06)', border: 'var(--purple)' },
   };
 
@@ -5240,6 +5297,53 @@ function switchScannerTab(tab) {
     if (!_newsFetched && !_newsLoading) {
       runNewsPanel();
     }
+  }
+  // When the options tab opens, auto-run if ticker changed or no data yet
+  if (tab === 'options') {
+    const currentVal = (currentConfig.ticker || '').toUpperCase().trim();
+    const optsEmpty  = document.getElementById('opts-empty-state');
+    const needsRun   = currentVal && (currentVal !== _lastSentTicker || (optsEmpty && optsEmpty.style.display !== 'none'));
+    if (needsRun && !_sentLoading && !_msAnalysisInProgress) {
+      runOptionsPanel();
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// OPTIONS PANEL — aggregates Sentiment + Market Structure data
+// ══════════════════════════════════════════════════════════════════
+
+let _optsLoading = false;
+
+async function runOptionsPanel() {
+  if (_optsLoading) return;
+  _optsLoading = true;
+  const btn   = document.getElementById('opts-run-btn');
+  const spin  = document.getElementById('opts-spin');
+  const lbl   = document.getElementById('opts-run-label');
+  const empty = document.getElementById('opts-empty-state');
+  const errEl = document.getElementById('opts-error-state');
+  if (btn)   btn.disabled = true;
+  if (spin)  spin.style.display = 'inline-block';
+  if (lbl)   lbl.textContent = 'Fetching…';
+  if (empty) empty.style.display = 'none';
+  if (errEl) errEl.style.display = 'none';
+  // Sync ticker badge
+  const tb = document.getElementById('opts-ticker-badge');
+  if (tb) tb.textContent = (currentConfig.ticker || '—').toUpperCase();
+  try {
+    // Run both in parallel — sentiment populates sp-*, market-structure populates ms-options-*
+    await Promise.all([
+      runSentiment(true),
+      runMarketStructure(),
+    ]);
+  } catch(e) {
+    if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Error: ' + e.message; }
+  } finally {
+    _optsLoading = false;
+    if (btn)  btn.disabled = false;
+    if (spin) spin.style.display = 'none';
+    if (lbl)  lbl.textContent = '📈 Fetch Options';
   }
 }
 

@@ -1,19 +1,8 @@
 """
-core/__init__.py
-Public API for the core analysis pipeline.
+core/__init__.py — public analysis pipeline.
 
-   from core import analyse
-   result = analyse(df, n_sim=500, n_forward=10, mc_model="garch")
-
-`result` is a JSON-serialisable dict with everything the dashboard needs:
-  • current_price
-  • indicators       (RSI, MACD, ADX, Bollinger, OBV, …)
-  • regime           (strong_uptrend | range_bound | breakout_up | …)
-  •     potential_up / potential_down / potential_flat (each 0..100)
-  •     verdict — plain-English summary
-  • signal           (composite, confidence, drift_bias, label, …)
-  • mc               (Monte Carlo projection: probs, percentiles, paths)
-  • candles          (raw OHLCV payload for the chart)
+Usage: result = analyse(df, n_sim=500, n_forward=10, mc_model="garch")
+Returns a JSON-serialisable dict with price, indicators, regime, signal, MC, candles.
 """
 
 from __future__ import annotations
@@ -32,7 +21,7 @@ from .volume_profile import compute_volume_profile
 
 
 def _df_to_candles(df: pd.DataFrame) -> list:
-    """Vectorised OHLCV serialisation — avoids slow iterrows()."""
+    """Vectorised OHLCV serialisation."""
     ts_list = [t.isoformat() for t in df.index]
     o = df["open"].round(4).tolist()
     h = df["high"].round(4).tolist()
@@ -51,14 +40,13 @@ def analyse(
 ) -> dict:
     ind  = compute_indicators(df)
     reg  = detect_regime(df, adx=ind.adx, obv_slope=ind.obv_slope)
-    sig  = compute_signal(ind, regime=reg)         # regime-aware
+    sig  = compute_signal(ind, regime=reg)
 
     current_price = float(df["close"].iloc[-1])
 
-    # ── Microstructure inputs (only meaningful for mc_model="microstructure")
-    # Computed unconditionally because they're cheap and the dashboard payload
-    # benefits from having key levels surfaced regardless of MC model.
-    vp = compute_volume_profile(df)
+    # Microstructure inputs — computed regardless of MC model;
+    # key levels are useful in the dashboard payload even for non-microstructure models.
+    vp             = compute_volume_profile(df)
     cvd_history    = compute_cvd_from_ohlc(df["open"], df["close"], df["volume"])
     price_history  = df["close"].to_numpy(dtype=float)
     volume_history = df["volume"].to_numpy(dtype=float)
@@ -71,15 +59,13 @@ def analyse(
         model           = mc_model,
         recent_returns  = ind.returns,
         kurtosis_excess = ind.kurtosis,
-        # Microstructure-only inputs (ignored by other models)
         price_history   = price_history,
         volume_history  = volume_history,
         cvd_history     = cvd_history,
         volume_profile  = vp,
     )
 
-    candles = _df_to_candles(df)
-
+    candles     = _df_to_candles(df)
     attrs       = getattr(df, "attrs", {})
     session     = attrs.get("session",     "unknown")
     session_now = attrs.get("session_now", "unknown")
@@ -89,15 +75,11 @@ def analyse(
     if sig.gap_warning:
         warnings.append(sig.gap_warning)
 
-    # Strip the heavy returns array from the indicators payload (already used by MC)
     ind_dict = asdict(ind)
-    ind_dict.pop("returns", None)
+    ind_dict.pop("returns", None)   # already consumed by MC
 
-    # Serialise MC result — exclude paths_full (numpy array, not JSON-safe).
-    # paths_full is stored on the MCResult object for callers that need it
-    # (e.g. trade_setup_from_analysis in server.py).
     mc_dict = asdict(mc)
-    mc_dict.pop("paths_full", None)   # remove numpy array before JSON serialisation
+    mc_dict.pop("paths_full", None)  # numpy array — not JSON-safe
 
     return {
         "current_price": current_price,
@@ -110,6 +92,5 @@ def analyse(
         "session":       session,
         "session_now":   session_now,
         "extended":      extended,
-        # Internal: pass full MC paths for trade_setup (popped in server.py before broadcast)
-        "_mc_paths_full": mc.paths_full,
+        "_mc_paths_full": mc.paths_full,  # popped in server.py before broadcast
     }

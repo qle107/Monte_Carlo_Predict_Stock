@@ -12,10 +12,12 @@ Extended hours (pre-market 4am–9:30am ET, after-hours 4pm–8pm ET):
 
 import os
 import logging
+import re
 import time
 import threading
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -29,6 +31,17 @@ logger = logging.getLogger(__name__)
 _CACHE_TTL     = 30.0          # seconds before a cached DataFrame is evicted
 _cache_lock    = threading.RLock()
 _cache: dict   = {}            # key → (df, expire_time)
+
+# ── In-flight coalescing ───────────────────────────────────────────────────────
+# If two threads request the same (ticker, interval, lookback, extended) within
+# milliseconds of each other (both miss the TTL cache) the second thread waits
+# for the first (the "leader") to finish and then reads from the cache instead
+# of launching its own network request.  This eliminates the thundering-herd
+# duplicate fetch that happens when update_config restarts the poll loop while
+# also calling _run_analysis() immediately.
+
+_inflight_lock = threading.RLock()
+_inflight: dict = {}            # key → threading.Event
 
 
 def _cache_get(key: tuple) -> Optional[pd.DataFrame]:
@@ -297,7 +310,7 @@ def _polygon(ticker: str, interval: str, n: int, extended: bool) -> pd.DataFrame
     if not key:
         raise ValueError("Polygon key not set")
 
-    mult    = {"1m":1,"2m":2,"5m":5,"15m":15,"30m":30,"1h":60,"4h":240,"1d":1440}.get(interval, 15)
+    mult    = _INTERVAL_MINUTES.get(interval, 15)
     span    = "minute" if mult < 1440 else "day"
     end_d   = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     start_d = (datetime.now(timezone.utc) - timedelta(days=_lookback_days(interval, n))).strftime("%Y-%m-%d")
@@ -358,6 +371,34 @@ def fetch_candles(
         logger.debug("[fetcher] %s %s — cache hit (%d rows)", ticker, interval, len(cached))
         return cached
 
+    # ── Coalesce concurrent identical requests ────────────────────────────────
+    # If another thread is already fetching the same key, wait for it to finish
+    # and read from cache — avoids duplicate network calls on cache misses.
+    with _inflight_lock:
+        if cache_key in _inflight:
+            event = _inflight[cache_key]
+            is_leader = False
+        else:
+            event = threading.Event()
+            _inflight[cache_key] = event
+            is_leader = True
+
+    if not is_leader:
+        logger.debug("[fetcher] %s %s — waiting for in-flight fetch", ticker, interval)
+        event.wait(timeout=35.0)   # never hang longer than the retry budget
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            logger.debug("[fetcher] %s %s — coalesced hit (%d rows)", ticker, interval, len(cached))
+            return cached
+        # Leader failed — fall through and try ourselves (different source may work)
+        logger.debug("[fetcher] %s %s — leader failed, attempting own fetch", ticker, interval)
+        # Become a new leader for a fresh attempt
+        with _inflight_lock:
+            event2 = threading.Event()
+            _inflight[cache_key] = event2
+            event = event2
+            is_leader = True
+
     sources = []
     if os.getenv("ALPACA_API_KEY", "") not in ("", "your_key_here"):
         sources.append(("Alpaca",   _alpaca))
@@ -366,47 +407,53 @@ def fetch_candles(
     sources.append(("yfinance", _yfinance))   # always available as final fallback
 
     last_err = None
-    for name, fn in sources:
-        try:
-            df = _with_retry(fn, ticker, interval, lookback, use_extended,
-                             label=f"{name}/{ticker}")
+    try:
+        for name, fn in sources:
+            try:
+                df = _with_retry(fn, ticker, interval, lookback, use_extended,
+                                 label=f"{name}/{ticker}")
 
-            # Validate result
-            if df is None or len(df) < 5:
-                raise ValueError(f"Too few rows ({len(df) if df is not None else 0})")
-            df = df[df["close"].apply(lambda x: isinstance(x, (int, float))
-                                                and x == x
-                                                and x not in (float("inf"), float("-inf")))]
-            if len(df) < 2:
-                raise ValueError("All close prices are invalid after filtering")
+                # Validate result
+                if df is None or len(df) < 5:
+                    raise ValueError(f"Too few rows ({len(df) if df is not None else 0})")
+                df = df[np.isfinite(pd.to_numeric(df["close"], errors="coerce"))]
+                if len(df) < 2:
+                    raise ValueError("All close prices are invalid after filtering")
 
-            session = _session_label(df)
-            logger.info(
-                f"[fetcher] {ticker} {interval} — {len(df)} candles via {name} "
-                f"| last_candle={session} | clock={session_now} | extended={use_extended}"
-            )
-            df.attrs["session"]      = session
-            df.attrs["session_now"]  = session_now   # current clock session
-            df.attrs["extended"]     = use_extended
+                session = _session_label(df)
+                logger.info(
+                    f"[fetcher] {ticker} {interval} — {len(df)} candles via {name} "
+                    f"| last_candle={session} | clock={session_now} | extended={use_extended}"
+                )
+                df.attrs["session"]      = session
+                df.attrs["session_now"]  = session_now   # current clock session
+                df.attrs["extended"]     = use_extended
 
-            # ── Store in cache ────────────────────────────────────────────────
-            _cache_put(cache_key, df)
-            return df
+                # ── Store in cache ────────────────────────────────────────────
+                _cache_put(cache_key, df)
+                return df
 
-        except Exception as e:
-            # Strip HTML bodies and long tracebacks — log a one-line summary only
-            err_str = str(e)
-            if "<html" in err_str.lower() or len(err_str) > 120:
-                # Extract HTTP status code if present (e.g. "401", "403", "429")
-                import re as _re
-                status = _re.search(r'\b([45]\d{2})\b', err_str)
-                short  = f"HTTP {status.group(1)}" if status else err_str[:80].replace("\n", " ").strip()
-                logger.warning(f"[fetcher] {name} unavailable — {short}")
-            else:
-                logger.warning(f"[fetcher] {name} failed: {err_str}")
-            last_err = e
+            except Exception as e:
+                # Strip HTML bodies and long tracebacks — log a one-line summary only
+                err_str = str(e)
+                if "<html" in err_str.lower() or len(err_str) > 120:
+                    # Extract HTTP status code if present (e.g. "401", "403", "429")
+                    status = re.search(r'\b([45]\d{2})\b', err_str)
+                    short  = f"HTTP {status.group(1)}" if status else err_str[:80].replace("\n", " ").strip()
+                    logger.warning(f"[fetcher] {name} unavailable — {short}")
+                else:
+                    logger.warning(f"[fetcher] {name} failed: {err_str}")
+                last_err = e
 
-    raise RuntimeError(f"All data sources failed. Last error: {last_err}")
+        raise RuntimeError(f"All data sources failed. Last error: {last_err}")
+
+    finally:
+        # Always release the in-flight slot so waiting threads are unblocked,
+        # whether the fetch succeeded or failed.
+        if is_leader:
+            with _inflight_lock:
+                _inflight.pop(cache_key, None)
+            event.set()     # wake any threads that were waiting on this key
 
 
 def get_latest_price(ticker: str) -> Optional[float]:

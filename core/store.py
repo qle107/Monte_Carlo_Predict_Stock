@@ -1,10 +1,4 @@
-"""
-core/store.py — SQLite-backed signal history.
-
-Records every analysis the server produces. Lets the dashboard show
-recent calls and aggregate accuracy. Thread-safe (one connection per
-operation; SQLite handles the locking).
-"""
+"""core/store.py — SQLite-backed signal history. Thread-safe (per-call connections)."""
 
 from __future__ import annotations
 
@@ -17,7 +11,6 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 logger = logging.getLogger(__name__)
-
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS signals (
@@ -46,7 +39,7 @@ CREATE INDEX IF NOT EXISTS idx_signals_ticker_ts ON signals(ticker, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_signals_ts        ON signals(ts DESC);
 """
 
-# Schema migration: add regime columns if upgrading from v1 schema.
+# Additive migrations for older databases (no-op on fresh DBs)
 _MIGRATIONS = [
     "ALTER TABLE signals ADD COLUMN regime TEXT",
     "ALTER TABLE signals ADD COLUMN potential_up REAL",
@@ -71,7 +64,6 @@ class SignalStore:
     def _init_schema(self):
         with self._lock, self._connect() as conn:
             conn.executescript(_SCHEMA)
-            # Apply additive migrations for older databases (no-op on fresh DBs).
             for stmt in _MIGRATIONS:
                 try:
                     conn.execute(stmt)
@@ -86,8 +78,6 @@ class SignalStore:
                 yield conn
             finally:
                 conn.close()
-
-    # ─── Writes ──────────────────────────────────────────────────────────
 
     def record(self, result: dict) -> None:
         """Write one analysis row. Tolerates missing fields."""
@@ -134,8 +124,6 @@ class SignalStore:
         except sqlite3.Error as e:
             logger.warning("SignalStore.record failed: %s", e)
 
-    # ─── Reads ───────────────────────────────────────────────────────────
-
     def recent(self, ticker: Optional[str] = None, limit: int = 100) -> List[dict]:
         sql = """SELECT ts, ticker, interval, price, label, confidence,
                         drift_bias, prob_up, prob_flat, prob_down,
@@ -171,7 +159,6 @@ class SignalStore:
                        FROM signals{where}""",
                 params,
             ).fetchone()
-
             label_rows = conn.execute(
                 f"SELECT label, COUNT(*) AS c FROM signals{where} GROUP BY label",
                 params,
@@ -191,20 +178,13 @@ class SignalStore:
         }
 
     def prune(self, days: int = 30) -> int:
-        """
-        Delete signal rows older than `days` days.
-        Returns the number of rows deleted.
-
-        Safe to call on a schedule (e.g. daily) to keep the DB small.
-        """
+        """Delete rows older than `days` days. Returns count deleted."""
         cutoff = (
             datetime.now(timezone.utc) - timedelta(days=days)
         ).strftime("%Y-%m-%dT%H:%M:%S")
         try:
             with self._cur() as conn:
-                cur = conn.execute(
-                    "DELETE FROM signals WHERE ts < ?", (cutoff,)
-                )
+                cur = conn.execute("DELETE FROM signals WHERE ts < ?", (cutoff,))
                 deleted = cur.rowcount
                 conn.execute("PRAGMA wal_checkpoint(PASSIVE);")
             if deleted:
@@ -214,35 +194,17 @@ class SignalStore:
             logger.warning("SignalStore.prune failed: %s", e)
             return 0
 
-    def accuracy_window(
-        self,
-        ticker: Optional[str] = None,
-        limit: int = 200,
-    ) -> dict:
+    def accuracy_window(self, ticker: Optional[str] = None, limit: int = 200) -> dict:
         """
-        Compute directional accuracy for the most recent `limit` rows that
-        have a non-neutral label (Buy / Sell).
-
-        For each consecutive pair of signals we use the *next* recorded price
-        as the realised outcome — a simple but honest measure of whether
-        the model's directional call was correct at the time of the next update.
-
-        Returns
-        -------
-        {
-          "n_calls": int,           # Buy/Sell signals evaluated
-          "hit_rate": float|None,   # % correct (None if no data)
-          "avg_prob_up_on_buys": float|None,
-          "avg_prob_up_on_sells": float|None,
-        }
+        Directional accuracy for the most recent Buy/Sell signals.
+        Uses the next recorded price as the realised outcome.
         """
-        rows = self.recent(ticker=ticker, limit=limit + 1)  # +1 to get next price
+        rows = self.recent(ticker=ticker, limit=limit + 1)
         if len(rows) < 2:
             return {"n_calls": 0, "hit_rate": None,
                     "avg_prob_up_on_buys": None, "avg_prob_up_on_sells": None}
 
-        # rows are DESC by ts — reverse to get chronological order
-        rows = list(reversed(rows))
+        rows = list(reversed(rows))  # chronological order
 
         correct = 0
         total   = 0
@@ -282,5 +244,4 @@ class SignalStore:
         }
 
     def close(self) -> None:
-        # Per-call connections; nothing to close globally.
-        pass
+        pass  # per-call connections; nothing to close globally
