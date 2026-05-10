@@ -205,16 +205,31 @@ _REGIME_WEIGHTS = {
 }
 
 
+# Module-level cache: re-parsed only when the raw config string changes.
+_weights_cache_key:    str                    = ""
+_weights_cache_value:  Optional[Dict[str, float]] = None
+
 def _load_custom_base_weights() -> Optional[Dict[str, float]]:
     """
     Load custom base weights from cfg.signal_base_weights if set.
     Format: comma-separated floats in the fixed order:
       rsi, slope, momentum, ema, macd, bollinger, adx, obv, vwap, skew, trend_bias, rsi_div, ema200
     Returns None if not set or if parsing fails.
+
+    Result is cached at module level and only re-parsed when the raw string changes,
+    avoiding repeated string-splitting on every compute_signal() call.
     """
+    global _weights_cache_key, _weights_cache_value
+
     raw = (cfg.signal_base_weights or "").strip()
+    if raw == _weights_cache_key:          # fast path — nothing changed
+        return _weights_cache_value
+
+    _weights_cache_key = raw
     if not raw:
+        _weights_cache_value = None
         return None
+
     keys = ["rsi", "slope", "momentum", "ema", "macd", "bollinger",
             "adx", "obv", "vwap", "skew", "trend_bias", "rsi_div", "ema200"]
     try:
@@ -225,6 +240,7 @@ def _load_custom_base_weights() -> Optional[Dict[str, float]]:
                 "signal: SIGNAL_BASE_WEIGHTS has %d values, expected %d — using defaults",
                 len(vals), len(keys),
             )
+            _weights_cache_value = None
             return None
         total = sum(vals)
         if abs(total - 1.0) > 0.01:
@@ -234,12 +250,14 @@ def _load_custom_base_weights() -> Optional[Dict[str, float]]:
                 total,
             )
             vals = [v / total for v in vals]
-        return dict(zip(keys, vals))
+        _weights_cache_value = dict(zip(keys, vals))
+        return _weights_cache_value
     except Exception:
         import logging
         logging.getLogger(__name__).warning(
             "signal: failed to parse SIGNAL_BASE_WEIGHTS=%r — using defaults", raw
         )
+        _weights_cache_value = None
         return None
 
 

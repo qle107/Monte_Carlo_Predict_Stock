@@ -28,12 +28,13 @@ VALID_INTERVALS: List[str] = [
 ]
 
 VALID_MC_MODELS: List[str] = [
-    "gaussian",     # classic GBM with Normal innovations (legacy)
-    "student_t",    # heavy-tailed innovations  (degrees of freedom from data)
-    "garch",        # GARCH(1,1)-style volatility clustering
-    "bootstrap",    # historical-return resampling (preserves real distribution)
-    "jump",         # Merton jump-diffusion (Gaussian + Poisson jumps)
-    "ensemble",     # adaptive blend of GARCH + bootstrap + jump (recommended)
+    "gaussian",       # classic GBM with Normal innovations (legacy)
+    "student_t",      # heavy-tailed innovations  (degrees of freedom from data)
+    "garch",          # GARCH(1,1)-style volatility clustering
+    "bootstrap",      # historical-return resampling (preserves real distribution)
+    "jump",           # Merton jump-diffusion (Gaussian + Poisson jumps)
+    "ensemble",       # adaptive blend of GARCH + bootstrap + jump
+    "microstructure", # GARCH + Student-t + volume profile gravity + CVD bias + Hurst regime
 ]
 
 
@@ -104,7 +105,7 @@ class Config:
     n_forward:     int  = field(default_factory=lambda: _env_int("MC_FORWARD_CANDLES",  10,  1,  100))
     lookback:      int  = field(default_factory=lambda: _env_int("LOOKBACK",            50, 20, 500))
     chart_bars:    int  = field(default_factory=lambda: _env_int("CHART_BARS",         200, 50, 1000))
-    mc_model:      str  = field(default_factory=lambda: _env_str_choice("MC_MODEL", "garch", VALID_MC_MODELS))
+    mc_model:      str  = field(default_factory=lambda: _env_str_choice("MC_MODEL", "microstructure", VALID_MC_MODELS))
     # GARCH parameters (α + β must sum < 1 for stationarity)
     garch_alpha:   float = field(default_factory=lambda: _env_float("GARCH_ALPHA", 0.10, 0.01, 0.49))
     garch_beta:    float = field(default_factory=lambda: _env_float("GARCH_BETA",  0.85, 0.10, 0.98))

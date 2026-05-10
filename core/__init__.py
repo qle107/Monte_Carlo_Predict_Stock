@@ -23,11 +23,12 @@ from dataclasses import asdict
 import numpy as np
 import pandas as pd
 
-from .fetcher    import fetch_candles, get_latest_price
-from .indicators import compute_indicators
-from .regime     import detect_regime
-from .signal     import compute_signal
-from .montecarlo import run as run_mc
+from .fetcher        import fetch_candles, get_latest_price
+from .indicators     import compute_indicators
+from .regime         import detect_regime
+from .signal         import compute_signal
+from .montecarlo     import run as run_mc, compute_cvd_from_ohlc
+from .volume_profile import compute_volume_profile
 
 
 def _df_to_candles(df: pd.DataFrame) -> list:
@@ -53,6 +54,15 @@ def analyse(
     sig  = compute_signal(ind, regime=reg)         # regime-aware
 
     current_price = float(df["close"].iloc[-1])
+
+    # ── Microstructure inputs (only meaningful for mc_model="microstructure")
+    # Computed unconditionally because they're cheap and the dashboard payload
+    # benefits from having key levels surfaced regardless of MC model.
+    vp = compute_volume_profile(df)
+    cvd_history    = compute_cvd_from_ohlc(df["open"], df["close"], df["volume"])
+    price_history  = df["close"].to_numpy(dtype=float)
+    volume_history = df["volume"].to_numpy(dtype=float)
+
     mc = run_mc(
         current_price,
         sig,
@@ -61,6 +71,11 @@ def analyse(
         model           = mc_model,
         recent_returns  = ind.returns,
         kurtosis_excess = ind.kurtosis,
+        # Microstructure-only inputs (ignored by other models)
+        price_history   = price_history,
+        volume_history  = volume_history,
+        cvd_history     = cvd_history,
+        volume_profile  = vp,
     )
 
     candles = _df_to_candles(df)

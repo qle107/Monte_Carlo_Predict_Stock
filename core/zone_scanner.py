@@ -161,7 +161,7 @@ class ZoneScanResult:
     price:         float
     interval:      str
     setup_score:   float       # 0–1 overall quality
-    setup_type:    str         # "demand_bounce"|"supply_break"|"supply_bounce"|"demand_break"|"none"
+    setup_type:    str         # "demand_bounce"|"demand_support"|"supply_break"|"supply_bounce"|"demand_break"|"none"
     side:          str         # "long"|"short"|"none"
 
     # EMA values
@@ -331,16 +331,32 @@ async def _zone_scan_one(
         long_ok  = ema_stack in ("bull_stack", "above_200")
         short_ok = ema_stack in ("bear_stack", "below_200")
 
-        # LONG A: demand bounce
-        if long_ok and nd and abs(price - nd.level) <= touch_band:
+        # Helper: supply TPs above price
+        def _supply_tps(above_level: float):
+            sups = sorted([z for z in zones.supply_zones if z.level > above_level], key=lambda z: z.level)
+            tp1 = round(sups[0].level, 4) if sups else round(price + atr * 3, 4)
+            tp2 = round(sups[1].level, 4) if len(sups) > 1 else round(tp1 * 1.02, 4)
+            return tp1, tp2
+
+        # LONG A: demand bounce — price AT demand zone, bullish EMA stack
+        # Requires price still ABOVE zone center (not broken below).
+        if long_ok and nd and price >= nd.level and (price - nd.level) <= touch_band:
             setup_type = "demand_bounce"
             side = "long"
             trig_zone = nd
-            # TP = supply zones above
-            sups = sorted([z for z in zones.supply_zones if z.level > price], key=lambda z: z.level)
-            zone_tp1 = round(sups[0].level, 4) if len(sups) > 0 else round(price + atr * 3, 4)
-            zone_tp2 = round(sups[1].level, 4) if len(sups) > 1 else round(zone_tp1 * 1.02, 4)
-            zone_sl  = round(nd.low - atr * 0.25, 4)
+            zone_tp1, zone_tp2 = _supply_tps(price)
+            zone_sl = round(nd.low - atr * 0.25, 4)
+
+        # LONG A2: demand support — price is ABOVE the zone center (zone not broken)
+        # and within 2×ATR of demand. Fires regardless of EMA direction because
+        # the key fact is that price has NOT broken below the zone.
+        # Also catches the touch_band case when EMA is not fully bullish.
+        elif nd and price >= nd.level and (price - nd.level) <= atr * 2.0:
+            setup_type = "demand_support"
+            side = "long"
+            trig_zone = nd
+            zone_tp1, zone_tp2 = _supply_tps(price)
+            zone_sl = round(nd.low - atr * 0.25, 4)
 
         # LONG B: supply break (price just crossed above supply → flip to demand)
         elif long_ok and ns and ns.level <= price * 1.01 and ns.level >= price * 0.98:
@@ -348,7 +364,7 @@ async def _zone_scan_one(
             side = "long"
             trig_zone = ns
             sups = sorted([z for z in zones.supply_zones if z.level > ns.level + atr], key=lambda z: z.level)
-            zone_tp1 = round(sups[0].level, 4) if len(sups) > 0 else round(price + atr * 3, 4)
+            zone_tp1 = round(sups[0].level, 4) if sups else round(price + atr * 3, 4)
             zone_tp2 = round(sups[1].level, 4) if len(sups) > 1 else round(zone_tp1 * 1.02, 4)
             zone_sl  = round(ns.low - atr * 0.25, 4)
 
@@ -358,17 +374,19 @@ async def _zone_scan_one(
             side = "short"
             trig_zone = ns
             dems = sorted([z for z in zones.demand_zones if z.level < price], key=lambda z: z.level, reverse=True)
-            zone_tp1 = round(dems[0].level, 4) if len(dems) > 0 else round(price - atr * 3, 4)
+            zone_tp1 = round(dems[0].level, 4) if dems else round(price - atr * 3, 4)
             zone_tp2 = round(dems[1].level, 4) if len(dems) > 1 else round(zone_tp1 * 0.98, 4)
             zone_sl  = round(ns.high + atr * 0.25, 4)
 
-        # SHORT B: demand break (price just broke below demand)
-        elif short_ok and nd and nd.level >= price * 0.99 and nd.level <= price * 1.02:
+        # SHORT B: demand break — price has actually broken BELOW the demand zone centre.
+        # nd.level > price  means the zone centre is now above current price = confirmed break.
+        # Guard: zone must be within 2% above price (recent break, not a distant one).
+        elif short_ok and nd and nd.level > price and nd.level <= price * 1.02:
             setup_type = "demand_break"
             side = "short"
             trig_zone = nd
             dems = sorted([z for z in zones.demand_zones if z.level < nd.level - atr], key=lambda z: z.level, reverse=True)
-            zone_tp1 = round(dems[0].level, 4) if len(dems) > 0 else round(price - atr * 3, 4)
+            zone_tp1 = round(dems[0].level, 4) if dems else round(price - atr * 3, 4)
             zone_tp2 = round(dems[1].level, 4) if len(dems) > 1 else round(zone_tp1 * 0.98, 4)
             zone_sl  = round(nd.high + atr * 0.25, 4)
 
@@ -431,10 +449,11 @@ async def _zone_scan_one(
 
         # ── 9. Reason string ─────────────────────────────────────────
         setup_labels = {
-            "demand_bounce": "↑ Demand Bounce",
-            "supply_break":  "↑ Supply Break",
-            "supply_bounce": "↓ Supply Reject",
-            "demand_break":  "↓ Demand Break",
+            "demand_bounce":  "↑ Demand Bounce",
+            "demand_support": "↑ Demand Support",
+            "supply_break":   "↑ Supply Break",
+            "supply_bounce":  "↓ Supply Reject",
+            "demand_break":   "↓ Demand Break",
         }
         ema_labels = {
             "bull_stack": "Full Bull Stack",

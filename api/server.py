@@ -18,7 +18,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from config import VALID_INTERVALS, VALID_MC_MODELS, cfg
-from core import analyse
+from core import analyse, _df_to_candles
 from core.backtest import walk_forward
 from core.fetcher import fetch_candles
 from core.indicators import compute_indicators
@@ -381,7 +381,7 @@ async def api_market_structure(ticker: Optional[str] = None):
 
 
 async def _api_market_structure_impl(symbol: str, loop):
-    """Implementation of market structure analysis with proper subprocess isolation."""
+    """Market structure analysis with parallelised sub-tasks."""
     try:
         # ── 1. Fetch OHLCV data ───────────────────────────────────────────
         df = await loop.run_in_executor(
@@ -389,56 +389,64 @@ async def _api_market_structure_impl(symbol: str, loop):
             max(cfg.lookback, cfg.chart_bars), cfg.extended,
         )
 
-        # ── 2. Volume Profile ─────────────────────────────────────────────
-        vp_result = await loop.run_in_executor(
-            None, compute_volume_profile, df,
-        )
-        vp_dict = vp_result.to_dict() if vp_result else {"error": "vp_failed"}
+        spot        = float(df["close"].iloc[-1]) if not df.empty else None
+        log_returns = df["close"].pct_change().dropna().values.tolist()
 
-        # ── 3. Demand/Supply Zones (reuse existing detector) ──────────────
-        try:
-            zone_result = await loop.run_in_executor(None, detect_zones, df)
-            zones_data  = zone_result.to_dict()
-            # Build flat list for Hawkes / blending
-            zone_list = [
-                {"level": z.level, "zone_type": "demand",
-                 "strength": z.strength}
-                for z in zone_result.demand_zones
-            ] + [
-                {"level": z.level, "zone_type": "supply",
-                 "strength": z.strength}
-                for z in zone_result.supply_zones
-            ]
-        except Exception as ze:
-            logger.warning("market-structure zone detect: %s", ze)
+        # ── 2. Run volume-profile, zones, options-flow and HMM in parallel ─
+        # Hawkes needs zone_list, so it runs in a second wave below.
+        vp_raw, zone_raw, of_raw, hmm_raw = await asyncio.gather(
+            loop.run_in_executor(None, compute_volume_profile, df),
+            loop.run_in_executor(None, detect_zones, df),
+            loop.run_in_executor(None, fetch_options_flow, symbol, spot),
+            loop.run_in_executor(None, analyse_hmm, log_returns),
+            return_exceptions=True,
+        )
+
+        # Unpack volume profile
+        vp_dict = (
+            vp_raw.to_dict()
+            if not isinstance(vp_raw, BaseException) and vp_raw
+            else {"error": str(vp_raw) if isinstance(vp_raw, BaseException) else "vp_failed"}
+        )
+
+        # Unpack zones
+        if isinstance(zone_raw, BaseException):
+            logger.warning("market-structure zone detect: %s", zone_raw)
             zones_data, zone_list = {}, []
+        else:
+            zones_data = zone_raw.to_dict()
+            zone_list = [
+                {"level": z.level, "zone_type": "demand", "strength": z.strength}
+                for z in zone_raw.demand_zones
+            ] + [
+                {"level": z.level, "zone_type": "supply", "strength": z.strength}
+                for z in zone_raw.supply_zones
+            ]
 
-        # ── 4. Options Flow ───────────────────────────────────────────────
-        spot = float(df["close"].iloc[-1]) if not df.empty else None
-        of_result = await loop.run_in_executor(
-            None, fetch_options_flow, symbol, spot,
+        # Unpack options flow
+        of_dict = (
+            of_raw.to_dict()
+            if not isinstance(of_raw, BaseException)
+            else {"error": str(of_raw)}
         )
-        of_dict = of_result.to_dict()
 
-        # ── 5. Hawkes Process ─────────────────────────────────────────────
-        returns = df["close"].pct_change().dropna().values.tolist()
+        # Unpack HMM
+        if isinstance(hmm_raw, BaseException):
+            logger.warning("market-structure HMM failed: %s", hmm_raw)
+            hmm_result, hmm_dict = None, {"error": str(hmm_raw)}
+        else:
+            hmm_result = hmm_raw
+            hmm_dict   = hmm_raw.to_dict()
+
+        # ── 3. Hawkes process (needs zone_list from step 2) ───────────────
         hawkes_result = await loop.run_in_executor(
-            None, analyse_hawkes, returns, zone_list,
+            None, analyse_hawkes, log_returns, zone_list,
         )
         hawkes_dict = hawkes_result.to_dict()
 
-        # ── 6. HMM Regime ─────────────────────────────────────────────────
-        log_returns = (df["close"].apply(lambda x: float(x))
-                       .pct_change().dropna().values.tolist())
-        hmm_result  = await loop.run_in_executor(
-            None, analyse_hmm, log_returns,
-        )
-        hmm_dict = hmm_result.to_dict()
-
-        # ── 7. Blended zone-reaction probabilities ────────────────────────
+        # ── 4. Blended zone-reaction probabilities ────────────────────────
         blended_zones = []
         for z in zone_list:
-            # Find matching Hawkes zone reaction
             hk_probs = None
             for hr in hawkes_result.zone_reactions:
                 if abs(hr.level - z["level"]) < 0.01:
@@ -448,19 +456,20 @@ async def _api_market_structure_impl(symbol: str, loop):
                         "consolidate": hr.consolidate_prob,
                     }
                     break
-            blended = blend_zone_probability(
-                hmm=hmm_result,
-                hawkes_probs=hk_probs,
-                zone_strength=z.get("strength", 0.5),
-            )
-            blended_zones.append({
-                "level":      round(z["level"], 4),
-                "zone_type":  z["zone_type"],
-                "strength":   round(z.get("strength", 0.5), 3),
-                "bounce_prob":      blended["bounce"],
-                "break_prob":       blended["break"],
-                "consolidate_prob": blended["consolidate"],
-            })
+            if hmm_result is not None:
+                blended = blend_zone_probability(
+                    hmm=hmm_result,
+                    hawkes_probs=hk_probs,
+                    zone_strength=z.get("strength", 0.5),
+                )
+                blended_zones.append({
+                    "level":            round(z["level"], 4),
+                    "zone_type":        z["zone_type"],
+                    "strength":         round(z.get("strength", 0.5), 3),
+                    "bounce_prob":      blended["bounce"],
+                    "break_prob":       blended["break"],
+                    "consolidate_prob": blended["consolidate"],
+                })
 
         return {
             "ticker":          symbol,
@@ -476,7 +485,6 @@ async def _api_market_structure_impl(symbol: str, loop):
         }
 
     except asyncio.TimeoutError:
-        # Re-raise timeout so it bubbles up to the handler above
         raise
     except Exception as exc:
         logger.exception("_api_market_structure_impl failed for %s", symbol)
@@ -896,34 +904,69 @@ async def _run_analysis() -> dict:
         loop = asyncio.get_running_loop()
 
         # Fetch enough bars to cover both display history and MC analysis window.
-        # chart_bars controls what the chart shows; lookback controls MC analysis.
         display_bars = max(cfg.lookback, cfg.chart_bars)
         df_full = await loop.run_in_executor(
             None, fetch_candles, cfg.ticker, cfg.interval, display_bars, cfg.extended
         )
 
         # Slice to the analysis window (lookback candles) for MC + indicators.
-        # Preserve attrs (session, extended flags) set by the fetcher.
         df = df_full.tail(cfg.lookback).copy()
         df.attrs = df_full.attrs
 
-        result = await loop.run_in_executor(
-            None, analyse, df, cfg.n_sim, cfg.n_forward, cfg.mc_model
-        )
+        # Pre-compute returns for HMM now (fast, avoids duplicate work in executor)
+        _returns_for_hmm = df["close"].pct_change().dropna().values.tolist()
 
-        # Override candles with full display history so the chart shows chart_bars bars.
+        # ── Launch all independent tasks concurrently ─────────────────────
+        # analyse, detect_zones, volume_profile, HMM, and HTF confirmation
+        # are all independent of each other — run them in parallel.
+        raw = await asyncio.gather(
+            loop.run_in_executor(None, analyse, df, cfg.n_sim, cfg.n_forward, cfg.mc_model),
+            loop.run_in_executor(None, detect_zones, df),
+            loop.run_in_executor(None, compute_volume_profile, df_full),
+            loop.run_in_executor(None, analyse_hmm, _returns_for_hmm),
+            _htf_confirmation(cfg.ticker, cfg.interval, cfg.extended, loop),
+            return_exceptions=True,
+        )
+        result_raw, zone_raw, vp_raw, hmm_raw, htf_data = raw
+
+        # ── Unpack analyse result (must succeed) ──────────────────────────
+        if isinstance(result_raw, BaseException):
+            raise result_raw
+        result = result_raw
+
+        # ── Unpack zone result ────────────────────────────────────────────
+        if isinstance(zone_raw, BaseException):
+            logger.warning("zone detect failed: %s", zone_raw)
+            zones_data = {"demand_zones": [], "supply_zones": [],
+                          "nearest_demand": None, "nearest_supply": None,
+                          "price_context": "unknown", "atr": 0.0}
+        else:
+            zones_data = zone_raw.to_dict()
+
+        # ── Unpack volume profile ─────────────────────────────────────────
+        if isinstance(vp_raw, BaseException):
+            logger.debug("volume profile in _run_analysis failed: %s", vp_raw)
+            vp_data = None
+        else:
+            vp_data = vp_raw.to_dict() if vp_raw else None
+
+        # ── Unpack HMM result ─────────────────────────────────────────────
+        if isinstance(hmm_raw, BaseException):
+            logger.debug("hmm in _run_analysis failed: %s", hmm_raw)
+            hmm_data = None
+        else:
+            hmm_data = hmm_raw.to_dict() if hmm_raw else None
+
+        # ── Unpack HTF confirmation ───────────────────────────────────────
+        if isinstance(htf_data, BaseException):
+            logger.debug("HTF confirmation failed: %s", htf_data)
+            htf_data = {"available": False, "reason": str(htf_data)}
+
+        # ── Override candles with full display history ────────────────────
         if len(df_full) > len(df):
-            result["candles"] = [
-                {"t": ts.isoformat(),
-                 "o": round(float(row["open"]),  4),
-                 "h": round(float(row["high"]),  4),
-                 "l": round(float(row["low"]),   4),
-                 "c": round(float(row["close"]), 4),
-                 "v": int(row["volume"])}
-                for ts, row in df_full.iterrows()
-            ]
-        # ── Trade setup ───────────────────────────────────────────────
-        # Extract full MC paths (numpy array) before stripping from result.
+            result["candles"] = _df_to_candles(df_full)
+
+        # ── Trade setup (needs analyse result — runs after gather) ────────
         mc_paths_full = result.pop("_mc_paths_full", None)
         try:
             trade_setup = trade_setup_from_analysis(
@@ -934,22 +977,9 @@ async def _run_analysis() -> dict:
             logger.warning("trade_setup failed: %s", e)
             trade_setup = {"valid": False, "side": "none", "reason": str(e)}
 
-        # ── Zone detection — expose all zones to the dashboard ────────
-        try:
-            zone_result = await loop.run_in_executor(None, detect_zones, df)
-            zones_data = zone_result.to_dict()
-        except Exception as e:
-            logger.warning("zone detect failed: %s", e)
-            zones_data = {"demand_zones": [], "supply_zones": [],
-                          "nearest_demand": None, "nearest_supply": None,
-                          "price_context": "unknown", "atr": 0.0}
-
-        # ── Multi-timeframe confirmation ───────────────────────────────
-        htf_data = await _htf_confirmation(cfg.ticker, cfg.interval, cfg.extended, loop)
-        # Compute alignment: +1 agree bullish, -1 agree bearish, 0 conflict/neutral
+        # ── HTF alignment (needs both analyse + HTF results) ──────────────
         if htf_data.get("available"):
-            base_sig  = result.get("signal", {})
-            base_comp = float(base_sig.get("composite", 0.0))
+            base_comp = float(result.get("signal", {}).get("composite", 0.0))
             htf_comp  = float(htf_data.get("composite", 0.0))
             if base_comp > 0.05 and htf_comp > 0.05:
                 htf_data["alignment"] = "confirm_bullish"
@@ -959,22 +989,6 @@ async def _run_analysis() -> dict:
                 htf_data["alignment"] = "conflict"
             else:
                 htf_data["alignment"] = "neutral"
-
-        # ── Volume Profile (fast, pure OHLCV) ────────────────────────────
-        try:
-            vp = compute_volume_profile(df_full)
-            vp_data = vp.to_dict() if vp else None
-        except Exception as e:
-            logger.debug("volume profile in _run_analysis failed: %s", e)
-            vp_data = None
-
-        # ── HMM regime (lightweight, runs on existing returns) ────────────
-        try:
-            _returns_for_hmm = df["close"].pct_change().dropna().values.tolist()
-            hmm_data = analyse_hmm(_returns_for_hmm).to_dict()
-        except Exception as e:
-            logger.debug("hmm in _run_analysis failed: %s", e)
-            hmm_data = None
 
         result.update({
             "ticker":         cfg.ticker,

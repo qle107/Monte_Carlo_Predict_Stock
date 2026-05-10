@@ -211,64 +211,6 @@ def _extract_price_mentions(text: str) -> List[Dict]:
     return results
 
 
-def _aggregate_price_targets(posts: List[Dict]) -> List[Dict]:
-    """
-    Aggregate price mentions across posts.
-    Groups nearby prices into $5 buckets and returns the top 12 sorted by
-    weighted frequency (upvotes × mention count).
-    """
-    # bucket_key → cumulative weight
-    weight_map:    Dict[tuple, float] = defaultdict(float)
-    # bucket_key → canonical info dict
-    info_map:      Dict[tuple, Dict]  = {}
-    # bucket_key → bullish/bearish vote
-    sentiment_map: Dict[tuple, list]  = defaultdict(list)
-
-    for post in posts:
-        post_weight = max(1.0, post.get("upvotes", 0) / 10.0)
-        post_score  = post.get("score", 0.0)
-        for pm in post.get("price_mentions", []):
-            price = pm["price"]
-            ptype = pm["type"]
-            # Bucket width: $2.50 for options-range (<$500), $10 for stocks above
-            bucket_w = 2.5 if price < 500 else 10.0
-            bucket   = round(price / bucket_w) * bucket_w
-            key      = (bucket, ptype)
-            weight_map[key]    += post_weight
-            sentiment_map[key].append(post_score)
-            if key not in info_map:
-                info_map[key] = {
-                    "price": bucket,
-                    "type":  ptype,
-                    "count": 0,
-                }
-            info_map[key]["count"] += 1
-
-    if not info_map:
-        return []
-
-    # Attach aggregate sentiment to each bucket
-    results = []
-    for key, info in info_map.items():
-        scores = sentiment_map[key]
-        avg_s  = sum(scores) / len(scores) if scores else 0.0
-        if avg_s > 0.10:
-            sent = "bullish"
-        elif avg_s < -0.10:
-            sent = "bearish"
-        else:
-            sent = "neutral"
-        results.append({
-            **info,
-            "weight":    round(weight_map[key], 1),
-            "sentiment": sent,
-            "avg_score": round(avg_s, 3),
-        })
-
-    # Sort by weight descending, return top 12
-    results.sort(key=lambda x: x["weight"], reverse=True)
-    return results[:12]
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # X (Twitter) — per-ticker social sentiment via twikit (free, no API key)
@@ -465,7 +407,7 @@ async def fetch_x_sentiment(ticker: str) -> dict:
         "available": False, "needs_setup": True,
         "post_count": 0, "sentiment_score": 0.0,
         "call_mentions": 0, "put_mentions": 0,
-        "type_breakdown": {}, "price_targets": [], "top_posts": [],
+        "type_breakdown": {}, "top_posts": [],
     }
     # credentials present but something went wrong → needs_setup stays False
     _failed = {**_no_creds, "needs_setup": False}
@@ -579,7 +521,6 @@ async def fetch_x_sentiment(ticker: str) -> dict:
         "call_mentions":   call_total,
         "put_mentions":    put_total,
         "type_breakdown":  type_pcts,
-        "price_targets":   _aggregate_price_targets(posts),
         "top_posts":       top_posts,
     }
 
@@ -790,7 +731,6 @@ async def fetch_cramer_sentiment(ticker: str) -> dict:
         buy_signals      : int,
         sell_signals     : int,
         type_breakdown   : dict,
-        price_targets    : list,
         picks            : list[{ticker, stance, evidence}],   # all tickers in articles
         articles         : list[{title, url, date, cramer_bias, picks, price_mentions}],
     }
@@ -968,7 +908,6 @@ async def fetch_cramer_sentiment(ticker: str) -> dict:
         "buy_signals":    total_buy,
         "sell_signals":   total_sell,
         "type_breakdown": type_pcts,
-        "price_targets":  _aggregate_price_targets(articles),
         "picks":          all_picks[:20],          # all tickers from articles
         "articles":       articles[:10],
     }
@@ -980,7 +919,7 @@ async def fetch_stocktwits_sentiment(ticker: str) -> dict:
     return {
         "available": False, "message_count": 0, "sentiment_score": 0.0,
         "call_mentions": 0, "put_mentions": 0,
-        "bull_pct": 0, "bear_pct": 0, "type_breakdown": {}, "price_targets": [],
+        "bull_pct": 0, "bear_pct": 0, "type_breakdown": {},
     }
 
 
@@ -1175,9 +1114,21 @@ def _options_flow_sync(ticker: str) -> dict:
         hot_calls.sort(key=lambda x: x["volume"], reverse=True)
         hot_puts.sort( key=lambda x: x["volume"], reverse=True)
 
+        # Get current spot price for ATM/OTM classification downstream
+        try:
+            info = t.fast_info
+            spot_price = float(
+                getattr(info, "last_price", None)
+                or getattr(info, "regular_market_price", None)
+                or 0.0
+            )
+        except Exception:
+            spot_price = 0.0
+
         return {
             "available":        True,
             "expirations_used": n_exp,
+            "spot_price":       round(spot_price, 2),
             "call_volume":      total_call_vol,
             "put_volume":       total_put_vol,
             "call_oi":          total_call_oi,
@@ -1603,6 +1554,155 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Options-activity sentiment scorer
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _score_options_activity(options_data: dict) -> Tuple[float, str, dict]:
+    """
+    Derive a directional sentiment score from live options-flow data.
+
+    Signals analysed
+    ────────────────
+    1. ATM call vs put volume  (strikes within ±1.5% of spot)
+       — Someone paying ATM premium is making a near-term directional bet.
+
+    2. OTM call stacking  (calls 0–12% above spot)
+       — Heavy OTM call volume indicates speculative bullish interest.
+
+    3. Call-ladder bonus  (≥2 distinct OTM call strikes active)
+       — Multiple OTM strikes with real volume = high-conviction bull run bets.
+
+    4. End-of-next-week expiry concentration
+       — Short-dated options = urgency / near-term conviction.
+
+    5. Overall PCR (put/call ratio by volume)
+       — <0.60 → crowd is call-heavy (bullish positioning).
+       — >1.20 → crowd is put-heavy (bearish / hedging).
+
+    Returns
+    ───────
+    (score, label, details)
+      score  ∈ [-1.0, +1.0]  positive = bullish options sentiment
+      label  ∈ {strongly_bullish, bullish, neutral, bearish, strongly_bearish}
+      details: breakdown dict for UI display
+    """
+    from datetime import date, timedelta
+
+    if not options_data.get("available"):
+        return 0.0, "neutral", {}
+
+    spot = float(options_data.get("spot_price", 0.0))
+    if spot <= 0:
+        return 0.0, "neutral", {}
+
+    hot_calls = options_data.get("hot_calls", [])
+    hot_puts  = options_data.get("hot_puts",  [])
+    if not hot_calls and not hot_puts:
+        return 0.0, "neutral", {}
+
+    # ── Price zones ───────────────────────────────────────────────────────────
+    atm_lo      = spot * 0.985    # ATM band: ±1.5% of spot
+    atm_hi      = spot * 1.015
+    otm_call_lo = spot * 1.0     # OTM calls: 0–12% above spot
+    otm_call_hi = spot * 1.12
+    otm_put_lo  = spot * 0.88    # OTM puts:  0–12% below spot
+    otm_put_hi  = spot * 1.0
+
+    # ── End-of-next-week expiry window (Thursday–Monday) ─────────────────────
+    today        = date.today()
+    days_to_fri  = (4 - today.weekday()) % 7 or 7   # always ≥ 1
+    next_fri     = today + timedelta(days=days_to_fri)
+    nw_start     = (next_fri - timedelta(days=1)).isoformat()   # Thursday
+    nw_end       = (next_fri + timedelta(days=3)).isoformat()   # following Monday
+
+    # ── Volume aggregation by zone ────────────────────────────────────────────
+    atm_call_vol = sum(c["volume"] for c in hot_calls
+                       if atm_lo <= c["strike"] <= atm_hi)
+    atm_put_vol  = sum(p["volume"] for p in hot_puts
+                       if atm_lo <= p["strike"] <= atm_hi)
+
+    otm_call_vol = sum(c["volume"] for c in hot_calls
+                       if otm_call_lo < c["strike"] <= otm_call_hi)
+    otm_put_vol  = sum(p["volume"] for p in hot_puts
+                       if otm_put_lo  <= p["strike"] < otm_put_hi)
+
+    # Distinct OTM call strikes — "call ladder" breadth indicator
+    otm_call_strikes = sorted({
+        c["strike"] for c in hot_calls
+        if otm_call_lo < c["strike"] <= otm_call_hi and c["volume"] > 0
+    })
+    n_ladder = len(otm_call_strikes)
+
+    # Next-week volume concentration
+    nw_call_vol = sum(c["volume"] for c in hot_calls
+                      if nw_start <= (c.get("expiry") or "") <= nw_end)
+    nw_put_vol  = sum(p["volume"] for p in hot_puts
+                      if nw_start <= (p.get("expiry") or "") <= nw_end)
+
+    pcr = options_data.get("pcr_volume")   # None if unavailable
+
+    # ── Score components ──────────────────────────────────────────────────────
+    score = 0.0
+
+    # 1. ATM call/put balance — 35% weight
+    atm_total = atm_call_vol + atm_put_vol
+    if atm_total > 0:
+        score += ((atm_call_vol - atm_put_vol) / atm_total) * 0.35
+
+    # 2. OTM call stacking — 30% weight
+    otm_total = otm_call_vol + otm_put_vol
+    if otm_total > 0:
+        score += ((otm_call_vol - otm_put_vol) / otm_total) * 0.30
+
+    # 3. Call-ladder bonus (multiple OTM strikes = conviction)
+    if n_ladder >= 4:
+        score += 0.12
+    elif n_ladder == 3:
+        score += 0.08
+    elif n_ladder == 2:
+        score += 0.04
+
+    # 4. Next-week expiry urgency — 20% weight
+    nw_total = nw_call_vol + nw_put_vol
+    if nw_total > 0:
+        score += ((nw_call_vol - nw_put_vol) / nw_total) * 0.20
+
+    # 5. Overall PCR — up to ±0.15
+    if pcr is not None:
+        if   pcr < 0.35:  score += 0.15    # extremely call-heavy
+        elif pcr < 0.60:  score += 0.10
+        elif pcr < 0.80:  score += 0.05
+        elif pcr > 1.80:  score -= 0.15    # extremely put-heavy
+        elif pcr > 1.20:  score -= 0.10
+        elif pcr > 1.00:  score -= 0.05
+
+    score = round(max(-1.0, min(1.0, score)), 3)
+
+    if   score >  0.35: label = "strongly_bullish"
+    elif score >  0.12: label = "bullish"
+    elif score < -0.35: label = "strongly_bearish"
+    elif score < -0.12: label = "bearish"
+    else:               label = "neutral"
+
+    details = {
+        "spot":                round(spot, 2),
+        "atm_call_vol":        atm_call_vol,
+        "atm_put_vol":         atm_put_vol,
+        "otm_call_vol":        otm_call_vol,
+        "otm_put_vol":         otm_put_vol,
+        "otm_call_strikes":    otm_call_strikes,
+        "call_ladder_count":   n_ladder,
+        "next_week_expiry":    next_fri.isoformat(),
+        "next_week_call_vol":  nw_call_vol,
+        "next_week_put_vol":   nw_put_vol,
+        "pcr":                 pcr,
+        "score":               score,
+        "label":               label,
+    }
+    return score, label, details
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Aggregate
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1641,7 +1741,7 @@ async def get_sentiment(ticker: str, force_refresh: bool = False) -> dict:
             "available": False, "needs_setup": False,
             "sentiment_score": 0.0, "call_mentions": 0,
             "put_mentions": 0, "post_count": 0,
-            "type_breakdown": {}, "price_targets": [], "top_posts": [],
+            "type_breakdown": {}, "top_posts": [],
         }
     if isinstance(cramer, Exception):
         logger.warning("Cramer exception: %s", cramer)
@@ -1650,30 +1750,36 @@ async def get_sentiment(ticker: str, force_refresh: bool = False) -> dict:
             "cramer_signal": "unknown", "inverse_signal": "WAIT",
             "inverse_score": 0.0, "confidence": "low",
             "buy_signals": 0, "sell_signals": 0,
-            "type_breakdown": {}, "price_targets": [], "articles": [],
+            "type_breakdown": {}, "articles": [],
         }
     if isinstance(options, Exception):
         logger.warning("Options exception: %s", options)
         options = {"available": False, "reason": str(options)}
 
     # ── Weighted aggregate score ──────────────────────────────────────────────
-    # X posts: weight 1.0  |  Inverse Cramer: weight 1.5 (high conviction signal)
+    # Weights:
+    #   Options activity : 2.0  — real money = strongest signal
+    #   Inverse Cramer   : 1.5  — high-conviction contrarian
+    #   X / social posts : 1.0  — social mood
     scores, weights = [], []
+
     if x_data.get("available") and x_data.get("post_count", 0) > 0:
         scores.append(x_data["sentiment_score"]); weights.append(1.0)
+
     if cramer.get("available") and cramer.get("inverse_score", 0.0) != 0.0:
-        # Cramer score is ALREADY inverted — a positive number means the crowd
-        # should BUY (because Cramer said sell).
+        # Cramer score is ALREADY inverted — positive = crowd should BUY.
         scores.append(cramer["inverse_score"]); weights.append(1.5)
+
+    # Options activity: derived from ATM/OTM volume, call ladder, expiry urgency
+    opt_score, opt_label, opt_details = _score_options_activity(options or {})
+    if opt_score != 0.0:
+        scores.append(opt_score); weights.append(2.0)
 
     agg_score = (
         sum(s * w for s, w in zip(scores, weights)) / sum(weights)
         if scores else 0.0
     )
-
-    flow_bias = (options or {}).get("flow_bias", "unknown")
-    if flow_bias == "call_heavy": agg_score = min(1.0, agg_score + 0.05)
-    elif flow_bias == "put_heavy": agg_score = max(-1.0, agg_score - 0.05)
+    agg_score = round(max(-1.0, min(1.0, agg_score)), 4)
 
     label = ("bullish" if agg_score > 0.15 else "bearish" if agg_score < -0.15 else "neutral")
 
@@ -1688,42 +1794,24 @@ async def get_sentiment(ticker: str, force_refresh: bool = False) -> dict:
     total_type = sum(combined_types.values()) or 1
     merged_type_pcts = {k: round(v / total_type * 100) for k, v in combined_types.items()}
 
-    # ── Merge price targets (X posts + Cramer articles) ───────────────────────
-    all_targets: List[Dict] = list(x_data.get("price_targets", []))
-    for cm_pm in cramer.get("price_targets", []):
-        matched = False
-        for rt in all_targets:
-            if rt["type"] == cm_pm["type"] and abs(rt["price"] - cm_pm["price"]) < 5:
-                rt["weight"] = rt.get("weight", 0) + cm_pm.get("count", 0)
-                rt["count"]  = rt.get("count",  0) + cm_pm.get("count", 0)
-                matched = True
-                break
-        if not matched:
-            all_targets.append({
-                "price":     cm_pm["price"],
-                "type":      cm_pm["type"],
-                "count":     cm_pm.get("count", 0),
-                "weight":    float(cm_pm.get("count", 0)),
-                "sentiment": "neutral",
-                "avg_score": 0.0,
-            })
-    all_targets.sort(key=lambda x: x.get("weight", 0), reverse=True)
-    merged_targets = all_targets[:15]
-
     result = {
         "ticker":    ticker.upper(),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "aggregate": {
-            "score":          round(agg_score, 4),
+            "score":          agg_score,
             "label":          label,
             "text_calls":     text_calls,
             "text_puts":      text_puts,
             "type_breakdown": merged_type_pcts,
+            # Options contribution to the aggregate
+            "options_score":  opt_score,
+            "options_label":  opt_label,
         },
+        # Full breakdown of options-activity signals (for UI display)
+        "options_activity": opt_details,
         "x":          x_data,
         "cramer":     cramer,
         "options_flow": options,
-        "price_targets": merged_targets,
     }
     _sentiment_cache_put(ticker, result)
     return result

@@ -313,4 +313,54 @@ _test_bash_write.txt
 # Portfolio and generated reports
 portfolio_tracker.html
 resource_image/
+
+# ========================================
+# Additional Privacy & Security Exclusions
+# ========================================
+
+# All database files (including SQLite variants)
+*.db-*
+mc_trader.db*
+
+# All cookie and session files
+*_cookies.json
+
+# All environment and config files
+.env*
+config.*.local.py
+*_secrets.json
+
+# Temporary and test files
+*.tmp
+*.temp
+
+# Generated reports and outputs
+*.html.tmp
+*.png.tmp
+*.jpg.tmp
+
+# Logs and cache
+logs/
+.cache/
+*.pyc
+*.pyo
+
+# IDE and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+Thumbs.db
+.DS_Store
+
+# Virtual environments
+.venv/
+
+
+# Data exports
+*.csv
+*.xlsx
+*.xls
+data/
+processed_data/
 # End of https://www.toptal.com/developers/gitignore/api/python,pycharm

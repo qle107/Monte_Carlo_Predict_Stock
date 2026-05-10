@@ -32,6 +32,43 @@ header h1 { font-size:15px; font-weight:600; }
 .hdr-btn:hover { background:rgba(255,255,255,.07); border-color:rgba(255,255,255,.25); }
 .hdr-btn:disabled { opacity:.4; cursor:not-allowed; }
 .hdr-btn.active { border-color:var(--blue); color:var(--blue); }
+
+/* ── Quick-ticker control ────────────────────────────────────────── */
+#quick-ticker-wrap { display:flex; flex-direction:column; gap:3px; }
+#quick-ticker-label { font-size:9px; font-weight:700; letter-spacing:.9px; text-transform:uppercase; color:rgba(88,166,255,.75); padding-left:3px; }
+#quick-config {
+  display:flex; align-items:center; gap:0;
+  background:rgba(88,166,255,.07);
+  border:1.5px solid rgba(88,166,255,.45);
+  border-radius:7px; overflow:hidden;
+  transition:border-color .2s, box-shadow .2s;
+}
+#quick-config:focus-within {
+  border-color:var(--blue);
+  box-shadow:0 0 0 3px rgba(88,166,255,.18);
+}
+#quick-ticker {
+  background:transparent; border:none;
+  color:var(--text); font-size:14px; font-weight:800;
+  width:78px; padding:6px 10px;
+  outline:none; letter-spacing:.8px;
+}
+#quick-ticker::placeholder { color:rgba(139,148,158,.55); font-weight:400; font-size:12px; }
+#quick-interval {
+  background:rgba(88,166,255,.1); border:none;
+  border-left:1px solid rgba(88,166,255,.25);
+  color:var(--text); font-size:12px;
+  padding:6px 6px; outline:none; cursor:pointer;
+}
+#quick-go-btn {
+  background:rgba(88,166,255,.25);
+  border:none; border-left:1px solid rgba(88,166,255,.3);
+  color:var(--blue); padding:6px 11px;
+  cursor:pointer; font-size:13px; font-weight:700;
+  transition:background .15s;
+}
+#quick-go-btn:hover { background:rgba(88,166,255,.45); }
+#quick-go-btn:disabled { opacity:.4; cursor:not-allowed; }
 .spinner { display:none; width:10px; height:10px; border:2px solid rgba(255,255,255,.15); border-top-color:var(--blue); border-radius:50%; animation:spin .7s linear infinite; }
 @keyframes spin { to { transform:rotate(360deg); } }
 
@@ -315,35 +352,31 @@ header h1 { font-size:15px; font-weight:600; }
   <span class="badge neutral" id="signal-badge">Connecting…</span>
   <span id="updated">—</span>
   <!-- ── Quick ticker + timeframe ──────────────────────────────────── -->
-  <div id="quick-config" style="display:flex;align-items:center;gap:0;background:var(--surface);border:1px solid rgba(255,255,255,.15);border-radius:6px;overflow:hidden;">
-    <input id="quick-ticker" type="text"
-      style="background:transparent;border:none;color:var(--text);font-size:13px;font-weight:700;width:72px;padding:5px 10px;outline:none;letter-spacing:.6px;"
-      placeholder="AAPL"
-      maxlength="10"
-      oninput="this.value=this.value.toUpperCase()"
-      onkeydown="if(event.key==='Enter'){applyQuickTicker();this.blur();}"
-      title="Type ticker and press Enter"
-    />
-    <select id="quick-interval"
-      style="background:var(--surface2);border:none;border-left:1px solid rgba(255,255,255,.1);color:var(--text);font-size:12px;padding:5px 6px;outline:none;cursor:pointer;"
-      onchange="applyQuickTicker()"
-      title="Timeframe"
-    >
-      <option value="1m">1m</option>
-      <option value="2m">2m</option>
-      <option value="5m">5m</option>
-      <option value="15m" selected>15m</option>
-      <option value="30m">30m</option>
-      <option value="1h">1h</option>
-      <option value="4h">4h</option>
-      <option value="1d">1d</option>
-    </select>
-    <button id="quick-go-btn" onclick="applyQuickTicker()"
-      style="background:rgba(88,166,255,.15);border:none;border-left:1px solid rgba(88,166,255,.2);color:var(--blue);padding:5px 10px;cursor:pointer;font-size:13px;transition:background .15s;"
-      onmouseover="this.style.background='rgba(88,166,255,.25)'"
-      onmouseout="this.style.background='rgba(88,166,255,.15)'"
-      title="Apply"
-    >▶</button>
+  <div id="quick-ticker-wrap">
+    <div id="quick-ticker-label">Ticker</div>
+    <div id="quick-config">
+      <input id="quick-ticker" type="text"
+        placeholder="AAPL"
+        maxlength="10"
+        oninput="this.value=this.value.toUpperCase()"
+        onkeydown="if(event.key==='Enter'){applyQuickTicker();this.blur();}"
+        title="Type ticker and press Enter — or press ▶"
+      />
+      <select id="quick-interval"
+        onchange="applyQuickTicker()"
+        title="Timeframe"
+      >
+        <option value="1m">1m</option>
+        <option value="2m">2m</option>
+        <option value="5m">5m</option>
+        <option value="15m" selected>15m</option>
+        <option value="30m">30m</option>
+        <option value="1h">1h</option>
+        <option value="4h">4h</option>
+        <option value="1d">1d</option>
+      </select>
+      <button id="quick-go-btn" onclick="applyQuickTicker()" title="Load ticker">▶</button>
+    </div>
   </div>
   <div id="hdr-right">
     <button class="hdr-btn" id="reload-btn" onclick="reloadData()">
@@ -682,10 +715,11 @@ header h1 { font-size:15px; font-weight:600; }
       <select id="s-model">
         <option value="gaussian">Gaussian (classic GBM)</option>
         <option value="student_t">Student-t (heavy tails)</option>
-        <option value="garch" selected>GARCH (vol clustering)</option>
+        <option value="garch">GARCH (vol clustering)</option>
         <option value="bootstrap">Bootstrap (real returns)</option>
         <option value="jump">Jump-diffusion (gaps)</option>
         <option value="ensemble">Ensemble (GARCH+Boot+Jump) ★</option>
+        <option value="microstructure" selected>Microstructure (VP + CVD + Hurst) ★★</option>
       </select>
       <span class="hint">Innovation distribution</span>
     </div>
@@ -1030,8 +1064,12 @@ header h1 { font-size:15px; font-weight:600; }
             </div>
           </div>
           <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <input id="sent-ticker-input" type="text" placeholder="e.g. AAPL" class="scan-ctrl"
-                   style="width:120px;text-transform:uppercase;font-weight:700;" maxlength="10">
+            <span id="sent-ticker-badge"
+                  style="display:inline-block;min-width:72px;text-align:center;font-size:13px;font-weight:700;
+                         letter-spacing:.6px;padding:6px 12px;border-radius:6px;
+                         background:var(--surface2);border:1px solid rgba(255,255,255,.12);
+                         color:var(--text);user-select:none;"
+                  title="Global ticker — change via the header or Settings">—</span>
             <button onclick="runSentiment()" id="sent-run-btn"
               style="background:linear-gradient(135deg,#b07d00,#d29922);color:#fff;border:none;
                      border-radius:7px;padding:8px 20px;font-size:13px;font-weight:700;
@@ -1226,24 +1264,24 @@ header h1 { font-size:15px; font-weight:600; }
           <div class="sent-posts-wrap" id="sent-prices-section" style="display:none;margin-bottom:14px;">
             <div style="font-size:13px;font-weight:700;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;">
               <span>🎯 Hot Strikes &amp; Price Levels</span>
-              <span style="font-size:11px;color:var(--muted);font-weight:400;">Extracted from social posts · most mentioned first</span>
+              <span style="font-size:11px;color:var(--muted);font-weight:400;">Derived from market volume &amp; flow</span>
             </div>
 
             <!-- Two columns: social mentions | real options flow -->
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
 
-              <!-- Social price mentions -->
+              <!-- Market-derived strike ranking (left panel) -->
               <div>
                 <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">
-                  From Reddit + Cramer articles
+                  Derived from market volume &amp; flow
                 </div>
                 <div class="scan-table-wrap" style="max-height:260px;overflow-y:auto;">
                   <table style="width:100%;border-collapse:collapse;font-size:12px;">
                     <thead>
                       <tr>
-                        <th style="text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Price / Strike</th>
+                        <th style="text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Strike</th>
                         <th style="text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Type</th>
-                        <th style="text-align:right;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Mentions</th>
+                        <th style="text-align:right;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Score</th>
                         <th style="text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;padding:0 6px 6px;border-bottom:1px solid var(--border);">Crowd Sent.</th>
                       </tr>
                     </thead>
@@ -1568,9 +1606,12 @@ header h1 { font-size:15px; font-weight:600; }
             </div>
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <input id="ms-ticker-input" type="text" placeholder="PLTR"
-              style="width:80px;background:var(--surface2);border:1px solid rgba(255,255,255,.12);color:var(--text);border-radius:5px;padding:5px 8px;font-size:12px;"
-              oninput="this.value=this.value.toUpperCase()">
+            <span id="ms-ticker-badge"
+              style="display:inline-block;min-width:60px;text-align:center;font-size:12px;font-weight:700;
+                     letter-spacing:.6px;padding:5px 10px;border-radius:5px;
+                     background:var(--surface2);border:1px solid rgba(255,255,255,.12);
+                     color:var(--text);user-select:none;"
+              title="Global ticker — change via the header or Settings">—</span>
             <button onclick="runMarketStructure()" id="ms-run-btn"
               style="background:rgba(188,140,255,.12);border:1px solid var(--purple);color:var(--purple);
                      padding:6px 16px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px;">
@@ -1951,6 +1992,29 @@ header h1 { font-size:15px; font-weight:600; }
       <div class="kv"><span>Refresh</span>              <span id="cfg-poll">—</span></div>
     </div>
 
+    <!-- Microstructure diagnostics (only visible when mc_model = microstructure) -->
+    <div class="card" id="ms-card" style="display:none">
+      <div class="card-title">
+        <span>★★ Microstructure model</span>
+        <span id="ms-regime-pill" style="font-size:10px;padding:2px 8px;border-radius:4px;
+              background:rgba(106,167,255,.1);border:1px solid rgba(106,167,255,.25);
+              color:var(--blue);">—</span>
+      </div>
+      <div class="kv"><span>Hurst exponent</span>      <span id="ms-hurst">—</span></div>
+      <div class="kv"><span>CVD drift bias</span>      <span id="ms-drift">—</span></div>
+      <div style="height:1px;background:var(--border);margin:8px 0"></div>
+      <div class="kv"><span>POC (Point of Control)</span>     <span id="ms-poc">—</span></div>
+      <div class="kv"><span>VAH (Value Area High)</span>      <span id="ms-vah">—</span></div>
+      <div class="kv"><span>VAL (Value Area Low)</span>       <span id="ms-val">—</span></div>
+      <div class="kv"><span>HVN levels</span>                 <span id="ms-hvn-count">—</span></div>
+      <div class="kv"><span>LVN levels</span>                 <span id="ms-lvn-count">—</span></div>
+      <div id="ms-levels-detail" style="margin-top:8px;font-size:11px;color:var(--muted);
+            line-height:1.5;display:none"></div>
+      <div style="margin-top:8px;font-size:10px;color:var(--muted);font-style:italic">
+        Drift driven by CVD slope · gravity from volume profile · regime from Hurst.
+      </div>
+    </div>
+
     <!-- Backtest -->
     <div class="card">
       <div class="card-title">
@@ -2254,6 +2318,7 @@ header h1 { font-size:15px; font-weight:600; }
   border-radius:10px; letter-spacing:.2px;
 }
 .zone-demand-bounce, .zone-supply-break { background:rgba(63,185,80,.15); color:var(--green); }
+.zone-demand-support { background:rgba(63,185,80,.09); color:var(--green); border:1px solid rgba(63,185,80,.30); }
 .zone-supply-bounce, .zone-demand-break { background:rgba(248,81,73,.15); color:var(--red); }
 .zone-none { background:rgba(139,148,158,.08); color:var(--muted); }
 .setup-score-bar {
@@ -2641,7 +2706,7 @@ async function loadTicker(ticker) {
   if (currentConfig.n_sim)        document.getElementById('s-nsim').value    = currentConfig.n_sim;
   if (currentConfig.n_forward)    document.getElementById('s-nfwd').value    = currentConfig.n_forward;
   if (currentConfig.lookback)     document.getElementById('s-lookback').value= currentConfig.lookback;
-  if (currentConfig.mc_model)     document.getElementById('s-model').value   = currentConfig.mc_model;
+  if (currentConfig.mc_model)     document.getElementById('s-model').value   = currentConfig.mc_model || 'microstructure';
 
   log(`Loading ${ticker} @ ${scanInterval} (n_sim=${currentConfig.n_sim||'?'}, fwd=${currentConfig.n_forward||'?'})…`);
   await applySettings();
@@ -2682,16 +2747,8 @@ function _scoreStr(s) { return (s >= 0 ? '+' : '') + s.toFixed(3); }
 async function runSentiment(forceRefresh) {
   if (_sentLoading) return;
 
-  const tickerEl = document.getElementById('sent-ticker-input');
-  const ticker   = (tickerEl?.value || currentConfig.ticker || 'SPY').toUpperCase().trim();
-  if (!ticker) { alert('Enter a ticker first.'); return; }
-  if (tickerEl) tickerEl.value = ticker;
-
-  // ── Push ticker globally FIRST (before any fetch) ─────────────────────
-  if (ticker !== (currentConfig.ticker || '').toUpperCase()) {
-    _syncAllTickerInputs(ticker);   // update every input instantly
-    applySettings().catch(() => {}); // push to server (non-blocking)
-  }
+  const ticker = (currentConfig.ticker || 'SPY').toUpperCase().trim();
+  if (!ticker) { alert('Set a ticker in the header first.'); return; }
 
   // Force a cache-bust if the ticker changed from the last fetch
   const tickerChanged = ticker !== _lastSentTicker;
@@ -3132,28 +3189,74 @@ function _renderSentimentPanel(data) {
   const pricesSec  = document.getElementById('sent-prices-section');
   const socialTbody = document.getElementById('sp-social-prices-tbody');
   const hotTbody   = document.getElementById('sp-hot-strikes-tbody');
-  const priceTgts  = data.price_targets || [];
 
   if (pricesSec) pricesSec.style.display = 'block';
 
-  // Social price mentions table
+  // ── Left panel: market-derived strike ranking ────────────────────────────
+  // Derives "crowd interest" from real options data (same source as right panel).
+  // Ranking = Volume (55%) + Flow (30%) + IV (15%), normalised to 1–100.
+  // Sentiment is derived from CHG% (price movement of the contract itself).
   if (socialTbody) {
-    if (priceTgts.length > 0) {
-      const sentColor = { bullish: '#3fb950', bearish: '#f85149', neutral: '#8b949e' };
-      const typeEmoji = { call: '📞 Call', put: '🔻 Put', stock: '📈 Stock' };
-      socialTbody.innerHTML = priceTgts.map(pt => {
-        const sc  = sentColor[pt.sentiment] || '#8b949e';
-        const te  = typeEmoji[pt.type] || pt.type;
-        const tcol = pt.type === 'call' ? '#3fb950' : pt.type === 'put' ? '#f85149' : '#58a6ff';
-        return `<tr>
-          <td style="font-weight:700;font-size:13px;padding:6px;">$${pt.price.toFixed(pt.price % 1 === 0 ? 0 : 2)}</td>
+    const combined = [
+      ...(opts.hot_calls || []),
+      ...(opts.hot_puts  || []),
+    ];
+
+    if (combined.length > 0) {
+      // Pre-compute raw composites for normalisation
+      const flows = combined.map(s =>
+        (s.last_price != null && s.volume != null) ? s.last_price * 100 * s.volume : 0
+      );
+      const maxVol  = Math.max(...combined.map(s => s.volume  || 0), 1);
+      const maxFlow = Math.max(...flows, 1);
+      const maxIV   = Math.max(...combined.map(s => s.iv      || 0), 1);
+
+      // Compute composite score [0–1] then scale to 1–100
+      const scored = combined.map((s, i) => {
+        const volNorm  = (s.volume || 0) / maxVol;
+        const flowNorm = flows[i]        / maxFlow;
+        const ivNorm   = Math.min((s.iv || 0) / maxIV, 1);
+        const raw      = volNorm * 0.55 + flowNorm * 0.30 + ivNorm * 0.15;
+        return { ...s, _score: Math.max(1, Math.round(raw * 100)) };
+      });
+
+      // Sort by composite score descending, take top 12
+      scored.sort((a, b) => b._score - a._score);
+      const ranked = scored.slice(0, 12);
+
+      // Sentiment from CHG% of the contract price
+      function chgSentiment(chg) {
+        if (chg == null) return { label: '—',           color: '#8b949e' };
+        if (chg > 100)   return { label: 'Very Bullish', color: '#3fb950' };
+        if (chg > 0)     return { label: 'Bullish',      color: '#57c26a' };
+        if (chg < -40)   return { label: 'Very Bearish', color: '#f85149' };
+        if (chg < 0)     return { label: 'Bearish',      color: '#e0625a' };
+        return              { label: 'Neutral',        color: '#8b949e' };
+      }
+
+      socialTbody.innerHTML = ranked.map(s => {
+        const tcol = s.type === 'call' ? '#3fb950' : '#f85149';
+        const te   = s.type === 'call' ? '📞 Call'  : '🔻 Put';
+        const itm  = s.in_money ? ' ✅' : '';
+        const sent = chgSentiment(s.pct_change);
+        // Score bar background: green for calls, red for puts, intensity by score
+        const barOpacity = (s._score / 100 * 0.35 + 0.05).toFixed(2);
+        const barBg = s.type === 'call'
+          ? `rgba(63,185,80,${barOpacity})`
+          : `rgba(248,81,73,${barOpacity})`;
+        return `<tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+          <td style="font-weight:700;font-size:13px;padding:6px 6px;">$${s.strike}${itm}</td>
           <td style="color:${tcol};padding:6px;">${te}</td>
-          <td style="text-align:right;font-weight:600;padding:6px;">${pt.count}</td>
-          <td style="color:${sc};padding:6px;">${pt.sentiment}</td>
+          <td style="text-align:right;padding:6px;">
+            <span style="display:inline-block;background:${barBg};color:var(--text);
+                         font-weight:700;font-size:12px;padding:2px 7px;border-radius:10px;
+                         min-width:32px;text-align:center;">${s._score}</span>
+          </td>
+          <td style="color:${sent.color};padding:6px;font-size:11px;">${sent.label}</td>
         </tr>`;
       }).join('');
     } else {
-      socialTbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:12px;font-size:11px;">No specific price levels found in posts</td></tr>`;
+      socialTbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:12px;font-size:11px;">No options data available</td></tr>`;
     }
   }
 
@@ -3305,7 +3408,7 @@ async function runNewsPanel() {
   if (runBtn) runBtn.disabled = true;
   if (spinEl) spinEl.style.display = 'inline';
 
-  const ticker = (document.getElementById('sent-ticker-input')?.value || currentConfig.ticker || 'SPY').trim().toUpperCase();
+  const ticker = (currentConfig.ticker || 'SPY').trim().toUpperCase();
 
   try {
     // Fetch both endpoints in parallel
@@ -3697,8 +3800,8 @@ function _renderGlobalSentiment(data) {
         return `<div style="display:flex;align-items:center;gap:6px;">
           <span style="font-weight:700;font-size:11px;color:var(--text);width:46px;
                        flex-shrink:0;cursor:pointer;text-decoration:underline dotted;"
-                onclick="document.getElementById('sent-ticker-input').value='${t.ticker}'"
-                title="Click to search ${t.ticker}">$${t.ticker}</span>
+                onclick="_switchGlobalTicker('${t.ticker}')"
+                title="Click to switch global ticker to ${t.ticker}">$${t.ticker}</span>
           <div style="flex:1;height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;">
             <div style="height:100%;width:${barW}%;background:${sc};border-radius:3px;"></div>
           </div>
@@ -3741,11 +3844,6 @@ function _renderGlobalSentiment(data) {
   log(`Market Pulse → ${mood.toUpperCase()} (${(score>=0?'+':'')+score.toFixed(3)}) | ${data.post_count} posts | Cramer market: ${cm.cramer_signal} → ${cm.inverse_signal}`, 'var(--purple)');
 }
 
-// Allow Enter key in ticker input
-document.addEventListener('DOMContentLoaded', () => {
-  const inp = document.getElementById('sent-ticker-input');
-  if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') runSentiment(); });
-});
 
 function log(msg, color) {
   const el=document.getElementById('log');
@@ -3832,7 +3930,7 @@ function loadSettingsIntoForm() {
   if (!currentConfig.ticker) return;
   document.getElementById('s-ticker').value     =currentConfig.ticker || '';
   document.getElementById('s-interval').value   =currentConfig.interval || '15m';
-  document.getElementById('s-model').value      =currentConfig.mc_model || 'garch';
+  document.getElementById('s-model').value      =currentConfig.mc_model || 'microstructure';
   document.getElementById('s-lookback').value   =currentConfig.lookback || 50;
   document.getElementById('s-chart-bars').value =currentConfig.chart_bars || 200;
   document.getElementById('s-nsim').value       =currentConfig.n_sim || 10000;
@@ -3840,17 +3938,34 @@ function loadSettingsIntoForm() {
   document.getElementById('s-poll').value       =currentConfig.poll_seconds || 60;
 }
 /**
- * Central ticker sync — keeps every ticker input in the UI in lockstep.
+ * Central ticker sync — keeps every ticker input/badge in the UI in lockstep.
  * Call whenever the active ticker changes from any source.
  */
 function _syncAllTickerInputs(ticker) {
   if (!ticker) return;
   const t = ticker.toUpperCase().trim();
-  const ids = ['s-ticker', 'quick-ticker', 'sent-ticker-input', 'ms-ticker-input'];
-  ids.forEach(id => {
+  // Editable inputs (settings + quick-navbar)
+  ['s-ticker', 'quick-ticker'].forEach(id => {
     const el = document.getElementById(id);
     if (el && el.value.toUpperCase().trim() !== t) el.value = t;
   });
+  // Read-only ticker badges in feature panels
+  ['sent-ticker-badge', 'ms-ticker-badge'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.textContent.trim() !== t) el.textContent = t;
+  });
+}
+
+/**
+ * Switch the global ticker from any click target (e.g. trending ticker list).
+ * Updates the header input, pushes to backend, and auto-runs sentiment.
+ */
+function _switchGlobalTicker(ticker) {
+  const t = (ticker || '').toUpperCase().trim();
+  if (!t) return;
+  const qt = document.getElementById('quick-ticker');
+  if (qt) qt.value = t;
+  applyQuickTicker();
 }
 
 async function applySettings() {
@@ -3932,9 +4047,11 @@ async function applyQuickTicker() {
       currentConfig = data.config;
       _saveSettings();
       _syncAllTickerInputs(ticker);
-      // Sync interval fields too
+      // Sync interval + model fields so settings panel stays in lockstep
       const si = document.getElementById('s-interval');
       if (si) si.value = interval;
+      const sm = document.getElementById('s-model');
+      if (sm) sm.value = currentConfig.mc_model || 'microstructure';
       input.style.color = 'var(--green)';
       setTimeout(() => { input.style.color = 'var(--text)'; }, 1500);
       if (data.result) updateUI(data.result);
@@ -3954,9 +4071,9 @@ async function applyQuickTicker() {
 }
 
 function resetSettings() {
-  document.getElementById('s-ticker').value     ='PLTR';
+  document.getElementById('s-ticker').value     = currentConfig.ticker || 'PLTR';
   document.getElementById('s-interval').value   ='15m';
-  document.getElementById('s-model').value      ='garch';
+  document.getElementById('s-model').value      ='microstructure';
   document.getElementById('s-lookback').value   =50;
   document.getElementById('s-chart-bars').value =200;
   document.getElementById('s-nsim').value       =10000;
@@ -4018,6 +4135,86 @@ async function runBacktest() {
 function updateUI(d) {
   try { _updateUI(d); } catch(e) { log('UI error: '+e.message, 'var(--red)'); console.error(e); }
   try { _updateMarketStructureFromBroadcast(d); } catch(_) {}
+  try { _updateMicrostructureCard(d); } catch(e) { console.warn('ms-card:', e); }
+}
+
+// ── Microstructure diagnostics card ──────────────────────────────────────
+// Visible only when the active MC model is "microstructure". Reads ms_*
+// fields exposed by core/montecarlo.py:_MSContext.diagnostics().
+function _updateMicrostructureCard(d) {
+  const card = document.getElementById('ms-card');
+  if (!card) return;
+  const mc = d && d.mc;
+  const isMS = (d && (d.mc_model === 'microstructure' ||
+                      (d.config && d.config.mc_model === 'microstructure')));
+
+  if (!isMS || !mc || mc.ms_regime == null) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = '';
+
+  const $ = id => document.getElementById(id);
+  const regime = mc.ms_regime;
+  const pill   = $('ms-regime-pill');
+  pill.textContent = regime;
+  pill.style.color           = regime==='trending'      ? 'var(--green)'
+                             : regime==='mean-reverting'? 'var(--amber)'
+                             :                            'var(--blue)';
+  pill.style.borderColor     = pill.style.color;
+  pill.style.background      = regime==='trending'      ? 'rgba(50,210,107,.10)'
+                             : regime==='mean-reverting'? 'rgba(210,153,34,.10)'
+                             :                            'rgba(106,167,255,.10)';
+
+  // Hurst — colour-coded
+  const H = mc.ms_hurst;
+  const hEl = $('ms-hurst');
+  hEl.textContent = (H!=null) ? H.toFixed(3) : '—';
+  hEl.style.color = (H==null)        ? 'var(--muted)'
+                  : (H > 0.55)       ? 'var(--green)'
+                  : (H < 0.45)       ? 'var(--amber)'
+                  :                    'var(--muted)';
+
+  // CVD drift bias — bps per step
+  const dbEl = $('ms-drift');
+  const db   = mc.ms_drift_bias;
+  if (db == null) {
+    dbEl.textContent = '—';
+    dbEl.style.color = 'var(--muted)';
+  } else {
+    const bps = db * 10000;  // fraction → bps
+    dbEl.textContent = (bps>=0?'+':'') + bps.toFixed(1) + ' bps/step';
+    dbEl.style.color = bps > 0 ? 'var(--green)' : bps < 0 ? 'var(--red)' : 'var(--muted)';
+  }
+
+  // Key levels
+  const lvls = mc.ms_key_levels || {};
+  const setLvl = (id, v) => {
+    const el = $(id);
+    el.textContent = (v!=null) ? '$'+fmt(v) : '—';
+    el.style.color = (v!=null) ? '' : 'var(--muted)';
+  };
+  setLvl('ms-poc', lvls.POC);
+  setLvl('ms-vah', lvls.VAH);
+  setLvl('ms-val', lvls.VAL);
+
+  const hvns = lvls.HVNs || [];
+  const lvns = lvls.LVNs || [];
+  $('ms-hvn-count').textContent = hvns.length ? hvns.length + ' nodes' : 'none';
+  $('ms-lvn-count').textContent = lvns.length ? lvns.length + ' gaps'  : 'none';
+
+  // Detailed level list (collapsed by default — show top 5 of each)
+  const detail = $('ms-levels-detail');
+  if (hvns.length || lvns.length) {
+    const fmtList = arr => arr.slice(0,5).map(v => '$'+fmt(v)).join(' · ');
+    let html = '';
+    if (hvns.length) html += `<div><strong>HVN:</strong> ${fmtList(hvns)}${hvns.length>5?' …':''}</div>`;
+    if (lvns.length) html += `<div><strong>LVN:</strong> ${fmtList(lvns)}${lvns.length>5?' …':''}</div>`;
+    detail.innerHTML = html;
+    detail.style.display = '';
+  } else {
+    detail.style.display = 'none';
+  }
 }
 function _updateUI(d) {
   const ind=d.indicators, sig=d.signal, mc=d.mc, cur=d.current_price;
@@ -4292,14 +4489,15 @@ function updateTradeSetup(ts) {
     if (hasZone) {
       // Zone type pill label
       const zTypeLabels = {
-        demand_bounce: '↑ Demand Bounce',
-        supply_break:  '↑ Supply Break',
-        supply_bounce: '↓ Supply Reject',
-        demand_break:  '↓ Demand Break',
+        demand_bounce:  '↑ Demand Bounce',
+        demand_support: '↑ Demand Support',
+        supply_break:   '↑ Supply Break',
+        supply_bounce:  '↓ Supply Reject',
+        demand_break:   '↓ Demand Break',
       };
       set('ts-zone-type-pill', el => {
         el.textContent = zTypeLabels[ts.zone_type] || ts.zone_type || '?';
-        const isUp = ts.zone_type?.includes('up') || ts.zone_type === 'demand_bounce' || ts.zone_type === 'supply_break';
+        const isUp = ts.zone_type?.includes('up') || ts.zone_type === 'demand_bounce' || ts.zone_type === 'demand_support' || ts.zone_type === 'supply_break';
         el.style.background = isUp ? 'rgba(63,185,80,.15)' : 'rgba(248,81,73,.15)';
         el.style.color = isUp ? 'var(--green)' : 'var(--red)';
       });
@@ -4919,7 +5117,7 @@ function _saveSettings() {
     const s = {
       ticker:       currentConfig.ticker       || '',
       interval:     currentConfig.interval     || '15m',
-      mc_model:     currentConfig.mc_model     || 'garch',
+      mc_model:     currentConfig.mc_model     || 'microstructure',
       lookback:     currentConfig.lookback     || 50,
       chart_bars:   currentConfig.chart_bars   || 200,
       n_sim:        currentConfig.n_sim        || 10000,
@@ -4959,6 +5157,9 @@ async function _restoreSavedSettings() {
       _syncAllTickerInputs(saved.ticker);
       const qi = document.getElementById('quick-interval');
       if (qi) qi.value = saved.interval || '15m';
+      // Also sync model in settings panel
+      const sm = document.getElementById('s-model');
+      if (sm) sm.value = currentConfig.mc_model || 'microstructure';
       if (data.result) updateUI(data.result);
       log('Restored settings: ' + saved.ticker + ' ' + (saved.interval || '15m'));
     }
@@ -5029,15 +5230,9 @@ function switchScannerTab(tab) {
     }
   });
 
-  // Sync sentiment ticker when sentiment tab is activated.
-  // _syncAllTickerInputs keeps it updated; this is only a safety fallback
-  // in case the tab opens before any ticker change has been applied.
+  // When the sentiment tab opens, auto-run if the global ticker changed since last fetch.
   if (tab === 'sentiment') {
-    const inp = document.getElementById('sent-ticker-input');
-    if (inp && currentConfig.ticker && !inp.value.trim()) {
-      inp.value = currentConfig.ticker.toUpperCase();
-    }
-    const currentVal = (inp?.value || '').toUpperCase().trim();
+    const currentVal = (currentConfig.ticker || '').toUpperCase().trim();
     if (currentVal && currentVal !== _lastSentTicker && !_sentLoading) {
       runSentiment(true);
     }
@@ -5045,12 +5240,6 @@ function switchScannerTab(tab) {
     if (!_newsFetched && !_newsLoading) {
       runNewsPanel();
     }
-  }
-
-  // Pre-fill market-structure ticker only if the field is empty
-  if (tab === 'market-structure') {
-    const inp = document.getElementById('ms-ticker-input');
-    if (inp && currentConfig.ticker && !inp.value.trim()) inp.value = currentConfig.ticker;
   }
 }
 
@@ -5069,7 +5258,7 @@ let _msAbortController = null;
 const _MS_TIMEOUT = 45000;  // 45 second max timeout
 
 async function runMarketStructure() {
-  const ticker = (document.getElementById('ms-ticker-input').value || currentConfig.ticker || '').trim().toUpperCase();
+  const ticker = (currentConfig.ticker || '').trim().toUpperCase();
   if (!ticker) return;
 
   // Prevent simultaneous requests
@@ -5114,16 +5303,6 @@ async function runMarketStructure() {
     status.textContent = `Updated ${new Date(data.updated_at).toLocaleTimeString()} — ${ticker} @ ${data.interval}`;
     log(`Market Structure: ${ticker} — regime=${data.hmm?.current_state || '?'} | max_pain=$${data.options_flow?.max_pain?.toFixed(2) || '?'}`, 'var(--purple)');
 
-    // ── Sync global ticker ────────────────────────────────────────────
-    // If the user analyzed a different ticker, switch the whole app to it
-    // so the main chart, header, and settings all stay consistent.
-    if (ticker !== (currentConfig.ticker || '').toUpperCase()) {
-      document.getElementById('s-ticker').value = ticker;
-      const qt = document.getElementById('quick-ticker');
-      if (qt) qt.value = ticker;
-      // Fire-and-forget — update backend config + restart main analysis loop
-      applySettings().catch(() => {});
-    }
   } catch(e) {
     if (e.name === 'AbortError') {
       status.textContent = 'Request cancelled (timeout)';
@@ -5678,11 +5857,12 @@ function _emaStackPill(stack) {
 // ── Setup type pill HTML ──────────────────────────────────────────
 function _setupTypePill(type) {
   const map = {
-    demand_bounce: ['zone-type-pill zone-demand-bounce', '↑ Demand Bounce'],
-    supply_break:  ['zone-type-pill zone-supply-break',  '↑ Supply Break'],
-    supply_bounce: ['zone-type-pill zone-supply-bounce', '↓ Supply Reject'],
-    demand_break:  ['zone-type-pill zone-demand-break',  '↓ Demand Break'],
-    none:          ['zone-type-pill zone-none',          '— None'],
+    demand_bounce:  ['zone-type-pill zone-demand-bounce',  '↑ Demand Bounce'],
+    demand_support: ['zone-type-pill zone-demand-support', '↑ Demand Support'],
+    supply_break:   ['zone-type-pill zone-supply-break',   '↑ Supply Break'],
+    supply_bounce:  ['zone-type-pill zone-supply-bounce',  '↓ Supply Reject'],
+    demand_break:   ['zone-type-pill zone-demand-break',   '↓ Demand Break'],
+    none:           ['zone-type-pill zone-none',           '— None'],
   };
   const [cls, label] = map[type] || ['zone-type-pill zone-none', type || '—'];
   return `<span class="${cls}">${label}</span>`;
