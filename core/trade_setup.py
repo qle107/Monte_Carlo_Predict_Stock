@@ -356,30 +356,30 @@ def compute_trade_setup(
     if is_short and sl_atr <= entry:
         sl_atr = round(entry * 1.02, 4)
 
-    # Take Profit levels from MC percentiles
-    if mc_p75 is not None and mc_p90 is not None and mc_p10 is not None and mc_p25 is not None:
-        if is_long:
-            tp1 = round(mc_p75, 4)
-            tp2 = round(mc_p90, 4)
-        else:
-            tp1 = round(mc_p25, 4)
-            tp2 = round(mc_p10, 4)
-    else:
-        # Fallback: use ATR-based targets
-        tp1 = round(entry + atr_dollar * atr_mult * 1.5, 4) if is_long else round(entry - atr_dollar * atr_mult * 1.5, 4)
-        tp2 = round(entry + atr_dollar * atr_mult * 2.5, 4) if is_long else round(entry - atr_dollar * atr_mult * 2.5, 4)
+    # Take Profit levels — prefer MC percentiles but fall back to an
+    # ATR-based projection when the MC percentile sits on the *wrong* side
+    # of entry (which happens on tight, low-vol setups). The previous code
+    # blindly inflated TP1 to entry × 1.015, producing a fake 1.5 % target
+    # that didn't reflect realistic price action for the timeframe.
+    atr_tp1_long  = entry + atr_dollar * atr_mult * 1.5
+    atr_tp2_long  = entry + atr_dollar * atr_mult * 2.5
+    atr_tp1_short = entry - atr_dollar * atr_mult * 1.5
+    atr_tp2_short = entry - atr_dollar * atr_mult * 2.5
 
-    # Ensure TP is on the right side of entry
+    have_mc = all(v is not None for v in (mc_p10, mc_p25, mc_p75, mc_p90))
     if is_long:
-        if tp1 <= entry:
-            tp1 = round(entry * 1.015, 4)
-        if tp2 <= tp1:
-            tp2 = round(tp1 * 1.01, 4)
+        mc_tp1 = mc_p75 if have_mc else None
+        mc_tp2 = mc_p90 if have_mc else None
+        tp1 = float(mc_tp1) if (mc_tp1 is not None and mc_tp1 > entry) else atr_tp1_long
+        tp2 = float(mc_tp2) if (mc_tp2 is not None and mc_tp2 > tp1)   else max(atr_tp2_long, tp1 + atr_dollar)
     else:
-        if tp1 >= entry:
-            tp1 = round(entry * 0.985, 4)
-        if tp2 >= tp1:
-            tp2 = round(tp1 * 0.99, 4)
+        mc_tp1 = mc_p25 if have_mc else None
+        mc_tp2 = mc_p10 if have_mc else None
+        tp1 = float(mc_tp1) if (mc_tp1 is not None and mc_tp1 < entry) else atr_tp1_short
+        tp2 = float(mc_tp2) if (mc_tp2 is not None and mc_tp2 < tp1)   else min(atr_tp2_short, tp1 - atr_dollar)
+
+    tp1 = round(float(tp1), 4)
+    tp2 = round(float(tp2), 4)
 
     # ── Zone-based TP / SL ───────────────────────────────────────────
     # All four scenarios supported:

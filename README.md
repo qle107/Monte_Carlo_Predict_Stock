@@ -1,342 +1,326 @@
-# MC Trader — Local Monte Carlo Trading Dashboard
+# Monte Carlo Predict Stock
 
-A fully local Python app that fetches live candles, runs an AI-adjusted
-Monte Carlo simulation with six innovation models, walk-forward backtests
-itself, scans entire watchlists for breakouts and zone setups, and streams
-everything to a live web dashboard.
+A self-hosted Python service that turns a stream of OHLCV candles into a
+forecast: it computes a regime-aware composite signal, runs a Monte Carlo
+simulation under one of seven innovation models, scores the result against
+demand/supply zones, and serves the whole thing — chart, trade setup,
+scanner, backtest — over a single FastAPI process.
 
----
+This is a research / paper-trading tool. It is not a recommendation
+engine and it is not connected to a broker. See the **Disclaimer** at the
+bottom.
+
+## Status
+
+The analysis pipeline was audited and refactored in May 2026. The
+short version of what changed and why is in **[CHANGES.md](CHANGES.md)** —
+read that first if you used an earlier version, because the demand/supply
+zone scorer, the Monte Carlo engine, the backtest, and the trade-setup TP
+logic all had material bugs that are now fixed. The public APIs
+(`core.analyse`, `core.zones.detect_zones`, `core.montecarlo.run`,
+`core.backtest.walk_forward`, `core.trade_setup.compute_trade_setup`) and
+the HTTP routes are unchanged, so the dashboard still works without
+modification.
 
 ## Quick start
 
-### 1. Install
+The service needs Python 3.10 or newer and the dependencies listed in
+`requirements.txt` (uvicorn, fastapi, pandas, numpy, scipy, yfinance,
+alpaca-py, httpx, python-dotenv, websockets).
+
 ```bash
 cd Monte_Carlo_Predict_Stock
+python -m venv .venv
+.venv\Scripts\activate            # Windows; on Unix: source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-### 2. (Optional) Configure API keys
-The app works out of the box with yfinance. For real-time data, edit `.env`:
-```
-ALPACA_API_KEY=...
-ALPACA_SECRET_KEY=...
-POLYGON_API_KEY=...        # optional, paid
-
-TICKER=NBIS
-CANDLE_INTERVAL=15m
-MC_MODEL=garch              # gaussian | student_t | garch | bootstrap | jump | ensemble
-MC_SIMULATIONS=10000
-MC_FORWARD_CANDLES=10
-```
-
-| Source     | Cost   | Delay     | Sign up |
-|------------|--------|-----------|---------|
-| yfinance   | Free   | ~15 min   | None — used as fallback |
-| Alpaca     | Free   | Real-time | https://alpaca.markets |
-| Polygon.io | Paid   | Real-time | https://polygon.io |
-
-### 3. Run
-```bash
 python main.py
 ```
-Open **http://localhost:8000**.
 
-### 4. Run the tests
+The dashboard is served at `http://localhost:8000`. Override anything via
+a `.env` file in the project root — at minimum you can set `TICKER`,
+`CANDLE_INTERVAL`, `MC_MODEL`, and `MC_SIMULATIONS`; the full list of
+tunables is the `Config` dataclass in `config.py`.
+
+For real-time bars instead of the default delayed yfinance feed, set
+`ALPACA_API_KEY` and `ALPACA_SECRET_KEY` in the `.env` file. The fetcher
+in `core/fetcher.py` tries Alpaca first when keys are present, falls
+through to Polygon if `POLYGON_API_KEY` is set, and finally to yfinance.
+
+To run the test suite:
+
 ```bash
 pytest -q
 ```
 
----
+## Architecture
 
-## Project layout
+`main.py` boots uvicorn and points it at `api:app`. The FastAPI app in
+`api/server.py` owns three things: the HTTP routes, a single WebSocket
+endpoint that pushes a fresh analysis on every poll, and a background
+poll loop that fetches new candles, runs `core.analyse`, persists the
+result to SQLite, and broadcasts it.
 
-```
-Monte_Carlo_Predict_Stock/
-├── main.py                  ← entry point (uvicorn)
-├── config.py                ← validated runtime config
-├── requirements.txt
-├── api/
-│   ├── __init__.py          ← exports `app`
-│   ├── server.py            ← FastAPI: routes, WS, lifespan, poll loop
-│   └── models.py            ← Pydantic request models
-├── core/
-│   ├── __init__.py          ← `analyse(df, n_sim, n_fwd, mc_model)`
-│   ├── fetcher.py           ← Alpaca → Polygon → yfinance fallback chain
-│   ├── indicators.py        ← RSI / EMA / MACD / Bollinger / ADX / OBV / VWAP / …
-│   ├── signal.py            ← Composite signal + entropy-aware confidence
-│   ├── montecarlo.py        ← 6 innovation models (gaussian, student-t, GARCH, bootstrap, jump, ensemble)
-│   ├── backtest.py          ← Walk-forward scoring (hit rate, Brier, log-loss, calibration)
-│   ├── store.py             ← SQLite signal log
-│   ├── scanner.py           ← Breakout / breakdown watchlist scanner
-│   ├── trade_setup.py       ← Entry / TP / SL / R:R engine (MC P75/P90 + zone-based)
-│   ├── zones.py             ← Demand & supply zone detector (swing pivots + clustering)
-│   └── zone_scanner.py      ← Zone + EMA 20/50/200 strategy scanner
-├── templates/
-│   └── dashboard.html       ← live dashboard: chart, scanner tabs, trade setup sidebar
-└── tests/
-    ├── conftest.py
-    ├── test_indicators.py
-    ├── test_signal.py
-    ├── test_montecarlo.py
-    ├── test_backtest.py
-    ├── test_store.py
-    └── test_api.py
-```
+The `core/` package is the analysis pipeline. Each module is a focused
+stage:
 
----
+| Module | Responsibility |
+|---|---|
+| `core/fetcher.py` | Candle fetching with Alpaca → Polygon → yfinance fallback, retry, and request coalescing. |
+| `core/indicators.py` | RSI, EMA stack, MACD, Bollinger, ADX, OBV slope, VWAP distance, kurtosis/skew, RSI divergence, 52-week distance. |
+| `core/regime.py` | Hurst (R/S), multi-window R², Donchian, swing pivot HH/HL counts, range compression — composited into one of seven regime labels. |
+| `core/signal.py` | Composite score in `[-1, +1]` with regime-aware weight blending and entropy-aware confidence. Sets the drift bias for the Monte Carlo. |
+| `core/zones.py` | Demand/supply zone detection (pivots → cluster → score → break filter). |
+| `core/montecarlo.py` | Seven path-simulation models, GARCH MLE with caching, microstructure context (volume profile, CVD, Hurst regime). |
+| `core/trade_setup.py` | Entry/SL/TP/RR using MC percentiles, ATR, and zones. Kelly and fixed-fractional position sizing. |
+| `core/backtest.py` | Walk-forward backtest with cost-aware per-trade stats. |
+| `core/scanner.py`, `core/zone_scanner.py` | Concurrent multi-ticker scanners. |
+| `core/store.py` | SQLite signal log used by `/api/history` and `/api/metrics`. |
+| `core/hawkes.py`, `core/hmm_regime.py`, `core/options_flow.py`, `core/sentiment.py`, `core/macro.py`, `core/volume_profile.py` | Optional enrichments surfaced by the `/api/market-structure`, `/api/sentiment`, `/api/macro` endpoints. |
 
-## How the signal works
+`core/__init__.py` exposes `analyse(df, n_simulations, n_forward, mc_model)`,
+which is the one function the HTTP layer actually calls. It returns a
+JSON-serialisable dict containing indicators, regime, signal, MC result,
+candles, and warnings.
 
-`core/indicators.py` computes a wide indicator set on each fetch:
+## The signal
 
-| Indicator        | Used for                                                            |
-|------------------|---------------------------------------------------------------------|
-| RSI (14)         | Mean-reversion read                                                 |
-| Linear slope     | Short-term trend direction                                          |
-| Momentum         | 5-candle %-change                                                   |
-| EMA 9/21 cross   | Trend regime                                                        |
-| EMA 20/50/200    | Bull/bear stack detection for zone scanner                          |
-| MACD histogram   | Momentum confirmation                                               |
-| Bollinger pos    | Mean-reversion / band breakouts                                     |
-| ADX              | Trend strength (paired with slope sign)                             |
-| OBV slope        | Volume confirmation                                                 |
-| VWAP distance    | Above/below today's volume-weighted price                           |
-| Skew / kurtosis  | Tail asymmetry & fatness (drives Student-t df)                      |
-| Trend bias       | % of historical candles closing up                                  |
-| Vol regime       | Recent vs long realised vol — scales MC vol                         |
-| Hurst exponent   | Trend persistence vs mean-reversion                                 |
+The signal answers a deliberately narrow question: over the next
+`n_forward` candles, what is the directional bias and how confident are
+we in it? `core/signal.py` computes it in three steps.
 
-`core/signal.py` combines them into a composite score in [−1, +1] with
-calibrated weights, plus an **entropy-aware confidence**: high only when
-most active sub-signals agree on direction *and* their average magnitude
-is large.
+First, each indicator is mapped to a sub-score in `[-1, +1]` by a
+hand-tuned function — for example `_score_rsi` saturates at ±0.60 at
+extremes, `_score_macd` is a linear function of the histogram clipped to
+±0.60, and `_score_adx` scales by both ADX strength and slope direction
+so a high-ADX downtrend contributes negatively.
 
-That score sets the per-candle drift bias for the simulation:
+Second, the sub-scores are combined with **regime-aware weights**. There
+are five weight maps (strong trend, weak trend, breakout, range-bound,
+choppy) that sum to 1.0 each. In a trending regime, slope/MACD/ADX carry
+~60% of the weight and RSI/Bollinger nearly nothing; in a range-bound
+regime RSI and Bollinger dominate and slope is suppressed. The regime
+also contributes its own `trend_score` blended in at 0.55 weight.
+
+Third, the **confidence** is computed from the entropy of the active
+sub-signals' sign agreement, multiplied by the average magnitude. A
+high-confidence signal therefore requires both *agreement* across
+indicators *and* meaningful magnitudes — a single strong-but-isolated
+component cannot run away with the call.
+
+The composite score and confidence then set the drift bias fed to the
+Monte Carlo:
 
 ```
-base_drift  = stock's actual mean return per candle
-signal_adj  = composite × confidence × (½ stdev)
-drift_bias  = clip(base_drift + signal_adj, ±2σ)   # the "no 99.9%" guard
+base_drift  = empirical mean per-candle return
+signal_adj  = composite × confidence × (0.5 × std_return)
+drift_bias  = clip(base_drift + signal_adj, ±2 × std_return)
 ```
 
----
+The ±2σ cap is the "no 99.9% certain" guard — it stops a strong signal
+from collapsing the simulation onto a single direction. On a gap day
+(`|gap| > gap_threshold`, default 3%), `drift_bias` is set to zero and
+volatility is inflated 1.6×, because the historical mean is meaningless
+after a news-driven gap.
 
 ## Monte Carlo models
 
-Selectable via `MC_MODEL` env var, the Settings panel, or `POST /api/config`:
+All seven models share the same shape (`n_sim` paths, `n_candles + 1`
+columns including the spot at column 0) and return the same
+`MCResult` schema, so the dashboard renders any of them identically. The
+model is selected by the `MC_MODEL` env var or the runtime
+`POST /api/config` call.
 
-| Model        | What it does                                                                 |
-|--------------|------------------------------------------------------------------------------|
-| `gaussian`   | Classic GBM with Normal innovations.                                         |
-| `student_t`  | Heavy-tailed innovations; df fit from observed excess kurtosis.              |
-| `garch`      | GARCH(1,1)-style volatility clustering. **Default.**                         |
-| `bootstrap`  | Resamples the stock's own historical returns — preserves the real distribution. |
-| `jump`       | Merton jump-diffusion: Gaussian + Poisson-triggered jumps for gap regimes.   |
-| `ensemble`   | Weighted blend of GARCH + Bootstrap + Jump — most robust. ★ Recommended.    |
+| Model | Innovation process | When it helps |
+|---|---|---|
+| `gaussian` | GBM with Normal innovations. | Baseline; calm regimes. |
+| `student_t` | Student-t innovations rescaled to unit variance, df fit from observed excess kurtosis (`df = 4 + 6/κ`). | When recent returns are fat-tailed. |
+| `garch` (default) | GARCH(1,1) σ-path with the α, β configurable; `_calibrate_garch` adapts them to the current vol regime. | Volatility clustering — gap days, post-news bars. |
+| `bootstrap` | Resamples centred historical returns rescaled to match the target σ. | When the empirical distribution shape matters more than its parametric form. |
+| `jump` | Merton jump-diffusion: Gaussian diffusion plus Poisson-triggered Gaussian jumps with the compensator `λ·μ_J` subtracted from drift. | Earnings, FOMC, anything with a known discrete-event tail. |
+| `ensemble` | Data-driven blend of GARCH + bootstrap + jump; weights are functions of vol-of-vol (favours GARCH when regime is unstable) and excess kurtosis (favours jumps when tails are heavy). | The most-robust default when you don't know which model is right. |
+| `microstructure` | GARCH + Student-t(df=4) with a per-step **gravity** field derived from the volume profile (POC, VAH, VAL, HVN, LVN), a CVD-driven drift bias, and a Hurst-based regime multiplier. | When level-aware path generation matters — e.g. evaluating a setup near POC. |
 
-Per-step returns are clipped to ±25% so a single tail event can't detonate the path.
+Two implementation notes from the May 2026 refactor that are worth
+knowing if you are reading the code:
 
-The dashboard renders both the inner P25–P75 band and the outer P10–P90 band as a
-confidence cone, plus a sample of 30 paths and the P50 (median) path.
+- The diffusive `MC_CLIP` cap (default 0.25) is widened to 0.5 for
+  `jump`, `student_t`, and `ensemble`, because clipping at the diffusive
+  level was silently truncating the tails those models exist to produce.
+- The "flat" probability band in `_build_mc_result` now scales with the
+  cross-path standard deviation (`0.25 × σ_horizon`, floored at 25 bps)
+  instead of being a fixed 30 bp band. That makes `prob_flat`
+  meaningful at long horizons.
 
----
+The MC result includes per-step P25/P75 and P10/P90 bands (the inner and
+outer confidence cones the dashboard draws), the median path, a sample
+of 100 paths for the chart, the expected return and its 5% CVaR, and
+the full `(n_sim, n_steps+1)` path matrix that `trade_setup.py` uses to
+compute path-aware TP/SL probabilities. The microstructure model also
+attaches `ms_regime`, `ms_hurst`, `ms_drift_bias`, and `ms_key_levels`
+diagnostics.
 
-## Trade Setup engine
+## Demand and supply zones
 
-`core/trade_setup.py` converts raw MC output into a complete trade plan:
+`core/zones.py` was the most-broken part of the codebase before the May
+2026 pass. The algorithm now is:
 
-- **Entry** — current ask price
-- **TP1** — MC P75 percentile of forward paths (real 10k-path target)
-- **TP2** — MC P90 percentile of forward paths (runner target)
-- **Stop Loss** — tighter of ATR-based stop and fixed-% stop (per-timeframe caps)
-- **R:R** — calculated for both SL methods; best one is recommended
-- **MC Probabilities** — P(price reaches TP1), P(reaches TP2), P(stopped out), computed by walking all 10k paths against the levels
-- **Stop-hunt warning** — flagged when P(SL hit before TP1) > 35%
+1. **Pivots.** Find swing highs and lows using a `±zone_pivot_window`
+   look-around (default ±4 bars). A pivot low is a candidate demand
+   origin; a pivot high is a candidate supply origin.
 
-### Zone-based targets (shown alongside MC targets)
+2. **Cluster.** Merge pivots that fall within `zone_cluster_atr × ATR`
+   of each other into a single zone. Clustering anchors on the *seed*
+   price of each cluster, not the running mean, so a long string of
+   pivots cannot drift the cluster outward indefinitely.
 
-When demand/supply zones are detected on the same chart, the sidebar also shows:
+3. **Score.** Each zone gets a strength in `[0, 1]`:
 
-| Field       | Meaning |
-|-------------|---------|
-| Zone TP1    | Nearest opposing zone (e.g. supply zone above for longs) |
-| Zone TP2    | Second zone beyond TP1 |
-| Zone SL     | Zone edge ± 0.2×ATR (structural stop below demand / above supply) |
-| Zone R:R    | Risk:Reward using zone SL and Zone TP1 |
-| Zone type   | `demand_bounce` / `supply_break` / `supply_bounce` / `demand_break` |
-| Zone context| Whether price is currently at a demand zone, supply zone, or between |
+   ```
+   strength =  0.35 · touch_score      # min(touches / 4, 1)
+             + 0.25 · recency_score    # bar_idx / (n_bars - 1)
+             + 0.20 · freshness_score  # 1 if never retested after formation
+             + 0.20 · depth_score      # |close - open| / range at the pivot bar
+   ```
 
----
+   The depth term means a clean rejection candle (close far from open
+   relative to range) outscores a doji at the same level. The freshness
+   flag flips to `False` only when a bar *after* the formation bar
+   re-enters the touch band.
 
-## Demand & Supply Zone detector
+4. **Filter broken zones.** A demand zone is broken if any subsequent
+   bar's *low* — not close — traded more than `zone_break_atr × ATR`
+   below the level. Supply uses subsequent highs. Using intraday extrema
+   catches wick violations that close-only filters would miss.
 
-`core/zones.py` finds institutional price zones from OHLCV data:
+5. **Select nearest.** Return up to `zone_max_demand` (default 5) and
+   `zone_max_supply` zones sorted by strength, then pick the nearest
+   meaningful zone on each side of price. "Meaningful" means strength
+   above 0.30; if no zone clears that bar we fall back to the closest of
+   any strength so the dashboard always has something to show.
 
-1. **Pivot detection** — swing highs/lows using a ±4-bar window
-2. **Clustering** — nearby pivots within 0.8×ATR are merged into one zone
-3. **Scoring** (0–1):
-   - Touches (0.4 weight) — how many times price returned to the zone
-   - Recency (0.3) — zones formed more recently score higher
-   - Freshness (0.2) — untested zones hold better than re-tested ones
-   - Formation quality (0.1)
-4. **Broken zone removal** — zones price has closed through by >0.5×ATR are discarded
-5. Returns up to 5 demand + 5 supply zones, plus `nearest_demand` and `nearest_supply`
+The `ZoneResult` exposes the full sorted lists, the two nearest zones,
+and a `price_context` of `at_demand`, `at_supply`, `between`, or
+`unknown`. The trade-setup engine reads `price_context` to decide which
+of four zone scenarios applies (demand bounce, supply break, supply
+bounce, demand break).
 
-Zone width = level ± 0.3×ATR on each side.
+## Regime detection
 
----
+`core/regime.py` produces one of eight labels —
+`strong_uptrend`, `weak_uptrend`, `strong_downtrend`, `weak_downtrend`,
+`breakout_up`, `breakout_down`, `range_bound`, `choppy` — from a
+weighted composite of:
 
-## Scanners
+- R² and slope of three regression windows (short, mid, long, default
+  10/20/50 bars), each signed by the slope direction;
+- the Hurst exponent (R/S estimator on log-prices, clamped to `[0, 1]`),
+  signed by the long-window slope;
+- Donchian position (where the current close sits between the N-bar
+  high and low) plus breakout flags for the N-bar, 10-bar, and
+  within-3 %-of-high consolidation cases;
+- HH/HL/LH/LL pivot counts;
+- ADX scaled and signed;
+- OBV slope.
 
-### Breakout & Breakdown Scanner (`POST /api/scan`)
+The label decision tree is in `_label_regime`. Two rules worth flagging:
+a `strong ADX > 30` overrides `range_bound` (a stock with real
+directional pressure is not range-bound even if recent spread is tight),
+and the `range_compression` score is suppressed when a large recent gap
+is present so post-breakout consolidation does not get mislabelled.
 
-Scans a watchlist (or custom ticker list, up to 200) in parallel for momentum setups:
+The regime also produces the `trend_score` blended into the composite
+signal, and the verdict string the dashboard shows.
 
-- Fetches candles for each ticker concurrently (up to 20 workers)
-- Computes all indicators + regime + MC signal
-- Scores each ticker on a −1 → +1 scale
-- Returns `breakouts` / `breakdowns` / `neutral` / `all` arrays
-- Each result includes a full trade setup (entry, SL, TP1, TP2, R:R, P(TP1))
-- Table is sortable by Score, RSI, ADX, 52w High, Confidence, A–Z
-- **Load ↗** button syncs any ticker into the main chart for full 10k-path MC analysis
+## Trade setup and backtest
 
-Available watchlists: `sp500_large`, `tech`, `etfs`, `biotech`, `momentum`, or custom.
+`core/trade_setup.py` turns the analysis output into a concrete plan.
+Entry is the current close. Stop-loss is computed two ways and the
+tighter is recommended: an **ATR-based** stop using a regime-dependent
+multiplier (1.5×–3.0×) capped by a per-timeframe maximum percentage
+(3% for 1m, 12% for 1d), and a **fixed-percentage** stop whose base is
+also regime-dependent and is widened to cover at least 1.5× ATR. Targets
+prefer the MC P75/P90 percentiles, falling back to an ATR projection
+when the MC distribution sits on the wrong side of entry — this replaces
+the pre-refactor bug where TP1 was inflated to a flat `entry × 1.015`
+whenever P75 came in tight.
 
-### Zone + EMA Strategy Scanner (`POST /api/zone-scan`)
+Zone-aware targets are computed alongside the MC targets: when the
+`price_context` is `at_demand` the zone scenario is `demand_bounce`,
+giving a zone SL just below the zone low and zone TPs at the nearest
+supply zones above; similar logic for the three other quadrants. The
+output dataclass `TradeSetup` carries both target sets so the dashboard
+can render them side by side.
 
-Scans for Demand/Supply zone + EMA 20/50/200 alignment setups:
+Position sizing is computed two ways: a half-Kelly using
+`prob_tp1` as the win probability and the best R:R as the payoff
+ratio, and a 1%-of-equity fixed-fractional sizing using the tighter of
+the two stops.
 
-- Needs ≥120 bars (defaults to 120-bar lookback for EMA200 reliability)
-- Detects the four zone scenarios:
+`core/backtest.py` is a walk-forward harness: it slides through history,
+recomputes the full pipeline on each bar's prefix, runs the MC, and
+compares to the realised `n_forward`-bar move. The May 2026 pass fixed
+four things in this module — the "hit" threshold is now consistently
+`cfg.backtest_band_pct` everywhere (previously three different values
+were in use), trades no longer overlap by default (a 10-bar Buy signal
+used to be counted as 10 trades), the Sharpe annualisation respects the
+bar interval instead of always using `sqrt(252)`, and max drawdown is
+computed on the wealth curve `cumprod(1 + r)` instead of `cumsum(r)`
+which blew up when the curve passed through zero.
 
-| Setup          | Meaning                                                       |
-|----------------|---------------------------------------------------------------|
-| Demand Bounce  | Price at demand zone + bullish EMA stack — look long         |
-| Supply Break   | Price breaking above supply zone + bull stack — momentum long |
-| Supply Bounce  | Price at supply zone + bearish EMA stack — look short        |
-| Demand Break   | Price breaking below demand zone + bear stack — momentum short|
-
-- **Scoring** (0–1):
-  - Zone strength (0.4 weight)
-  - EMA alignment (0.4)
-  - RSI confirmation (0.1)
-  - OBV slope (0.1)
-- Returns `longs` / `shorts` / `no_setup` / `all` + meta stats
-
-**Zone scanner table columns:**
-
-| Column | Description |
-|--------|-------------|
-| Ticker / Price / Score | Symbol, last price, setup quality 0–1 |
-| Setup | Zone scenario pill (Demand Bounce / Supply Break / Supply Reject / Demand Break) |
-| RSI / ADX | Momentum and trend strength |
-| EMA 20 | EMA value · % distance from price · `↑✦` golden cross or `↓✦` death cross if fired in last 5 bars |
-| EMA 50 | Same, for the 50-period EMA |
-| EMA 200 | Same, for the 200-period EMA |
-| Support 1 / Support 2 | Nearest and second-nearest demand zones below price — labeled **Strong Support ★** if strength ≥ 70%, otherwise Support 1 / 2; shows level, % distance, strength %, touch count, and FRESH tag if untested |
-| Resistance 1 / Resistance 2 | Same for supply zones above price |
-| Load ↗ | Loads ticker into main chart for full 10k-path MC analysis |
-
-**EMA stack classifications (used for setup scoring, shown as pill):**
-
-| Label       | Condition |
-|-------------|-----------|
-| 🟢 Bull Stack  | EMA20 > EMA50 > EMA200 and price above all three |
-| 🔴 Bear Stack  | EMA20 < EMA50 < EMA200 and price below all three |
-| ↑ Above 200 | Price above EMA200 but EMAs not fully aligned |
-| ↓ Below 200 | Price below EMA200 but EMAs not fully aligned |
-| ~ Mixed     | No clear alignment |
-
-**EMA cross detection** — scans the last 5 bars for crossovers between EMA20/50, EMA50/200, and EMA20/200. A `↑✦` golden cross or `↓✦` death cross is shown inline in the EMA cell when a cross fired recently.
-
----
+Reported metrics include hit rate, Brier score, log-loss, expected-vs-
+realised correlation, calibration over five `prob_up` buckets,
+annualised Sharpe, max drawdown, average win/loss, win/loss ratio,
+profit factor, and maximum consecutive losses.
 
 ## Dashboard
 
-The dashboard is a single-page app served at `/`. Key panels:
+The dashboard is a single-page app served at `/`. It shows the live
+candlestick chart with the MC confidence cone (P25–P75 inner band,
+P10–P90 outer band), the median path, the regime banner, the
+indicator breakdown, the MC probability bars, the trade-setup card
+(MC targets plus zone targets), the walk-forward backtest summary,
+and tabs for the two scanners (breakout and zone+EMA). The gear icon
+lets you change ticker, timeframe, MC model, `n_sim`, `n_forward`,
+`lookback`, and `poll_seconds` without restarting the server — the
+poll loop picks up the new config on the next cycle.
 
-| Panel | What it shows |
-|-------|---------------|
-| **Header** | Live ticker, signal badge, connection status, Reload / CSV / Settings / **📊 Portfolio** |
-| **Regime banner** | Current market regime + Hurst, R², Donchian position, HH/LL counts |
-| **Potential bars** | MC-estimated up / down / flat potential for next N candles |
-| **Candlestick chart** | OHLCV candles + MC confidence cone (P25–P75 inner, P10–P90 outer) |
-| **Volume chart** | Per-candle volume colored by candle direction |
-| **Scanner tabs** | Switch between Breakout Scanner and Zone + EMA Scanner |
-| **MC probabilities** | P(up) / P(flat) / P(down) + P10 / Median / P90 price targets |
-| **AI signal** | Sub-indicator bars + confidence + reasoning text |
-| **Trade Setup** | Entry / TP1 / TP2 / SL / R:R / MC probabilities + Zone Targets panel |
-| **Drift & risk** | Full drift breakdown, CVaR, EMA200, 52w high, vol-of-vol |
-| **Backtest** | Walk-forward hit rate, Brier score, log-loss, calibration ρ |
-| **Activity log** | Timestamped event stream |
+There is also a portfolio tracker overlay that stores positions in the
+browser's `localStorage` and refreshes prices through the
+`/api/portfolio/price/*` proxy endpoints. The tracker is purely
+front-end state; nothing is persisted server-side.
 
-Settings panel (gear icon) lets you change ticker, timeframe, MC model, simulations,
-forward candles, and poll interval without restarting the server. The **Load ↗** button
-in either scanner tab syncs all settings (n_sim, n_forward, lookback, mc_model) into
-the main chart for a consistent comparison.
-
----
-
-## Portfolio Tracker
-
-Click the **📊 Portfolio** button in the top-right header to open the portfolio tracker overlay. It sits on top of the dashboard and can be closed at any time to return to the charts.
-
-### Features
-
-| Feature | Description |
-|---------|-------------|
-| **Multiple portfolios** | Create, rename, and delete named portfolios from the sidebar |
-| **Add positions** | Enter a ticker + date → entry price is auto-fetched (closing price for that day) |
-| **Amount invested** | Enter how much money you put in — shares are calculated automatically (`amount ÷ entry price`) |
-| **Live price tracking** | Prices refresh automatically every 60 seconds via your backend proxy |
-| **P&L tracking** | Per-position and portfolio-total P&L in both $ and % |
-| **Allocation chart** | Doughnut chart showing portfolio breakdown by current value |
-| **Top movers** | Ranked list of your biggest % movers |
-| **Alert badges** | Highlights any position that has moved ±N% from your entry (threshold is adjustable) |
-| **Inline editing** | Click ✏️ on any holding to edit the date, entry price, or amount invested in-place |
-| **Portfolio rename** | Click ✏️ next to any portfolio name in the sidebar to rename it |
-| **Import / Export** | Export all portfolios as a JSON file; import previously saved portfolios |
-| **Browser persistence** | All data is stored in `localStorage` — no server or database needed |
-
-### How price fetching works
-
-The portfolio tracker routes all price requests through your local Python backend to avoid browser CORS restrictions:
-
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /api/portfolio/price/historical?ticker=AAPL&date=2026-05-04` | Returns the closing price for a ticker on a given date (finds nearest trading day automatically) |
-| `GET /api/portfolio/price/live?ticker=AAPL` | Returns the latest market price |
-
-Both endpoints use `yfinance` server-side. If you have Alpaca API keys configured (via the ⚙ API Keys button in the portfolio sidebar), Alpaca is tried first for live prices with Yahoo Finance as fallback.
-
-### Data storage
-
-Portfolio data is stored entirely in your browser's `localStorage` under the key `mctrader_portfolio_v1`. Nothing is sent to or stored on the server. Use the **Export JSON** button to back up your portfolios or move them to another browser.
-
----
-
-## API reference
+## HTTP API
 
 ```
-GET  /                                              dashboard HTML
-GET  /api/health                                    liveness check
-GET  /api/signal                                    trigger fresh analysis + broadcast
-GET  /api/config                                    current config + valid choices
-POST /api/config                                    update any config field (validated)
-POST /api/backtest                                  walk-forward backtest over recent history
-GET  /api/history                                   recent persisted signals (newest first)
-GET  /api/metrics                                   aggregate accuracy stats per ticker
-GET  /api/export.csv                                CSV dump of signal history
-POST /api/scan                                      breakout/breakdown scanner
-GET  /api/scan/watchlists                           list available watchlists + tickers
-POST /api/zone-scan                                 Zone + EMA strategy scanner
-GET  /api/portfolio/price/historical?ticker=&date=  historical close price (portfolio tracker)
-GET  /api/portfolio/price/live?ticker=              latest market price (portfolio tracker)
-WS   /ws                                            server-push: new analysis on every poll
+GET  /                                                dashboard HTML
+GET  /api/health                                      liveness probe
+GET  /api/signal                                      force a fresh analysis cycle
+GET  /api/config                                      current config + valid choices
+POST /api/config                                      update any config field (validated)
+POST /api/backtest                                    walk-forward backtest
+GET  /api/history                                     recent persisted signals
+GET  /api/metrics                                     per-ticker accuracy stats
+GET  /api/metrics/accuracy                            per-bucket calibration
+POST /api/store/prune                                 trim signal store
+GET  /api/export.csv                                  CSV dump of signal history
+POST /api/scan                                        breakout/breakdown scanner
+GET  /api/scan/watchlists                             list available watchlists
+POST /api/zone-scan                                   zone + EMA strategy scanner
+GET  /api/market-structure                            HMM regime + Hawkes excitation + zone blend
+GET  /api/sentiment                                   per-ticker news sentiment
+GET  /api/sentiment/global                            broad-market sentiment
+GET  /api/news                                        news feed with classification
+GET  /api/fear-greed                                  CNN fear/greed proxy
+GET  /api/macro                                       FRED-sourced macro indicators
+GET  /api/portfolio/price/historical?ticker=&date=    historical close for the portfolio tracker
+GET  /api/portfolio/price/live?ticker=                live price for the portfolio tracker
+WS   /ws                                              server-push: new analysis on every poll
 ```
 
-`POST /api/config` body (all fields optional):
-```json
+Representative request bodies:
+
+```jsonc
+// POST /api/config — all fields optional
 {
   "ticker": "AAPL",
   "interval": "15m",
@@ -346,129 +330,138 @@ WS   /ws                                            server-push: new analysis on
   "lookback": 50,
   "poll_seconds": 60
 }
-```
 
-`POST /api/scan` body:
-```json
-{
-  "watchlist": "tech",
-  "interval": "1d",
-  "lookback": 60,
-  "max_concurrent": 8,
-  "min_score_abs": 0.0
-}
-```
-
-`POST /api/zone-scan` body:
-```json
-{
-  "watchlist": "sp500_large",
-  "interval": "1d",
-  "lookback": 120,
-  "max_concurrent": 8
-}
-```
-
-`POST /api/backtest` body:
-```json
+// POST /api/backtest
 { "history_bars": 200, "n_forward": 10, "n_sim": 500, "mc_model": "garch" }
+
+// POST /api/scan
+{ "watchlist": "tech", "interval": "1d", "lookback": 60, "max_concurrent": 8 }
+
+// POST /api/zone-scan
+{ "watchlist": "sp500_large", "interval": "1d", "lookback": 120 }
 ```
 
----
+If `API_KEY` is set in the environment, every `/api/*` route requires
+an `X-API-Key` header that matches.
 
-## Persistent history
+## Configuration
 
-Every analysis is logged to a local SQLite file (`mc_trader.db` by default;
-override with `DB_PATH`). The dashboard reads it for `/api/history` and
-`/api/metrics`, and you can dump it to CSV at any time via
-`/api/export.csv?ticker=AAPL`.
+The full set of tunables lives in the `Config` dataclass at the top of
+`config.py`. Anything not set in the environment uses a defensible
+default; out-of-range values fall back to the default with a warning so
+a malformed `.env` cannot crash the server.
 
----
+The fields that matter most in day-to-day use:
 
-## Running on a schedule
+| Env var | Default | Purpose |
+|---|---|---|
+| `TICKER` | `PLTR` | Active ticker for the dashboard's poll loop. |
+| `CANDLE_INTERVAL` | `15m` | One of 1m, 2m, 5m, 15m, 30m, 1h, 4h, 1d. |
+| `MC_MODEL` | `garch` | Default Monte Carlo innovation model. |
+| `MC_SIMULATIONS` | `2000` | Paths per simulation. ~2000 is the sweet spot for a live dashboard; 10000 for research. |
+| `MC_FORWARD_CANDLES` | `5` | Forecast horizon in bars. |
+| `LOOKBACK` | `50` | Bars of history fed into the analysis. |
+| `POLL_SECONDS` | `120` | Background refresh cadence. |
+| `GARCH_ALPHA`, `GARCH_BETA` | `0.10`, `0.85` | GARCH(1,1) base parameters (α+β<1 is enforced). |
+| `JUMP_INTENSITY`, `JUMP_SIGMA_MULT` | `0.03`, `3.0` | Merton jump knobs. |
+| `MC_CLIP` | `0.25` | Per-step return cap for diffusive models. |
+| `ZONE_*` | various | Pivot window, cluster ATR, touch ATR, break ATR, max zones per side, zone width. |
+| `MIN_*` | various | Trade-setup gates (score, ADX, confidence, MC probability, RR). |
+| `BACKTEST_BAND_PCT`, `BACKTEST_COMMISSION`, `BACKTEST_SLIPPAGE` | `0.003`, `0.001`, `0.0005` | Walk-forward thresholds and costs. |
+| `HMM_ENABLED`, `HAWKES_ENABLED` | `False`, `False` | Heavy enrichments — disabled by default because each adds 3–10 s per analysis. Available on demand via `/api/market-structure`. |
 
-```bash
-# 9:30 ET weekdays
-30 9 * * 1-5 cd /path/to/Monte_Carlo_Predict_Stock && python main.py >> trader.log 2>&1
+## Project layout
+
+```
+Monte_Carlo_Predict_Stock/
+├── main.py                       # uvicorn entry point
+├── config.py                     # Config dataclass + env parsing + cross-field validation
+├── requirements.txt
+├── CHANGES.md                    # May 2026 refactor notes — read first
+├── api/
+│   ├── __init__.py               # exports `app`
+│   ├── server.py                 # routes, WS, poll loop
+│   └── models.py                 # Pydantic request models
+├── core/
+│   ├── __init__.py               # public analyse()
+│   ├── fetcher.py                # Alpaca → Polygon → yfinance fallback
+│   ├── indicators.py             # full indicator set
+│   ├── signal.py                 # composite + regime-aware weighting
+│   ├── regime.py                 # Hurst / R² / Donchian composite
+│   ├── zones.py                  # demand/supply zone detector
+│   ├── montecarlo.py             # seven path models + microstructure
+│   ├── trade_setup.py            # entry/SL/TP/RR + zone scenarios + sizing
+│   ├── backtest.py               # walk-forward backtest
+│   ├── store.py                  # SQLite signal log
+│   ├── scanner.py                # breakout/breakdown scanner
+│   ├── zone_scanner.py           # zone + EMA scanner
+│   ├── volume_profile.py         # POC/VAH/VAL/HVN/LVN derivation
+│   ├── hmm_regime.py             # HMM regime detector (optional)
+│   ├── hawkes.py                 # Hawkes self-excitation (optional)
+│   ├── options_flow.py           # GEX/DEX (optional)
+│   ├── sentiment.py              # keyword-based news sentiment
+│   └── macro.py                  # FRED-backed macro indicators
+├── templates/
+│   └── dashboard.html
+├── tests/
+│   ├── conftest.py
+│   ├── test_indicators.py
+│   ├── test_signal.py
+│   ├── test_zones.py             # added in the May 2026 pass
+│   ├── test_montecarlo.py
+│   ├── test_backtest.py
+│   ├── test_store.py
+│   └── test_api.py
+└── resource_image/               # screenshots embedded in this README
 ```
 
----
+## Testing
 
-## Screenshots
-[Recording 2026-05-04 221112.mp4](resource_image/Recording%202026-05-04%20221112.mp4)
-### QQQ simulation
-![img_1.png](resource_image/img_1.png)
+`pytest -q` runs the suite. The `tests/conftest.py` fixtures build
+deterministic synthetic OHLCV (`synth_df`, `trend_up_df`, `trend_down_df`)
+so the regime-, signal-, and MC-level tests are reproducible. The new
+`tests/test_zones.py` covers the bug classes fixed in the May 2026 pass
+— touch score, body-depth scoring, intraday break filter, and the
+`ZoneResult` contract.
 
-### Result
-![img.png](resource_image/QQQ_result_img.png)
+The Monte Carlo tests include a performance regression guard
+(`test_microstructure_perf_n_sim_2000`) that fails if the vectorised
+microstructure path slips above ~5 seconds for 2000 paths × 10 steps on
+a typical CPU. If you are profiling, that test is the easiest fingerprint.
 
-### Oil simulation
-![img.png](resource_image/img.png)
+## Known limitations
 
-### Result
-![img.png](resource_image/oil_result_img.png)
+The walk-forward backtest is per-trade and assumes one position at a
+time; it does not model portfolio-level constraints (correlation,
+margin, concurrent exposure). If you want multi-position simulation you
+need to wrap `walk_forward` calls yourself.
 
----
+The fetcher's "extended hours" path is best-effort — Alpaca returns
+extended-hours bars when `EXTENDED_HOURS=true`, but the yfinance
+fallback does not, so behaviour during pre/post market can differ
+between providers.
 
-## Changelog
+`core/sentiment.py` is keyword-based, not ML-based; it is useful as a
+coarse gauge but should not be relied on for nuanced text. The
+`core/options_flow.py` GEX calculation uses the displayed open interest
+without dealer-positioning adjustments, which is the standard caveat
+for retail-side GEX dashboards.
 
-### 2026-05-05 — Portfolio Tracker
-- Added full portfolio tracker overlay accessible via the **Portfolio** button in the dashboard header
-- Multiple named portfolios with create, rename, and delete support; all data persisted in browser `localStorage`
-- Add positions by ticker + date with auto-fetched historical closing price; enter amount invested instead of shares (shares calculated as `amount ÷ entry price`)
-- Live price refresh every 60 seconds; manual refresh button available
-- Per-position and portfolio-total P&L in $ and %; doughnut allocation chart; top movers panel
-- Configurable alert threshold: highlights positions that have moved ±N% from entry price
-- Inline row editing: click  `edit`️ on any holding to edit date, entry price, and amount in-place
-- Portfolio rename: click `edit` on any portfolio name in the sidebar to rename it
-- Import / Export portfolios as JSON
-- Added `GET /api/portfolio/price/historical` and `GET /api/portfolio/price/live` proxy endpoints to bypass browser CORS on Yahoo Finance; both use `yfinance` server-side with Alpaca as optional primary source
-![img.png](resource_image/Portfolio.png)
-### 2026-05-04 — Zone + EMA Strategy Scanner (redesigned table)
-- Redesigned Zone Scanner table: replaced Entry/Zone SL/TP1/TP2/R:R columns with per-EMA columns (EMA 20, EMA 50, EMA 200) and structured Support/Resistance zone columns
-- Each EMA column shows: value, % distance from price (green above / red below), and a `↑✦` / `↓✦` cross indicator when a golden or death cross fired in the last 5 bars (checks EMA20/50, EMA50/200, EMA20/200 pairs)
-- Support 1 / Support 2 columns show nearest demand zones below price with label (Strong Support ★ / Support 1 / 2), level, % distance, strength %, touch count, and FRESH tag for untested zones
-- Resistance 1 / Resistance 2 columns show same structure for supply zones above price
-- Backend: added `_ema_series()` and `_ema_cross()` helpers to `core/zone_scanner.py` for cross detection
-- Backend: added `cross_20_50`, `cross_50_200`, `cross_20_200`, `dist_ema20/50/200` fields to `ZoneScanResult`
-- Backend: added `demand_zones` and `supply_zones` structured lists (up to 3 each, sorted nearest-to-price) with auto-labeling to `ZoneScanResult`
-- Zone display now uses `_build_zone_list()` which auto-labels zones as Strong Support/Resistance (≥70% strength) or Support/Resistance 1/2 by proximity rank
-
-### 2026-05-04 — Zone + EMA Strategy Scanner (initial)
-- Added `core/zones.py`: demand/supply zone detector using swing pivot clustering, strength scoring (touches, recency, freshness), and broken-zone removal
-- Added `core/zone_scanner.py`: async Zone + EMA 20/50/200 strategy scanner with four setup types (demand_bounce, supply_break, supply_bounce, demand_break), 0–1 composite scoring, and full trade setup per ticker
-- Added `POST /api/zone-scan` endpoint (reuses `ScanRequest` model, 120-bar default lookback)
-- Dashboard: added tab switcher between Breakout Scanner and Zone + EMA Scanner with color-coded tabs (blue / purple)
-- Dashboard: Zone Targets panel in Trade Setup sidebar — shows zone TP1/TP2/SL/R:R alongside MC P75/P90 targets
-- Trade Setup: zone fields added to `TradeSetup` dataclass (`zone_tp1`, `zone_tp2`, `zone_sl`, `zone_rr`, `zone_type`, `zone_context`, `zone_strength`)
-
-### 2026-05-03 — Trade Setup engine + scanner fixes
-- Added `core/trade_setup.py`: full Entry/TP/SL/R:R engine using real MC P75/P90 paths, ATR-based stops, fixed-% stops, per-timeframe caps, and path-aware stop probability
-- Wired trade setup into main analysis loop and scanner (`trade_setup_from_analysis`, `trade_setup_from_scan`)
-- Added Trade Setup card to sidebar: banner (LONG / SHORT / NO ENTRY), level grid, dual SL detail, R:R pills, MC probabilities, stop-hunt warning
-- Added Entry / SL / TP1 / TP2 / R:R / P(TP1) columns to breakout scanner table
-- Fixed `n_sim` validation cap: raised from 5,000 → 50,000
-- Fixed scanner TP estimation: replaced `potential_up × 0.06` (produced absurd targets) with ATR × 1.5 / ATR × 2.5 with per-timeframe percentage caps
-- Fixed direction dict mismatch: scanner direction strings (`bullish`, `bearish`, etc.) now resolve correctly to ATR multipliers and SL percentages
-- Fixed Load button: now syncs all settings (n_sim, n_forward, lookback, mc_model) into the main chart, not just ticker + interval
-
-### 2026-04-xx — Breakout & Breakdown Scanner
-- Added `core/scanner.py`: async multi-ticker scanner with concurrent fetching, regime detection, and signal scoring
-- Added `POST /api/scan` and `GET /api/scan/watchlists` endpoints
-- Dashboard: full scanner UI with watchlist selector, interval picker, progress bar, summary pills, top-picks cards, sortable/filterable table
-- Built-in watchlists: sp500_large, tech, etfs, biotech, momentum, custom
-
-### 2026-04-xx — Ensemble MC model + volatility improvements
-- Added `ensemble` MC model: weighted blend of GARCH (50%) + Bootstrap (30%) + Jump (20%)
-- Volatility surface improvements: vol-of-vol tracking, GARCH parameter fitting
-- Added Hurst exponent to regime detection
-
----
+The microstructure MC's `final_drift = base_drift + cvd_bias × drift_mult`
+zeros the CVD drift bias entirely in mean-reverting regimes
+(`drift_mult = 0`). This is deliberate — mean-reverting regimes by
+construction discount sustained directional flow — but it is a design
+choice rather than an empirical finding, so if you have a different
+view on how CVD should propagate in those regimes, that is the line to
+edit.
 
 ## Disclaimer
 
-This tool is for **educational purposes only**.
-
-- Monte Carlo simulation does not guarantee future results.
-- Always paper trade before using real money.
-- Past volatility patterns do not predict future movements.
+This software is for **educational and research purposes only**. It is
+not a trading system, not a recommendation engine, and not connected to
+any broker. Monte Carlo simulation describes a hypothetical distribution
+under modelling assumptions; it does not predict the future. Past
+volatility, correlation, and regime patterns do not extend reliably
+forward. Paper trade before risking real money, and assume every metric
+in this codebase is wrong about something — that is what backtesting is
+for.

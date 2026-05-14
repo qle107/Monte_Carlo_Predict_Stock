@@ -41,8 +41,91 @@ from core.volume_profile import compute_volume_profile
 from core.options_flow import fetch_options_flow
 from core.hawkes import analyse_hawkes
 from core.hmm_regime import analyse_hmm, blend_zone_probability
+from core.macro import fetch_macro_indicators   # ← NEW: macroeconomic indicators
 
 from .models import BacktestRequest, ConfigUpdate, ScanRequest
+
+
+# ── News sentiment & category helpers ─────────────────────────────────────────
+# Lightweight keyword-based approach — no NLP library required.
+# Sentiment: score each headline by counting positive vs negative finance terms.
+# Category: classify by dominant topic keywords.
+
+_SENTIMENT_POSITIVE = {
+    "beat", "beats", "surge", "surges", "rally", "rallies", "gain", "gains",
+    "growth", "grew", "profit", "profits", "record", "upgrade", "upgraded",
+    "bullish", "outperform", "strong", "strength", "boom", "booming",
+    "breakthrough", "positive", "rise", "rises", "rose", "higher", "upbeat",
+    "recovery", "recover", "momentum", "accelerate", "accelerates", "expansion",
+    "exceeds", "exceed", "topped", "tops", "above expectations", "above forecast",
+}
+
+_SENTIMENT_NEGATIVE = {
+    "miss", "misses", "drop", "drops", "dropped", "fall", "falls", "fell",
+    "loss", "losses", "decline", "declines", "declined", "bearish", "downgrade",
+    "downgraded", "underperform", "weak", "weakness", "recession", "crash",
+    "crashing", "fear", "risk", "risks", "cut", "cuts", "layoff", "layoffs",
+    "below expectations", "below forecast", "disappoints", "disappointing",
+    "concern", "concerns", "warning", "warns", "slump", "slumps", "plunge",
+    "plunges", "correction", "sell-off", "selloff", "contraction", "default",
+    "bankruptcy", "debt", "inflation", "stagflation", "tariff", "tariffs",
+}
+
+_MACRO_KEYWORDS = {
+    "fed", "federal reserve", "fomc", "rate", "rates", "inflation", "cpi",
+    "ppi", "pce", "gdp", "unemployment", "jobs", "payroll", "treasury",
+    "yield", "yields", "recession", "economy", "economic", "interest rate",
+    "bls", "bea", "ism", "pmi", "debt ceiling", "fiscal", "monetary",
+    "jerome powell", "powell", "central bank", "quantitative", "tapering",
+}
+
+_SECTOR_KEYWORDS = {
+    "tech": {"technology", "software", "chip", "semiconductor", "ai", "cloud", "nvidia",
+              "apple", "google", "microsoft", "meta", "amazon", "tesla"},
+    "energy": {"oil", "gas", "energy", "opec", "crude", "refinery", "exxon", "chevron",
+                "lng", "pipeline", "coal", "renewables", "solar", "wind"},
+    "financials": {"bank", "banking", "jpmorgan", "goldman", "morgan stanley", "credit",
+                   "loan", "lending", "fintech", "insurance", "brokerage"},
+    "healthcare": {"fda", "drug", "pharma", "biotech", "clinical", "trial", "approval",
+                   "vaccine", "healthcare", "hospital", "medical"},
+    "macro": _MACRO_KEYWORDS,
+}
+
+
+def _score_sentiment(title: str, summary: str = "") -> str:
+    """
+    Keyword-based sentiment classifier.
+    Returns "Positive", "Negative", or "Neutral".
+    """
+    text = (title + " " + summary).lower()
+    pos = sum(1 for w in _SENTIMENT_POSITIVE if w in text)
+    neg = sum(1 for w in _SENTIMENT_NEGATIVE if w in text)
+    if pos > neg:
+        return "Positive"
+    if neg > pos:
+        return "Negative"
+    return "Neutral"
+
+
+def _classify_category(title: str, ticker: str = "") -> str:
+    """
+    Classify article into: "Company", "Macro", "Sector", or "General".
+    Company match is based on whether the ticker appears in the headline.
+    """
+    text = title.lower()
+    # 1. Company — headline mentions the current ticker symbol
+    if ticker and ticker.lower() in text:
+        return "Company"
+    # 2. Macro — macro/economic policy keywords
+    if any(kw in text for kw in _MACRO_KEYWORDS):
+        return "Macro"
+    # 3. Sector — broad sector keywords
+    for sector, keywords in _SECTOR_KEYWORDS.items():
+        if sector == "macro":
+            continue
+        if any(kw in text for kw in keywords):
+            return "Sector"
+    return "General"
 
 logger = logging.getLogger(__name__)
 
@@ -401,15 +484,26 @@ async def _api_market_structure_impl(symbol: str, loop):
         spot        = float(df["close"].iloc[-1]) if not df.empty else None
         log_returns = df["close"].pct_change().dropna().values.tolist()
 
-        # ── 2. Run volume-profile, zones, options-flow and HMM in parallel ─
-        # Hawkes needs zone_list, so it runs in a second wave below.
-        vp_raw, zone_raw, of_raw, hmm_raw = await asyncio.gather(
+        # ── 2. Run volume-profile, zones, options-flow (and optionally HMM) in parallel ─
+        # HMM is gated by cfg.hmm_enabled (default False) — adds ~5 s.
+        # Hawkes is gated by cfg.hawkes_enabled (default False) — adds ~3 s.
+        # Both are still available here because market-structure is the dedicated
+        # heavy-analysis endpoint (has its own loading spinner in the UI).
+        _ms_tasks = [
             loop.run_in_executor(None, compute_volume_profile, df),
             loop.run_in_executor(None, detect_zones, df),
             loop.run_in_executor(None, fetch_options_flow, symbol, spot),
-            loop.run_in_executor(None, analyse_hmm, log_returns),
-            return_exceptions=True,
-        )
+        ]
+        if cfg.hmm_enabled:
+            _ms_tasks.append(loop.run_in_executor(None, analyse_hmm, log_returns))
+
+        _ms_raw = await asyncio.gather(*_ms_tasks, return_exceptions=True)
+
+        if cfg.hmm_enabled:
+            vp_raw, zone_raw, of_raw, hmm_raw = _ms_raw
+        else:
+            vp_raw, zone_raw, of_raw = _ms_raw
+            hmm_raw = None
 
         # Unpack volume profile
         vp_dict = (
@@ -440,7 +534,9 @@ async def _api_market_structure_impl(symbol: str, loop):
         )
 
         # Unpack HMM
-        if isinstance(hmm_raw, BaseException):
+        if hmm_raw is None:
+            hmm_result, hmm_dict = None, {"disabled": True}
+        elif isinstance(hmm_raw, BaseException):
             logger.warning("market-structure HMM failed: %s", hmm_raw)
             hmm_result, hmm_dict = None, {"error": str(hmm_raw)}
         else:
@@ -448,23 +544,29 @@ async def _api_market_structure_impl(symbol: str, loop):
             hmm_dict   = hmm_raw.to_dict()
 
         # ── 3. Hawkes process (needs zone_list from step 2) ───────────────
-        hawkes_result = await loop.run_in_executor(
-            None, analyse_hawkes, log_returns, zone_list,
-        )
-        hawkes_dict = hawkes_result.to_dict()
+        # Gated by cfg.hawkes_enabled — runs ~3 s; disabled by default.
+        if cfg.hawkes_enabled and zone_list:
+            hawkes_result = await loop.run_in_executor(
+                None, analyse_hawkes, log_returns, zone_list,
+            )
+            hawkes_dict = hawkes_result.to_dict()
+        else:
+            hawkes_result = None
+            hawkes_dict   = {"disabled": True}
 
         # ── 4. Blended zone-reaction probabilities ────────────────────────
         blended_zones = []
         for z in zone_list:
             hk_probs = None
-            for hr in hawkes_result.zone_reactions:
-                if abs(hr.level - z["level"]) < 0.01:
-                    hk_probs = {
-                        "bounce":      hr.bounce_prob,
-                        "break":       hr.break_prob,
-                        "consolidate": hr.consolidate_prob,
-                    }
-                    break
+            if hawkes_result is not None:
+                for hr in hawkes_result.zone_reactions:
+                    if abs(hr.level - z["level"]) < 0.01:
+                        hk_probs = {
+                            "bounce":      hr.bounce_prob,
+                            "break":       hr.break_prob,
+                            "consolidate": hr.consolidate_prob,
+                        }
+                        break
             if hmm_result is not None:
                 blended = blend_zone_probability(
                     hmm=hmm_result,
@@ -624,6 +726,12 @@ async def api_news(ticker: Optional[str] = None, limit: int = 20):
     # Sort newest first (empty dates go last)
     unique.sort(key=lambda x: x["published"] or "0000", reverse=True)
 
+    # ── 3b. Attach sentiment + category to each article ──────────────────────
+    # Uses lightweight keyword matching — no external NLP service required.
+    for a in unique:
+        a["sentiment"] = _score_sentiment(a["title"])
+        a["category"]  = _classify_category(a["title"], ticker=symbol)
+
     # ── 4. Fetch VIX level ───────────────────────────────────────────────────
     vix = None
     try:
@@ -705,6 +813,45 @@ def _fg_label(score: float) -> str:
     if score >= 45: return "Neutral"
     if score >= 25: return "Fear"
     return "Extreme Fear"
+
+
+# ─── REST: macroeconomic indicators ─────────────────────────────────────────
+
+@app.get("/api/macro")
+async def api_macro(force: int = 0):
+    """
+    Return a structured set of macroeconomic indicators that influence stock prices.
+
+    Indicators returned (each with current value, previous value, trend arrow,
+    bullish/bearish/neutral impact badge, unit, and a plain-English description):
+      - CPI          (Consumer Price Index, YoY %)
+      - PPI          (Producer Price Index, YoY %)
+      - Core PCE     (Fed's preferred inflation gauge, YoY %)
+      - Fed Rate     (Federal Funds Rate / ^IRX proxy)
+      - 10Y Yield    (10-Year Treasury Yield / ^TNX)
+      - GDP Growth   (Real GDP, QoQ Annualised %)
+      - Unemployment (Civilian Unemployment Rate)
+      - ISM Mfg PMI  (Manufacturing survey, 50 = neutral)
+
+    Data source priority:
+      1. FRED API if FRED_API_KEY env var is set (recommended — free key at fred.stlouisfed.org)
+      2. BLS public API for CPI / PPI / Unemployment
+      3. yfinance ^TNX / ^IRX for yields and rate proxy
+      4. World Bank API for GDP
+      5. null for indicators that cannot be fetched without a key
+
+    Results are cached for 4 hours (macro data changes monthly/quarterly).
+    Pass force=1 to bypass the cache and force a fresh fetch.
+    """
+    try:
+        loop   = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None, fetch_macro_indicators, bool(force)
+        )
+        return result
+    except Exception as e:
+        logger.exception("Macro indicators fetch failed")
+        raise HTTPException(status_code=500, detail=f"macro fetch failed: {e}")
 
 
 # ─── REST: scanner ───────────────────────────────────────────────────────────
@@ -927,21 +1074,46 @@ async def _run_analysis() -> dict:
             df = df_full.tail(cfg.lookback).copy()
             df.attrs = df_full.attrs
 
+            # ── Phase 1: broadcast candles immediately ────────────────────────
+            # Data is already fetched (~2-3 s). Push candles to all clients NOW
+            # so the chart renders before the slow MC/zones analysis begins.
+            # The frontend handles type="partial" by rendering only the chart
+            # and showing "Analyzing…" on signal cards.
+            try:
+                await _broadcast({
+                    "type":          "partial",
+                    "ticker":        cfg.ticker,
+                    "interval":      cfg.interval,
+                    "current_price": round(float(df_full["close"].iloc[-1]), 4),
+                    "candles":       _df_to_candles(df_full),
+                    "updated_at":    datetime.now(timezone.utc).isoformat(),
+                })
+            except Exception as _pe:
+                logger.debug("partial broadcast failed: %s", _pe)
+
             # Pre-compute returns for HMM now (fast, avoids duplicate work in executor)
             _returns_for_hmm = df["close"].pct_change().dropna().values.tolist()
 
-            # ── Launch all independent tasks concurrently ─────────────────────
-            # analyse, detect_zones, volume_profile, HMM, and HTF confirmation
-            # are all independent of each other — run them in parallel.
-            raw = await asyncio.gather(
+            # ── Phase 2: run MC + zones concurrently ──────────────────────────
+            # analyse() calls compute_volume_profile internally — do NOT add it
+            # here again (that was a duplicate costing ~2-3 s every cycle).
+            # HMM is gated by cfg.hmm_enabled (default False) — it adds ~5 s.
+            _gather_tasks = [
                 loop.run_in_executor(None, analyse, df, cfg.n_sim, cfg.n_forward, cfg.mc_model),
                 loop.run_in_executor(None, detect_zones, df),
-                loop.run_in_executor(None, compute_volume_profile, df_full),
-                loop.run_in_executor(None, analyse_hmm, _returns_for_hmm),
                 _htf_confirmation(cfg.ticker, cfg.interval, cfg.extended, loop),
-                return_exceptions=True,
-            )
-            result_raw, zone_raw, vp_raw, hmm_raw, htf_data = raw
+            ]
+            if cfg.hmm_enabled:
+                # Insert before HTF so the unpack order is: mc, zones, hmm, htf
+                _gather_tasks.insert(2, loop.run_in_executor(None, analyse_hmm, _returns_for_hmm))
+
+            raw = await asyncio.gather(*_gather_tasks, return_exceptions=True)
+
+            if cfg.hmm_enabled:
+                result_raw, zone_raw, hmm_raw, htf_data = raw
+            else:
+                result_raw, zone_raw, htf_data = raw
+                hmm_raw = None
 
             # ── Unpack analyse result (must succeed) ──────────────────────────
             if isinstance(result_raw, BaseException):
@@ -957,15 +1129,23 @@ async def _run_analysis() -> dict:
             else:
                 zones_data = zone_raw.to_dict()
 
-            # ── Unpack volume profile ─────────────────────────────────────────
-            if isinstance(vp_raw, BaseException):
-                logger.debug("volume profile in _run_analysis failed: %s", vp_raw)
+            # ── Volume profile — reuse what analyse() already computed ─────────
+            # analyse() embeds the VP result in its return dict under
+            # "volume_profile". Pull it out here; no second call needed.
+            _vp_inner = result.get("volume_profile") if isinstance(result, dict) else None
+            if _vp_inner is None:
                 vp_data = None
+            elif isinstance(_vp_inner, dict):
+                vp_data = _vp_inner
+            elif hasattr(_vp_inner, "to_dict"):
+                vp_data = _vp_inner.to_dict()
             else:
-                vp_data = vp_raw.to_dict() if vp_raw else None
+                vp_data = None
 
             # ── Unpack HMM result ─────────────────────────────────────────────
-            if isinstance(hmm_raw, BaseException):
+            if hmm_raw is None:
+                hmm_data = None
+            elif isinstance(hmm_raw, BaseException):
                 logger.debug("hmm in _run_analysis failed: %s", hmm_raw)
                 hmm_data = None
             else:

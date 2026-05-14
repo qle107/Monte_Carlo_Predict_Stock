@@ -342,9 +342,413 @@ header h1 { font-size:15px; font-weight:600; }
 }
 .sent-refresh-btn:hover { background:rgba(88,166,255,.2); }
 .sent-refresh-btn:disabled { opacity:.4; cursor:not-allowed; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MACRO INDICATORS STRIP
+   Sits between the metrics row and the main chart grid.
+   Each card shows: name | value | arrow | impact badge
+   ═══════════════════════════════════════════════════════════════════════════ */
+#macro-strip {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,.1) transparent;
+}
+#macro-strip::-webkit-scrollbar { height: 3px; }
+#macro-strip::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 2px; }
+
+/* Header label inside the strip */
+.macro-strip-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .8px;
+  color: var(--muted);
+  white-space: nowrap;
+  padding-right: 14px;
+  border-right: 1px solid var(--border);
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+
+/* Individual indicator card in the strip */
+.macro-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 4px 14px;
+  border-right: 1px solid var(--border);
+  flex-shrink: 0;
+  cursor: default;
+  transition: background .15s;
+  border-radius: 4px;
+}
+.macro-chip:last-child { border-right: none; }
+.macro-chip:hover { background: rgba(255,255,255,.04); }
+
+.macro-chip-name {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  white-space: nowrap;
+  margin-bottom: 2px;
+}
+.macro-chip-val {
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.macro-chip-val .mc-arrow { font-size: 12px; }
+.macro-chip-val .mc-na  { font-size: 12px; color: var(--muted); font-weight: 400; }
+
+/* Impact badge inside the chip */
+.macro-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-top: 2px;
+}
+.macro-badge.bullish { background: rgba(63,185,80,.15);  color: var(--green); }
+.macro-badge.bearish { background: rgba(248,81,73,.15);  color: var(--red); }
+.macro-badge.neutral { background: rgba(139,148,158,.12); color: var(--muted); }
+
+/* Refresh button at right end of strip */
+.macro-refresh-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 10px;
+  padding: 3px 9px;
+  background: rgba(88,166,255,.08);
+  border: 1px solid rgba(88,166,255,.2);
+  color: var(--blue);
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all .15s;
+}
+.macro-refresh-btn:hover { background: rgba(88,166,255,.18); }
+.macro-refresh-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   NEWS FEED PANEL (inside scanner tab area)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Macro cards inside the news tab (larger format) */
+.macro-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+@media (max-width: 900px) { .macro-grid { grid-template-columns: repeat(2, 1fr); } }
+
+.macro-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.macro-card-name {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+.macro-card-val {
+  font-size: 20px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.macro-card-prev {
+  font-size: 11px;
+  color: var(--muted);
+}
+.macro-card-desc {
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+
+/* News filter buttons */
+.news-filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.news-filter-btn {
+  font-size: 11px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all .15s;
+  font-family: inherit;
+}
+.news-filter-btn:hover { background: rgba(255,255,255,.06); color: var(--text); }
+.news-filter-btn.active {
+  background: rgba(88,166,255,.15);
+  border-color: rgba(88,166,255,.4);
+  color: var(--blue);
+}
+
+/* Individual news item */
+.news-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.news-item:last-child { border-bottom: none; }
+
+.news-item-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  text-decoration: none;
+  line-height: 1.4;
+  transition: color .15s;
+}
+.news-item-title:hover { color: var(--blue); }
+
+.news-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Sentiment tag on each news item */
+.news-sent-tag {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: .3px;
+}
+.news-sent-tag.Positive { background: rgba(63,185,80,.15);  color: var(--green); }
+.news-sent-tag.Negative { background: rgba(248,81,73,.15);  color: var(--red); }
+.news-sent-tag.Neutral  { background: rgba(139,148,158,.12); color: var(--muted); }
+
+/* Category tag */
+.news-cat-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgba(88,166,255,.1);
+  color: var(--blue);
+}
+
+/* Scrollable news feed container */
+#news-feed-list {
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,.1) transparent;
+}
+#news-feed-list::-webkit-scrollbar { width: 4px; }
+#news-feed-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 2px; }
+
+/* Empty / loading states for news */
+.news-empty {
+  text-align: center;
+  padding: 32px 20px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ── Skeleton / progressive loading ──────────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -600px 0; }
+  100% { background-position:  600px 0; }
+}
+.skeleton-pulse {
+  background: linear-gradient(90deg,
+    var(--card) 25%,
+    rgba(255,255,255,.04) 50%,
+    var(--card) 75%);
+  background-size: 600px 100%;
+  animation: shimmer 1.4s infinite linear;
+  border-radius: 4px;
+}
+#skeleton-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow: hidden;
+  transition: opacity .35s ease;
+}
+#skeleton-overlay.fade-out { opacity: 0; pointer-events: none; }
+.skel-header {
+  height: 48px;
+  background: var(--header-bg, var(--card));
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 18px;
+}
+.skel-dot  { width:8px; height:8px; border-radius:50%; }
+.skel-pill { height:16px; border-radius:10px; }
+.skel-metrics {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border-bottom: 1px solid var(--border);
+}
+@media (max-width:900px) { .skel-metrics { grid-template-columns: repeat(3,1fr); } }
+.skel-metric-cell {
+  background: var(--bg);
+  padding: 11px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.skel-lbl { height: 10px; width: 55%; }
+.skel-val { height: 18px; width: 70%; }
+.skel-macro-strip {
+  height: 38px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+}
+.skel-chip { height: 22px; width: 90px; border-radius: 11px; }
+.skel-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 1px;
+  background: var(--border);
+  overflow: hidden;
+  min-height: 0;
+}
+@media (max-width:900px) { .skel-body { grid-template-columns: 1fr; } }
+.skel-chart-col {
+  background: var(--bg);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.skel-chart-block {
+  flex: 1;
+  border-radius: 6px;
+  min-height: 260px;
+}
+.skel-right-col {
+  background: var(--bg);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.skel-card {
+  border-radius: 6px;
+  height: 80px;
+}
+.skel-card-sm {
+  border-radius: 6px;
+  height: 52px;
+}
+.skel-status-bar {
+  height: 28px;
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  gap: 10px;
+}
 </style>
 </head>
 <body>
+
+<!-- ── Skeleton loading overlay — removed on first WS message ────────────── -->
+<div id="skeleton-overlay" role="status" aria-label="Loading dashboard…">
+  <!-- Fake header -->
+  <div class="skel-header">
+    <div class="skeleton-pulse skel-dot skel-lbl" style="width:8px;height:8px;border-radius:50%;flex-shrink:0;"></div>
+    <div class="skeleton-pulse skel-pill" style="width:120px;"></div>
+    <div class="skeleton-pulse skel-pill" style="width:70px;margin-left:8px;"></div>
+    <div style="flex:1;"></div>
+    <div class="skeleton-pulse skel-pill" style="width:60px;"></div>
+    <div class="skeleton-pulse skel-pill" style="width:60px;"></div>
+    <div class="skeleton-pulse skel-pill" style="width:80px;"></div>
+  </div>
+  <!-- Fake metrics strip -->
+  <div class="skel-metrics">
+    <div class="skel-metric-cell"><div class="skeleton-pulse skel-lbl"></div><div class="skeleton-pulse skel-val"></div></div>
+    <div class="skel-metric-cell"><div class="skeleton-pulse skel-lbl"></div><div class="skeleton-pulse skel-val"></div></div>
+    <div class="skel-metric-cell"><div class="skeleton-pulse skel-lbl"></div><div class="skeleton-pulse skel-val"></div></div>
+    <div class="skel-metric-cell"><div class="skeleton-pulse skel-lbl"></div><div class="skeleton-pulse skel-val"></div></div>
+    <div class="skel-metric-cell"><div class="skeleton-pulse skel-lbl"></div><div class="skeleton-pulse skel-val"></div></div>
+    <div class="skel-metric-cell"><div class="skeleton-pulse skel-lbl"></div><div class="skeleton-pulse skel-val"></div></div>
+  </div>
+  <!-- Fake macro strip -->
+  <div class="skel-macro-strip">
+    <div class="skeleton-pulse skel-lbl" style="width:55px;height:12px;flex-shrink:0;"></div>
+    <div class="skeleton-pulse skel-chip"></div>
+    <div class="skeleton-pulse skel-chip"></div>
+    <div class="skeleton-pulse skel-chip"></div>
+    <div class="skeleton-pulse skel-chip"></div>
+    <div class="skeleton-pulse skel-chip"></div>
+  </div>
+  <!-- Fake main body -->
+  <div class="skel-body">
+    <div class="skel-chart-col">
+      <div class="skeleton-pulse skel-chart-block"></div>
+      <div class="skeleton-pulse skel-card-sm"></div>
+    </div>
+    <div class="skel-right-col">
+      <div class="skeleton-pulse skel-card"></div>
+      <div class="skeleton-pulse skel-card"></div>
+      <div class="skeleton-pulse skel-card"></div>
+      <div class="skeleton-pulse skel-card-sm"></div>
+      <div class="skeleton-pulse skel-card-sm"></div>
+    </div>
+  </div>
+  <!-- Fake status bar -->
+  <div class="skel-status-bar">
+    <div class="skeleton-pulse skel-lbl" style="width:160px;height:11px;"></div>
+    <div class="skeleton-pulse skel-lbl" style="width:100px;height:11px;"></div>
+  </div>
+</div>
 
 <header>
   <div class="dot" id="status-dot"></div>
@@ -766,6 +1170,19 @@ header h1 { font-size:15px; font-weight:600; }
   <div class="metric"><div class="lbl">CVaR 5%</div>        <div class="val" id="m-cvar">—</div></div>
 </div>
 
+<!-- ══ Macroeconomic Indicators Strip ════════════════════════════════════
+     Horizontal scrollable row of 8 economic indicators.
+     Each chip shows: name / current value with trend arrow / impact badge.
+     Data is fetched from GET /api/macro on page load and auto-refreshed.
+     ════════════════════════════════════════════════════════════════════ -->
+<div id="macro-strip" title="Macroeconomic indicators — scroll horizontally for more">
+  <div class="macro-strip-label">📊 Macro</div>
+  <!-- Chips injected by renderMacroStrip() in JS -->
+  <div id="macro-chips" style="display:flex;gap:0;flex:1;"></div>
+  <button class="macro-refresh-btn" id="macro-refresh-btn"
+          onclick="fetchMacroData(true)" title="Refresh macro data">⟳ Refresh</button>
+</div>
+
 <div class="main">
 
   <!-- ══ Left column: Chart + Scanner ══════════════════════════════ -->
@@ -820,6 +1237,11 @@ header h1 { font-size:15px; font-weight:600; }
         <button class="scanner-tab" id="tab-market-structure" onclick="switchScannerTab('market-structure')">
           🔬 Market Structure
           <span class="tab-badge" id="tab-ms-badge" style="background:rgba(188,140,255,.15);color:var(--purple);">QUANT</span>
+        </button>
+        <!-- ── NEW: News & Macro tab ─────────────────────────────────── -->
+        <button class="scanner-tab" id="tab-news" onclick="switchScannerTab('news')">
+          📰 News &amp; Macro
+          <span class="tab-badge" id="tab-news-badge" style="background:rgba(210,153,34,.15);color:var(--amber);">LIVE</span>
         </button>
       </div>
 
@@ -1599,6 +2021,103 @@ header h1 { font-size:15px; font-weight:600; }
 
         </div><!-- /ms-results -->
       </div><!-- /market-structure-panel -->
+
+      <!-- ══ NEWS & MACRO PANEL ══════════════════════════════════════════
+           Two sub-sections:
+             A) Macro Indicator Cards — 8 economic gauges in a 4-col grid
+             B) News Feed — scrollable headlines with filters, sentiment tags,
+                            category tags, source name, timestamp, and external links
+           Data: GET /api/macro  and  GET /api/news?ticker=<current>
+           Both sections auto-refresh with the same cadence as price data.
+           ════════════════════════════════════════════════════════════════ -->
+      <div id="news-panel" style="display:none; padding: 16px 20px 24px;">
+
+        <!-- ── Section A: Macro Indicators ─────────────────────────────── -->
+        <div style="margin-bottom: 20px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <div>
+              <div style="font-size:13px;font-weight:700;">📊 Macroeconomic Indicators</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px;">
+                Economic signals that drive market valuations, rate expectations, and sector rotation.
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span id="macro-data-note" style="font-size:10px;color:var(--muted);max-width:300px;text-align:right;"></span>
+              <button class="sent-refresh-btn" id="macro-tab-refresh-btn"
+                      onclick="fetchMacroData(true)" title="Force-refresh macro data">⟳ Refresh</button>
+            </div>
+          </div>
+
+          <!-- 8 indicator cards in a 4-column grid -->
+          <div class="macro-grid" id="macro-cards-grid">
+            <!-- Populated by renderMacroCards() -->
+            <div style="color:var(--muted);font-size:12px;padding:20px;grid-column:1/-1;text-align:center;">
+              Loading macro indicators…
+            </div>
+          </div>
+
+          <!-- FRED key hint -->
+          <div id="macro-fred-hint" style="display:none;font-size:11px;color:var(--amber);
+               background:rgba(210,153,34,.08);border:1px solid rgba(210,153,34,.2);
+               border-radius:6px;padding:8px 12px;margin-top:8px;line-height:1.6;">
+            💡 <strong>Tip:</strong> Set the <code>FRED_API_KEY</code> environment variable for full
+            coverage (CPI/PPI/PCE/GDP/ISM PMI). Get a free key at
+            <a href="https://fred.stlouisfed.org/docs/api/api_key.html" target="_blank"
+               style="color:var(--amber);">fred.stlouisfed.org</a>.
+            10-Year yield and Fed rate proxy are always available via market data.
+          </div>
+        </div>
+
+        <!-- ── Section B: News Feed ──────────────────────────────────────── -->
+        <div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+            <div>
+              <div style="font-size:13px;font-weight:700;">📰 News Feed</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px;">
+                Recent headlines relevant to <span id="news-ticker-label" style="color:var(--text);font-weight:600;">—</span>
+                and the broader market — click any headline to open the article.
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span id="news-vix-badge" style="display:none;font-size:11px;padding:3px 9px;
+                    border-radius:10px;background:var(--surface2);border:1px solid var(--border);">
+                VIX: <strong id="news-vix-val">—</strong>
+              </span>
+              <span id="news-count-badge" style="font-size:11px;color:var(--muted);"></span>
+              <button class="sent-refresh-btn" id="news-refresh-btn"
+                      onclick="fetchNewsData(true)" title="Refresh news">⟳ Refresh</button>
+            </div>
+          </div>
+
+          <!-- Filter buttons: All | Company | Macro | Sector | General -->
+          <div class="news-filters">
+            <button class="news-filter-btn active" id="nf-all"
+                    onclick="setNewsFilter('All')">All</button>
+            <button class="news-filter-btn" id="nf-company"
+                    onclick="setNewsFilter('Company')">🏢 Company</button>
+            <button class="news-filter-btn" id="nf-macro"
+                    onclick="setNewsFilter('Macro')">🌐 Macro</button>
+            <button class="news-filter-btn" id="nf-sector"
+                    onclick="setNewsFilter('Sector')">🏭 Sector</button>
+            <button class="news-filter-btn" id="nf-general"
+                    onclick="setNewsFilter('General')">📋 General</button>
+            <button class="news-filter-btn" id="nf-positive"
+                    onclick="setNewsFilter('Positive')" style="color:var(--green);">🟢 Positive</button>
+            <button class="news-filter-btn" id="nf-negative"
+                    onclick="setNewsFilter('Negative')" style="color:var(--red);">🔴 Negative</button>
+          </div>
+
+          <!-- Scrollable news list -->
+          <div id="news-feed-list">
+            <div class="news-empty">Loading news…</div>
+          </div>
+
+          <!-- Fetch timestamp -->
+          <div style="font-size:10px;color:var(--muted);margin-top:10px;text-align:right;"
+               id="news-fetched-at"></div>
+        </div>
+
+      </div><!-- /news-panel -->
 
       <!-- ══ OPTIONS CHAIN & FLOW PANEL ══ -->
       <div id="options-panel" style="display:none;">
@@ -4187,9 +4706,60 @@ async function runBacktest() {
 
 // ── UI update ────────────────────────────────────────────────────────────
 function updateUI(d) {
+  if (d && d.type === 'partial') {
+    // Phase 1: candles arrived, full analysis still running on server.
+    // Render chart immediately and show "Analyzing…" on signal elements.
+    try { _handlePartialUpdate(d); } catch(e) { console.warn('partial UI:', e); }
+    return;
+  }
+  // Phase 2: full result
   try { _updateUI(d); } catch(e) { log('UI error: '+e.message, 'var(--red)'); console.error(e); }
   try { _updateMarketStructureFromBroadcast(d); } catch(_) {}
   try { _updateMicrostructureCard(d); } catch(e) { console.warn('ms-card:', e); }
+}
+
+// ── Partial (candles-only) update ─────────────────────────────────────────
+// Called when server broadcasts type="partial" after fetch but before analysis.
+function _handlePartialUpdate(d) {
+  const el = id => document.getElementById(id);
+
+  // Render chart with available candle data (MC paths will be absent — fine,
+  // _setLwcData guards against missing mc fields)
+  if (d.candles && d.candles.length) {
+    buildCharts(d);
+  }
+
+  // Update price and ticker header immediately
+  if (d.current_price) {
+    const p = el('m-price');
+    if (p) p.textContent = '$' + d.current_price.toFixed(2);
+  }
+  if (d.ticker && d.interval) {
+    const h = el('header-title');
+    if (h) h.textContent = `MC Trader  — ${d.ticker}`;
+    const mt = el('m-ticker');
+    if (mt) mt.textContent = `${d.ticker} ${d.interval}`;
+  }
+
+  // Signal badge → "Analyzing…"
+  const badge = el('signal-badge');
+  if (badge) { badge.textContent = 'Analyzing…'; badge.className = 'badge neutral'; }
+
+  // Metric placeholders → subtle pulse while analysis runs
+  ['m-drift','m-target','m-conf','m-cvar'].forEach(id => {
+    const e = el(id);
+    if (e && e.textContent === '—') {
+      e.textContent = '…';
+      e.style.color = 'var(--muted)';
+    }
+  });
+
+  // Regime / verdict → loading hint
+  const verdict = el('regime-verdict');
+  if (verdict && (verdict.textContent === 'Loading…' || verdict.textContent === '—')) {
+    verdict.textContent = 'Analyzing market conditions…';
+    verdict.style.color = 'var(--muted)';
+  }
 }
 
 // ── Microstructure diagnostics card ──────────────────────────────────────
@@ -4734,9 +5304,55 @@ let _lwMcP10       = null;
 let _mcOverlayCanvas = null;   // canvas drawn on top of LWC for band fills
 let _mcBandData      = null;   // pre-computed {p90,p75,p25,p10,paths} data
 
+// ── Live-update state ──────────────────────────────────────────────────────
+// To keep the chart behaviour TradingView-style — new ticks update the
+// forming bar in place, new bars append, zoom/scroll are preserved — we
+// rebuild the chart only when the ticker or timeframe changes. Otherwise
+// every incoming poll just calls series.update() on the affected bars.
+let _lastBuildTicker     = null;   // ticker the current chart was built for
+let _lastBuildInterval   = null;   // interval ditto
+let _lastSeenCandleTime  = 0;      // unix seconds of the newest bar drawn
+let _firstSeenCandleTime = 0;      // unix seconds of the oldest bar drawn
+
 function buildCharts(d) {
   _lastChartData = d;
-  _buildLwcChart(d);
+
+  // Fall back to the previous build's identity if the partial payload
+  // doesn't carry ticker/interval (sometimes the case during phase 1).
+  const tk = d.ticker   || _lastBuildTicker;
+  const iv = d.interval || _lastBuildInterval;
+
+  // Detect "the new payload contains older bars than what's on the chart"
+  // — happens when the user expands chart_bars or lookback in Settings.
+  // We can't append bars before the existing series in LWC, so we have
+  // to do a full rebuild in that case.
+  let newPayloadFirstTime = 0;
+  if (d.candles && d.candles.length) {
+    newPayloadFirstTime = _toLwcSec(d.candles[0].t);
+  }
+  const olderDataArrived =
+        _firstSeenCandleTime > 0 &&
+        newPayloadFirstTime > 0 &&
+        newPayloadFirstTime < _firstSeenCandleTime;
+
+  const needsRebuild =
+        !_lwChart                      ||
+        !_lwCandle                     ||
+        _lastBuildTicker   == null     ||
+        _lastBuildInterval == null     ||
+        tk !== _lastBuildTicker        ||
+        iv !== _lastBuildInterval      ||
+        olderDataArrived;
+
+  if (needsRebuild) {
+    _lastBuildTicker     = tk;
+    _lastBuildInterval   = iv;
+    _lastSeenCandleTime  = 0;          // reset; _setLwcData will seed
+    _firstSeenCandleTime = 0;
+    _buildLwcChart(d);
+  } else {
+    _updateLwcIncremental(d);
+  }
 }
 
 window.addEventListener('resize', () => {
@@ -4902,55 +5518,127 @@ function _buildLwcChart(d) {
   window._lwcRO.observe(el);
 }
 
+// Convert an ISO-8601 candle timestamp from the backend to unix seconds.
+// (LWC needs integer seconds.) Hoisted to module scope so the incremental
+// path can reuse the exact same conversion.
+function _toLwcSec(iso) { return Math.floor(new Date(iso).getTime() / 1000); }
+
+// Helper: compute the inter-bar spacing in seconds. Falls back to 15 min
+// when only one bar is present (which only happens on cold-start data).
+function _candleStepSec(candles) {
+  if (candles.length < 2) return 900;
+  const n = candles.length;
+  return _toLwcSec(candles[n - 1].t) - _toLwcSec(candles[n - 2].t);
+}
+
+// Build a forward-projected MC band series anchored on `lastTs`.
+function _mkMcSeries(arr, lastTs, step) {
+  return (arr || []).map((v, i) => ({ time: lastTs + i * step, value: v }));
+}
+
+// Apply MC bands + median path + cached band data. Shared by full-load
+// and incremental-update paths; both rebuild the projection every time
+// because the MC distribution shifts with each new analysis cycle.
+function _applyMcProjection(mc, lastTs, step) {
+  if (!mc || !mc.median_path) {
+    // Partial payload (candles only) — clear any stale projection
+    [_lwMcMed, _lwMcP75, _lwMcP25, _lwMcP90, _lwMcP10].forEach(s => {
+      if (s) try { s.setData([]); } catch(_) {}
+    });
+    _mcBandData = null;
+    return;
+  }
+  const p90 = _mkMcSeries(mc.p90_band    || mc.median_path, lastTs, step);
+  const p75 = _mkMcSeries(mc.upper_band  || mc.median_path, lastTs, step);
+  const p25 = _mkMcSeries(mc.lower_band  || mc.median_path, lastTs, step);
+  const p10 = _mkMcSeries(mc.p10_band    || mc.median_path, lastTs, step);
+  const med = _mkMcSeries(mc.median_path,                    lastTs, step);
+  _lwMcMed.setData(med);
+  _lwMcP75.setData(p75);
+  _lwMcP25.setData(p25);
+  _lwMcP90.setData(p90);
+  _lwMcP10.setData(p10);
+  _mcBandData = {
+    p90, p75, p25, p10, med,
+    paths: (mc.paths || []).slice(0, 30),
+    step,
+  };
+}
+
 function _setLwcData(d) {
   if (!_lwCandle || !_lwChart) return;
   const candles = d.candles;
-  const mc      = d.mc;
+  const mc      = d.mc;   // may be absent on type="partial" — handled below
 
-  // c.t is an ISO-8601 string from the Python backend (e.g. "2024-05-08T14:30:00+00:00")
-  // LWC needs unix seconds (integer).
-  const toSec = iso => Math.floor(new Date(iso).getTime() / 1000);
+  if (!candles || !candles.length) return;
 
-  // Candles
-  _lwCandle.setData(candles.map(c => ({
-    time: toSec(c.t),
+  // Full-load: replace everything via setData. This is the initial chart
+  // construction or a ticker/timeframe switch.
+  const candleData = candles.map(c => ({
+    time: _toLwcSec(c.t),
     open: c.o, high: c.h, low: c.l, close: c.c,
-  })));
+  }));
+  _lwCandle.setData(candleData);
 
-  // Volume bars coloured by candle direction
   _lwVol.setData(candles.map(c => ({
-    time:  toSec(c.t),
+    time:  _toLwcSec(c.t),
     value: c.v,
     color: c.c >= c.o ? 'rgba(63,185,80,0.38)' : 'rgba(248,81,73,0.38)',
   })));
 
-  // MC projection — extrapolate timestamps from the actual candle spacing
-  const lastTs = toSec(candles[candles.length - 1].t);
-  const step   = candles.length > 1
-    ? toSec(candles[candles.length - 1].t) - toSec(candles[candles.length - 2].t)
-    : 900;   // fallback: 15-minute bars
+  // Seed the live-update watermarks so subsequent incremental polls know
+  // which bars are already on the chart and whether older history just
+  // expanded.
+  _lastSeenCandleTime  = candleData[candleData.length - 1].time;
+  _firstSeenCandleTime = candleData[0].time;
 
-  const mkMc = arr => (arr || []).map((v, i) => ({ time: lastTs + i * step, value: v }));
+  const lastTs = _lastSeenCandleTime;
+  const step   = _candleStepSec(candles);
+  _applyMcProjection(mc, lastTs, step);
 
-  _lwMcMed.setData(mkMc(mc.median_path));
-  _lwMcP75.setData(mkMc(mc.upper_band  || mc.median_path));
-  _lwMcP25.setData(mkMc(mc.lower_band  || mc.median_path));
-  _lwMcP90.setData(mkMc(mc.p90_band    || mc.median_path));
-  _lwMcP10.setData(mkMc(mc.p10_band    || mc.median_path));
-
-  // Store band coords for the canvas overlay
-  _mcBandData = {
-    p90:   mkMc(mc.p90_band    || mc.median_path),
-    p75:   mkMc(mc.upper_band  || mc.median_path),
-    p25:   mkMc(mc.lower_band  || mc.median_path),
-    p10:   mkMc(mc.p10_band    || mc.median_path),
-    med:   mkMc(mc.median_path),
-    paths: (mc.paths || []).slice(0, 30),
-    step,
-  };
-
+  // Only fit-content on full loads — incremental updates must preserve
+  // the user's pan/zoom state.
   _lwChart.timeScale().fitContent();
-  // Overlay needs one rAF after fitContent so LWC has computed final coordinates
+  requestAnimationFrame(_drawMcOverlay);
+}
+
+// ── Incremental (TradingView-style) update ────────────────────────────────
+// Called when the chart is already built for the same ticker/timeframe and
+// the server just pushed a fresh poll. Strategy:
+//   • For every candle in the payload whose time ≥ _lastSeenCandleTime
+//     call series.update(). LWC semantics:
+//        time === latest    → updates the forming bar in place
+//        time >  latest     → appends as a new bar
+//        time <  latest     → would throw; we skip those
+//   • The MC projection is forward-looking and small (≤ n_forward+1
+//     points); rebuilding it via setData is cheap and keeps it in sync
+//     with the new "latest bar".
+//   • We never call fitContent() here — that would jump the viewport on
+//     every poll and destroy the user's zoom/scroll.
+function _updateLwcIncremental(d) {
+  if (!_lwCandle || !_lwChart) return;
+  const candles = d.candles;
+  if (!candles || !candles.length) return;
+
+  let newMax = _lastSeenCandleTime;
+  for (const c of candles) {
+    const t = _toLwcSec(c.t);
+    if (t < _lastSeenCandleTime) continue;          // history bar — already on chart
+    _lwCandle.update({ time: t, open: c.o, high: c.h, low: c.l, close: c.c });
+    _lwVol.update({
+      time:  t,
+      value: c.v,
+      color: c.c >= c.o ? 'rgba(63,185,80,0.38)' : 'rgba(248,81,73,0.38)',
+    });
+    if (t > newMax) newMax = t;
+  }
+  _lastSeenCandleTime = newMax;
+
+  // Refresh the MC projection so its time origin tracks the latest bar.
+  const step = _candleStepSec(candles);
+  _applyMcProjection(d.mc, _lastSeenCandleTime, step);
+
+  // Redraw the canvas overlay (band fills + sample paths) in coordinates.
   requestAnimationFrame(_drawMcOverlay);
 }
 
@@ -5220,19 +5908,335 @@ async function _restoreSavedSettings() {
   } catch(e) { /* non-critical — server will use its defaults */ }
 }
 
+// ── Skeleton overlay helpers ──────────────────────────────────────────────
+let _skeletonDismissed = false;
+function _dismissSkeleton() {
+  if (_skeletonDismissed) return;
+  _skeletonDismissed = true;
+  const el = document.getElementById('skeleton-overlay');
+  if (!el) return;
+  el.classList.add('fade-out');
+  setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 380);
+}
+
 // ── WebSocket ────────────────────────────────────────────────────────────
 function connect() {
   const proto=location.protocol==='https:' ? 'wss' : 'ws';
   const ws=new WebSocket(`${proto}://${location.host}/ws`);
   ws.onopen   =()=>{ log('Connected'); document.getElementById('status-dot').className='dot live'; };
-  ws.onmessage=e =>{ try { updateUI(JSON.parse(e.data)); } catch(err){ log('Parse error: '+err,'var(--red)'); } };
-  ws.onerror  =()=>log('WS error','var(--red)');
+  ws.onmessage=e =>{
+    try {
+      const d = JSON.parse(e.data);
+      updateUI(d);
+      _dismissSkeleton();   // remove skeleton on first message (partial or full)
+    } catch(err){ log('Parse error: '+err,'var(--red)'); }
+  };
+  ws.onerror  =()=>{ log('WS error','var(--red)'); _dismissSkeleton(); };
   ws.onclose  =()=>{
     document.getElementById('status-dot').className='dot';
     log('Disconnected — reconnecting in 5s…','var(--amber)');
     setTimeout(connect, 5000);
   };
 }
+
+// Safety net: always dismiss skeleton after 15 s even if WS never arrives
+setTimeout(_dismissSkeleton, 15000);
+
+// ══════════════════════════════════════════════════════════════════════════
+// MACRO INDICATORS — strip + tab panel
+// Fetches GET /api/macro  (cached 4h server-side)
+// Renders in two places:
+//   1. #macro-chips      — compact chips in the horizontal strip
+//   2. #macro-cards-grid — larger cards in the News & Macro tab
+// ══════════════════════════════════════════════════════════════════════════
+
+let _macroLoaded     = false;
+let _macroLoading    = false;
+let _macroData       = null;   // last fetched payload from /api/macro
+
+// Colour helpers
+const _impactColor = { bullish: 'var(--green)', bearish: 'var(--red)', neutral: 'var(--muted)' };
+const _arrowColor  = { '↑': 'var(--green)', '↓': 'var(--red)', '→': 'var(--muted)' };
+
+/**
+ * Fetch macro indicators from the server and render both locations.
+ * @param {boolean} force  Pass true to bypass server-side 4h cache.
+ */
+async function fetchMacroData(force = false) {
+  if (_macroLoading) return;
+  _macroLoading = true;
+
+  // Disable refresh buttons while loading
+  ['macro-refresh-btn', 'macro-tab-refresh-btn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = true;
+  });
+
+  try {
+    const url  = force ? '/api/macro?force=1' : '/api/macro';
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    _macroData   = await resp.json();
+    _macroLoaded = true;
+    renderMacroStrip(_macroData);
+    renderMacroCards(_macroData);
+  } catch (err) {
+    console.warn('[macro] fetch failed:', err);
+    document.getElementById('macro-chips').innerHTML =
+      '<span style="font-size:11px;color:var(--muted);padding:0 12px;">Macro data unavailable</span>';
+  } finally {
+    _macroLoading = false;
+    ['macro-refresh-btn', 'macro-tab-refresh-btn'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = false;
+    });
+  }
+}
+
+/**
+ * Render the compact horizontal macro strip (#macro-chips).
+ */
+function renderMacroStrip(data) {
+  const container = document.getElementById('macro-chips');
+  if (!container || !data?.indicators) return;
+
+  container.innerHTML = data.indicators.map(ind => {
+    const hasVal = ind.current !== null && ind.current !== undefined;
+    const valStr = hasVal ? `${ind.current}${ind.unit === '%' || ind.unit.includes('%') ? '%' : ''}` : 'N/A';
+    const color  = hasVal ? (_impactColor[ind.impact] || 'var(--muted)') : 'var(--muted)';
+    const arrow  = hasVal ? ind.arrow : '→';
+    const arrowC = _arrowColor[arrow] || 'var(--muted)';
+
+    return `
+      <div class="macro-chip" title="${ind.full_name}: ${ind.description}">
+        <div class="macro-chip-name">${ind.name}</div>
+        <div class="macro-chip-val" style="color:${color}">
+          ${hasVal
+            ? `<span>${valStr}</span><span class="mc-arrow" style="color:${arrowC}">${arrow}</span>`
+            : `<span class="mc-na">N/A</span>`
+          }
+        </div>
+        <div class="macro-badge ${ind.impact}">${ind.impact}</div>
+      </div>`;
+  }).join('');
+}
+
+/**
+ * Render the larger macro indicator cards in the News & Macro tab.
+ */
+function renderMacroCards(data) {
+  const grid = document.getElementById('macro-cards-grid');
+  if (!grid || !data?.indicators) return;
+
+  grid.innerHTML = data.indicators.map(ind => {
+    const hasVal  = ind.current !== null && ind.current !== undefined;
+    const unitStr = (ind.unit === '%' || ind.unit.includes('%')) ? '%' : (ind.unit ? ` ${ind.unit}` : '');
+    const valStr  = hasVal ? `${ind.current}${unitStr}` : 'N/A';
+    const prevStr = (ind.previous !== null && ind.previous !== undefined)
+                  ? `Prev: ${ind.previous}${unitStr}`
+                  : 'Prev: N/A';
+    const color   = hasVal ? (_impactColor[ind.impact] || 'var(--muted)') : 'var(--muted)';
+    const arrow   = hasVal ? ind.arrow : '→';
+    const arrowC  = _arrowColor[arrow] || 'var(--muted)';
+
+    return `
+      <div class="macro-card">
+        <div class="macro-card-name">${ind.full_name || ind.name}</div>
+        <div class="macro-card-val" style="color:${color}">
+          <span>${valStr}</span>
+          <span style="color:${arrowC};font-size:16px;">${arrow}</span>
+          <span class="macro-badge ${ind.impact}" style="margin-left:2px;">${ind.impact}</span>
+        </div>
+        <div class="macro-card-prev" style="color:var(--muted);">${prevStr}</div>
+        <div class="macro-card-desc">${ind.description}</div>
+      </div>`;
+  }).join('');
+
+  // Show FRED hint if data is partial
+  const hint = document.getElementById('macro-fred-hint');
+  if (hint) hint.style.display = data.fred_active ? 'none' : 'block';
+
+  // Show data note
+  const note = document.getElementById('macro-data-note');
+  if (note && data.data_note) note.textContent = data.data_note;
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════
+// NEWS FEED — tab panel
+// Fetches GET /api/news?ticker=<current>&limit=30
+// Renders a scrollable list with filter buttons and sentiment/category tags.
+// ══════════════════════════════════════════════════════════════════════════
+
+let _newsLoaded      = false;
+// _newsLoading already declared earlier in the file — do not re-declare
+let _newsLastTicker  = '';
+let _newsData        = [];   // raw articles array
+let _newsFilter      = 'All'; // current filter selection
+
+/**
+ * Fetch news from the server and render the list.
+ * @param {boolean} force  Bypass any in-flight guard and re-fetch.
+ */
+async function fetchNewsData(force = false) {
+  if (_newsLoading && !force) return;
+  _newsLoading = true;
+
+  const ticker = (currentConfig.ticker || '').toUpperCase().trim();
+  const btn    = document.getElementById('news-refresh-btn');
+  if (btn) btn.disabled = true;
+
+  // Update ticker label
+  const lbl = document.getElementById('news-ticker-label');
+  if (lbl) lbl.textContent = ticker || 'Market';
+
+  // Show loading state
+  const list = document.getElementById('news-feed-list');
+  if (list) list.innerHTML = '<div class="news-empty">Loading news…</div>';
+
+  try {
+    const url  = `/api/news?ticker=${encodeURIComponent(ticker)}&limit=30`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+
+    _newsData       = data.articles || [];
+    _newsLastTicker = ticker;
+    _newsLoaded     = true;
+
+    // VIX badge
+    if (data.vix !== null && data.vix !== undefined) {
+      const vixBadge = document.getElementById('news-vix-badge');
+      const vixVal   = document.getElementById('news-vix-val');
+      if (vixBadge) vixBadge.style.display = 'inline-flex';
+      if (vixVal) {
+        const vixColor = data.vix > 30 ? 'var(--red)' : data.vix > 20 ? 'var(--amber)' : 'var(--green)';
+        vixVal.textContent = data.vix.toFixed(1);
+        vixVal.style.color = vixColor;
+      }
+    }
+
+    // Fetched-at timestamp
+    const ts = document.getElementById('news-fetched-at');
+    if (ts && data.fetched_at) {
+      const d = new Date(data.fetched_at);
+      ts.textContent = `Last updated: ${d.toLocaleTimeString()}`;
+    }
+
+    renderNewsFeed();
+
+  } catch (err) {
+    console.warn('[news] fetch failed:', err);
+    if (list) list.innerHTML =
+      `<div class="news-empty" style="color:var(--red);">Failed to load news. ${err.message}</div>`;
+  } finally {
+    _newsLoading = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
+/**
+ * Set the active news filter and re-render the list.
+ * @param {string} filter  'All' | 'Company' | 'Macro' | 'Sector' | 'General' | 'Positive' | 'Negative'
+ */
+function setNewsFilter(filter) {
+  _newsFilter = filter;
+
+  // Update button states
+  const filterMap = {
+    'All':     'nf-all',
+    'Company': 'nf-company',
+    'Macro':   'nf-macro',
+    'Sector':  'nf-sector',
+    'General': 'nf-general',
+    'Positive':'nf-positive',
+    'Negative':'nf-negative',
+  };
+  Object.entries(filterMap).forEach(([key, id]) => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('active', key === filter);
+  });
+
+  renderNewsFeed();
+}
+
+/**
+ * Render the news feed list, applying the current filter.
+ */
+function renderNewsFeed() {
+  const list = document.getElementById('news-feed-list');
+  if (!list) return;
+
+  // Apply filter
+  const filtered = _newsData.filter(a => {
+    if (_newsFilter === 'All')      return true;
+    if (_newsFilter === 'Positive') return a.sentiment === 'Positive';
+    if (_newsFilter === 'Negative') return a.sentiment === 'Negative';
+    return a.category === _newsFilter;
+  });
+
+  // Update count badge
+  const badge = document.getElementById('news-count-badge');
+  if (badge) {
+    badge.textContent = filtered.length
+      ? `${filtered.length} article${filtered.length !== 1 ? 's' : ''}`
+      : '';
+  }
+
+  if (!filtered.length) {
+    list.innerHTML = `<div class="news-empty">No ${_newsFilter === 'All' ? '' : _newsFilter + ' '}articles found.</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map(a => {
+    // Format timestamp
+    let timeStr = '';
+    if (a.published) {
+      try {
+        const d = new Date(a.published);
+        const now = Date.now();
+        const diff = now - d.getTime();
+        const hrs  = Math.floor(diff / 3600000);
+        const mins = Math.floor(diff / 60000);
+        if (hrs > 48)      timeStr = d.toLocaleDateString();
+        else if (hrs >= 1) timeStr = `${hrs}h ago`;
+        else if (mins >= 1)timeStr = `${mins}m ago`;
+        else                timeStr = 'Just now';
+      } catch (_) {}
+    }
+
+    const sentClass = a.sentiment || 'Neutral';
+    const catLabel  = a.category  || 'General';
+    const safeTitle = (a.title || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const safeSrc   = (a.source || '').replace(/</g, '&lt;');
+    const safeUrl   = (a.url || '#');
+
+    return `
+      <div class="news-item">
+        <a class="news-item-title" href="${safeUrl}" target="_blank" rel="noopener noreferrer">
+          ${safeTitle}
+        </a>
+        <div class="news-item-meta">
+          <span class="news-sent-tag ${sentClass}">${sentClass}</span>
+          <span class="news-cat-tag">${catLabel}</span>
+          ${safeSrc ? `<span>${safeSrc}</span>` : ''}
+          ${timeStr ? `<span>${timeStr}</span>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+
+// ── Auto-fetch macro on page load (strip always visible) ──────────────────
+// Runs after DOMContentLoaded so #macro-chips is ready.
+document.addEventListener('DOMContentLoaded', () => {
+  // Small delay to let the WS connect first, then fetch macro in background.
+  setTimeout(() => fetchMacroData(false), 800);
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// END: Macro & News JavaScript
+// ══════════════════════════════════════════════════════════════════════════
 
 // Startup: fetch current config, restore any saved settings, then open WS.
 fetch('/api/config')
@@ -5253,6 +6257,7 @@ function switchScannerTab(tab) {
     sentiment:          document.getElementById('sentiment-scan-panel'),
     options:            document.getElementById('options-panel'),
     'market-structure': document.getElementById('market-structure-panel'),
+    news:               document.getElementById('news-panel'),           // ← NEW
   };
   const tabs = {
     breakout:           document.getElementById('tab-breakout'),
@@ -5260,6 +6265,7 @@ function switchScannerTab(tab) {
     sentiment:          document.getElementById('tab-sentiment'),
     options:            document.getElementById('tab-options'),
     'market-structure': document.getElementById('tab-market-structure'),
+    news:               document.getElementById('tab-news'),             // ← NEW
   };
   const styles = {
     breakout:           { color: 'var(--blue)',   bg: 'rgba(88,166,255,.06)',  border: 'var(--blue)' },
@@ -5267,6 +6273,7 @@ function switchScannerTab(tab) {
     sentiment:          { color: 'var(--amber)',  bg: 'rgba(210,153,34,.06)',  border: 'var(--amber)' },
     options:            { color: 'var(--green)',  bg: 'rgba(63,185,80,.06)',   border: 'var(--green)' },
     'market-structure': { color: 'var(--purple)', bg: 'rgba(188,140,255,.06)', border: 'var(--purple)' },
+    news:               { color: 'var(--amber)',  bg: 'rgba(210,153,34,.06)',  border: 'var(--amber)' },  // ← NEW
   };
 
   Object.keys(panels).forEach(key => {
@@ -5305,6 +6312,13 @@ function switchScannerTab(tab) {
     const needsRun   = currentVal && (currentVal !== _lastSentTicker || (optsEmpty && optsEmpty.style.display !== 'none'));
     if (needsRun && !_sentLoading && !_msAnalysisInProgress) {
       runOptionsPanel();
+    }
+  }
+  // ── NEW: When the News & Macro tab opens, auto-fetch if not yet loaded ──
+  if (tab === 'news') {
+    if (!_macroLoaded) fetchMacroData(false);
+    if (!_newsLoaded || (currentConfig.ticker || '').toUpperCase() !== _newsLastTicker) {
+      fetchNewsData(false);
     }
   }
 }
