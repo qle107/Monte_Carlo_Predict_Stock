@@ -747,7 +747,27 @@ def trade_setup_from_analysis(
         interval        = interval,
         df              = df,
     )
-    return to_dict(ts)
+    out = to_dict(ts)
+
+    # ── Structural price targets (Fib + S/R confluence) ─────────────
+    # Computed independently of whether a trade is valid, so the
+    # dashboard always has max_high / max_downside / fib to show.
+    if df is not None and len(df) >= 25 and price > 0:
+        try:
+            from .levels import compute_price_targets
+            zones_for_levels = detect_zones(df) if df is not None else None
+            targets = compute_price_targets(
+                df            = df,
+                current_price = price,
+                atr_pct       = atr_pct,
+                zones         = zones_for_levels,
+            )
+            out.update(targets)   # adds max_high, max_downside, fib keys
+        except Exception as _lvl_err:
+            import logging
+            logging.getLogger(__name__).warning("levels compute failed: %s", _lvl_err)
+
+    return out
 
 
 # ─── Convenience wrapper for scanner ScanResult ───────────────────────────────

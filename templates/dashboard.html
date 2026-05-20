@@ -6,6 +6,8 @@
 <title>MC Trader</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<link rel="stylesheet" href="/static/css/dashboard.css">
+<!-- legacy-css-1 (extracted to /static/css/dashboard.css during Phase 2 refactor; kept here only for diff history)
 <style>
 *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
 :root {
@@ -55,10 +57,14 @@ header h1 { font-size:15px; font-weight:600; }
 }
 #quick-ticker::placeholder { color:rgba(139,148,158,.55); font-weight:400; font-size:12px; }
 #quick-interval {
-  background:rgba(88,166,255,.1); border:none;
+  background:#1c2333; border:none;
   border-left:1px solid rgba(88,166,255,.25);
   color:var(--text); font-size:12px;
   padding:6px 6px; outline:none; cursor:pointer;
+}
+#quick-interval option {
+  background:#1c2333;
+  color:#e6edf3;
 }
 #quick-go-btn {
   background:rgba(88,166,255,.25);
@@ -284,6 +290,49 @@ header h1 { font-size:15px; font-weight:600; }
 .ts-sl-both .sl-row:last-child { border-bottom:none; }
 .ts-sl-both .sl-row span:first-child { color:var(--muted); }
 .ts-sl-both .sl-row span:last-child  { font-weight:600; color:var(--red); }
+
+/* ── Price Targets card (max high / max downside + Fibonacci) ─────────── */
+.pt-card-grid {
+  display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;
+}
+.pt-box {
+  border-radius:8px; padding:10px 12px;
+}
+.pt-box.up   { background:rgba(63,185,80,.08);  border:1px solid rgba(63,185,80,.28); }
+.pt-box.down { background:rgba(248,81,73,.08);  border:1px solid rgba(248,81,73,.28); }
+.pt-box-lbl  { font-size:9px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); margin-bottom:4px; }
+.pt-box-price{ font-size:17px; font-weight:800; }
+.pt-box.up   .pt-box-price { color:var(--green); }
+.pt-box.down .pt-box-price { color:var(--red);   }
+.pt-box-pct  { font-size:11px; font-weight:600; margin-top:1px; }
+.pt-box.up   .pt-box-pct { color:var(--green); }
+.pt-box.down .pt-box-pct { color:var(--red);   }
+.pt-box-conf { font-size:10px; color:var(--muted); margin-top:5px; line-height:1.3; }
+.pt-fib-toggle {
+  width:100%; text-align:left; background:none; border:none; cursor:pointer;
+  font-size:10px; color:var(--muted); padding:4px 0 2px;
+  display:flex; align-items:center; gap:5px;
+}
+.pt-fib-toggle:hover { color:var(--text); }
+.pt-fib-grid {
+  display:none; margin-top:6px;
+  border:1px solid var(--border); border-radius:6px; overflow:hidden;
+  font-size:11px;
+}
+.pt-fib-row {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:4px 10px; border-bottom:1px solid var(--border);
+}
+.pt-fib-row:last-child { border-bottom:none; }
+.pt-fib-row.at-price { background:rgba(88,166,255,.10); }
+.pt-fib-row.above { color:var(--green); }
+.pt-fib-row.below { color:var(--red); }
+.pt-fib-row .fib-ratio { color:var(--muted); font-size:10px; }
+.pt-swing-note {
+  font-size:10px; color:var(--muted); text-align:center;
+  margin-bottom:8px; padding:4px 8px; background:var(--surface2);
+  border-radius:5px;
+}
 
 /* ── Social Sentiment card ─────────────────────────────────────────────── */
 .sent-overall {
@@ -696,6 +745,7 @@ header h1 { font-size:15px; font-weight:600; }
   gap: 10px;
 }
 </style>
+end-legacy-css-1 -->
 </head>
 <body>
 
@@ -801,6 +851,8 @@ header h1 { font-size:15px; font-weight:600; }
   overflow-y:auto;
   animation:slideIn .25s ease;
 ">
+  <link rel="stylesheet" href="/static/css/portfolio.css">
+  <!-- legacy-css-2 (portfolio drawer styles → /static/css/portfolio.css; kept here only for diff history)
   <style>
     @keyframes slideIn { from{transform:translateY(30px);opacity:0} to{transform:translateY(0);opacity:1} }
 
@@ -945,6 +997,7 @@ header h1 { font-size:15px; font-weight:600; }
       .pt-bottom-grid{grid-template-columns:1fr}
     }
   </style>
+  end-legacy-css-2 -->
 
   <!-- DRAWER HEADER -->
   <div id="pt-header">
@@ -1666,80 +1719,76 @@ header h1 { font-size:15px; font-weight:600; }
         </div><!-- /sent-results -->
 
         <!-- ══════════════════════════════════════════════════════════════
-             📰 NEWS + VIX + FEAR & GREED
+             🔴 LIVE NEWS FEED  (Phase 5 — server-push via /ws/news)
              ══════════════════════════════════════════════════════════════ -->
         <div style="margin-top:20px;border-top:1px solid var(--border);padding-top:18px;">
 
-          <!-- Header + fetch button -->
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
-            <div>
-              <div style="font-size:15px;font-weight:700;">📰 News · VIX · Fear &amp; Greed</div>
-              <div style="font-size:11px;color:var(--muted);margin-top:2px;">
-                Latest headlines from Yahoo Finance &amp; Google News · live VIX · CNN F&amp;G Index
+          <!-- Header row: status dot + pause + filter pills -->
+          <div style="display:flex;align-items:center;justify-content:space-between;
+                      margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div style="font-size:15px;font-weight:700;">🔴 Live News Feed</div>
+              <!-- Connection status -->
+              <div style="display:flex;align-items:center;gap:5px;">
+                <div id="live-news-dot"
+                     style="width:8px;height:8px;border-radius:50%;background:var(--muted);
+                            transition:background .4s,box-shadow .4s;"></div>
+                <span id="live-news-status"
+                      style="font-size:10px;color:var(--muted);transition:color .4s;">Disconnected</span>
               </div>
             </div>
-            <button onclick="runNewsPanel()" id="news-run-btn"
-              style="padding:7px 14px;background:rgba(88,166,255,.1);border:1px solid rgba(88,166,255,.25);
-                     color:#58a6ff;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">
-              <span id="news-spin" style="display:none;">⏳</span> 📰 Fetch News
+            <button id="live-news-pause-btn"
+                    style="padding:5px 12px;background:rgba(139,148,158,.12);
+                           border:1px solid rgba(139,148,158,.3);border-radius:6px;
+                           color:var(--muted);font-size:11px;font-weight:600;cursor:pointer;">
+              ⏸ Pause
             </button>
           </div>
 
-          <!-- VIX + Fear & Greed row -->
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+          <!-- Filter pills -->
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">
+            <button class="lnf-filter-btn" data-filter="all"
+                    style="padding:4px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;
+                           background:rgba(88,166,255,.25);border:1px solid rgba(88,166,255,.5);color:#58a6ff;">
+              All
+            </button>
+            <button class="lnf-filter-btn" data-filter="company"
+                    style="padding:4px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;
+                           background:transparent;border:1px solid rgba(139,148,158,.3);color:var(--muted);">
+              Company
+            </button>
+            <button class="lnf-filter-btn" data-filter="macro"
+                    style="padding:4px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;
+                           background:transparent;border:1px solid rgba(139,148,158,.3);color:var(--muted);">
+              Macro
+            </button>
+            <button class="lnf-filter-btn" data-filter="sector"
+                    style="padding:4px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;
+                           background:transparent;border:1px solid rgba(139,148,158,.3);color:var(--muted);">
+              Sector
+            </button>
+            <button class="lnf-filter-btn" data-filter="positive"
+                    style="padding:4px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;
+                           background:transparent;border:1px solid rgba(139,148,158,.3);color:var(--muted);">
+              🟢 Positive
+            </button>
+            <button class="lnf-filter-btn" data-filter="negative"
+                    style="padding:4px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;
+                           background:transparent;border:1px solid rgba(139,148,158,.3);color:var(--muted);">
+              🔴 Negative
+            </button>
+          </div>
 
-            <!-- VIX card -->
-            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;">
-              <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">📈 VIX — Volatility Index</div>
-              <div id="vix-value" style="font-size:32px;font-weight:800;margin-bottom:4px;">—</div>
-              <div id="vix-label" style="font-size:11px;color:var(--muted);margin-bottom:10px;"></div>
-              <!-- TradingView VIX mini widget -->
-              <div style="border-radius:6px;overflow:hidden;border:1px solid var(--border);">
-                <div class="tradingview-widget-container">
-                  <div class="tradingview-widget-container__widget"></div>
-                  <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-mini-symbol-overview.js" async>
-                  {
-                    "symbol": "TVC:VIX",
-                    "width": "100%",
-                    "height": 120,
-                    "locale": "en",
-                    "dateRange": "1M",
-                    "colorTheme": "dark",
-                    "isTransparent": true,
-                    "autosize": false,
-                    "largeChartUrl": ""
-                  }
-                  </script>
-                </div>
-              </div>
-            </div>
-
-            <!-- Fear & Greed card -->
-            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;">
-              <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">😱 Fear &amp; Greed Index (CNN)</div>
-              <div id="fg-score" style="font-size:32px;font-weight:800;margin-bottom:4px;">—</div>
-              <div id="fg-label" style="font-size:14px;font-weight:700;margin-bottom:10px;"></div>
-              <!-- Gauge bar -->
-              <div style="position:relative;height:12px;border-radius:6px;overflow:hidden;margin-bottom:8px;
-                           background:linear-gradient(90deg,#f85149,#d29922,#3fb950);">
-                <div id="fg-needle" style="position:absolute;top:-2px;width:4px;height:16px;background:white;
-                              border-radius:2px;box-shadow:0 0 4px rgba(0,0,0,.6);transition:left .6s;left:50%;"></div>
-              </div>
-              <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted);">
-                <span>Extreme Fear</span><span>Neutral</span><span>Extreme Greed</span>
-              </div>
-              <div style="margin-top:10px;display:flex;flex-direction:column;gap:4px;" id="fg-history"></div>
-              <div style="font-size:9px;color:var(--muted);margin-top:6px;" id="fg-source"></div>
+          <!-- Scrollable news list -->
+          <div id="live-news-list"
+               style="display:flex;flex-direction:column;gap:7px;
+                      max-height:520px;overflow-y:auto;padding-right:2px;">
+            <div style="text-align:center;color:var(--muted);font-size:12px;padding:24px;">
+              Opening live connection…
             </div>
           </div>
 
-          <!-- News feed -->
-          <div id="news-empty" style="text-align:center;color:var(--muted);font-size:12px;padding:16px;">
-            Click "Fetch News" to load latest headlines for this ticker.
-          </div>
-          <div id="news-list" style="display:none;flex-direction:column;gap:8px;"></div>
-
-        </div><!-- /news panel -->
+        </div><!-- /live news feed -->
 
         <!-- ══════════════════════════════════════════════════════════════
              🌍 GLOBAL MARKET PULSE — independent of any specific ticker
@@ -2166,6 +2215,17 @@ header h1 { font-size:15px; font-weight:600; }
         <!-- Results -->
         <div id="opts-results" style="display:none;padding-bottom:24px;">
 
+          <!-- ── Phase 3 disclaimer: yfinance has no aggressor side ── -->
+          <div id="opts-flow-disclaimer"
+               style="margin-bottom:12px;padding:9px 12px;
+                      background:rgba(210,153,34,.08);border:1px solid rgba(210,153,34,.25);
+                      border-radius:6px;font-size:11px;color:var(--amber);line-height:1.5;">
+            ⓘ <strong>Flow direction unavailable from this source.</strong>
+            yfinance reports total contracts traded, not buy- vs sell-initiated trades.
+            High volume on a strike can mean buyers <em>or</em> sellers — colour-coding
+            below indicates contract <em>type</em> (call vs put), not directionality.
+          </div>
+
           <!-- Row 1: Call/Put summary + GEX & Max Pain (2-col) -->
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
 
@@ -2176,19 +2236,23 @@ header h1 { font-size:15px; font-weight:600; }
                 <span id="sp-bias-badge" class="sent-badge"></span>
               </div>
               <div class="sent-kpi4">
-                <div class="sent-kpi">
+                <div class="sent-kpi"
+                     title="Volume = total contracts traded. High call volume can mean buyers (bullish) OR sellers (bearish covered calls). See Flow for direction.">
                   <div class="sent-kpi-v" id="sp-call-vol" style="color:var(--green)">—</div>
                   <div class="sent-kpi-l">Calls Vol</div>
                 </div>
-                <div class="sent-kpi">
+                <div class="sent-kpi"
+                     title="Volume = total contracts traded. High put volume can mean buyers (bearish) OR sellers (bullish covered puts). See Flow for direction.">
                   <div class="sent-kpi-v" id="sp-put-vol" style="color:var(--red)">—</div>
                   <div class="sent-kpi-l">Puts Vol</div>
                 </div>
-                <div class="sent-kpi">
+                <div class="sent-kpi"
+                     title="Put/Call Volume Ratio. < 0.7 = call-heavy (often bullish positioning); > 1.0 = put-heavy (often hedging or bearish).">
                   <div class="sent-kpi-v" id="sp-pcr">—</div>
                   <div class="sent-kpi-l">P/C Ratio Vol</div>
                 </div>
-                <div class="sent-kpi">
+                <div class="sent-kpi"
+                     title="Put/Call Open Interest Ratio. Lower turnover than volume — reflects longer-term positioning.">
                   <div class="sent-kpi-v" id="sp-oi-pcr">—</div>
                   <div class="sent-kpi-l">P/C Ratio OI</div>
                 </div>
@@ -2282,6 +2346,58 @@ header h1 { font-size:15px; font-weight:600; }
               </div>
             </div><!-- /2col -->
           </div><!-- /sent-prices-section -->
+
+          <!-- ══ Row 4: Unusual Options Activity ══════════════════════════ -->
+          <!-- Phase 3-C: flag contracts where volume > OI × 1.5 AND volume > 500.
+               Backend computes the unusual_activity[] field in /api/sentiment;
+               see core/sentiment.py:_scan_unusual_activity. -->
+          <div class="sent-posts-wrap" id="opts-unusual-section" style="margin-bottom:14px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;
+                        margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+              <div>
+                <div style="font-size:13px;font-weight:700;">🚨 Unusual Activity</div>
+                <div style="font-size:11px;color:var(--muted);margin-top:2px;">
+                  Contracts with <code>volume &gt; OI × 1.5</code> <strong>AND</strong>
+                  <code>volume &gt; 500</code>. Sorted by Vol/OI ratio.
+                </div>
+              </div>
+              <span id="ua-count" style="font-size:11px;color:var(--muted);"></span>
+            </div>
+
+            <!-- DTE filter pills -->
+            <div class="news-filters" style="margin-bottom:10px;">
+              <button class="news-filter-btn active" data-ua-filter="all"     onclick="setUnusualFilter('all')">All</button>
+              <button class="news-filter-btn"        data-ua-filter="0-7"     onclick="setUnusualFilter('0-7')">0–7 days</button>
+              <button class="news-filter-btn"        data-ua-filter="8-30"    onclick="setUnusualFilter('8-30')">8–30 days</button>
+              <button class="news-filter-btn"        data-ua-filter="31-60"   onclick="setUnusualFilter('31-60')">31–60 days</button>
+              <button class="news-filter-btn"        data-ua-filter="leaps"   onclick="setUnusualFilter('leaps')">60+ days · LEAPS</button>
+            </div>
+
+            <!-- Table -->
+            <div class="scan-table-wrap" style="max-height:400px;overflow-y:auto;">
+              <table id="ua-table" style="width:100%;border-collapse:collapse;font-size:12px;">
+                <thead>
+                  <tr style="background:var(--surface);">
+                    <th data-ua-sort="strike"     style="text-align:left;padding:6px 8px;color:var(--muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;">Strike</th>
+                    <th data-ua-sort="type"       style="text-align:left;padding:6px 8px;color:var(--muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;">Type</th>
+                    <th data-ua-sort="expiry"     style="text-align:left;padding:6px 8px;color:var(--muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;">Expiry</th>
+                    <th data-ua-sort="dte"        style="text-align:right;padding:6px 8px;color:var(--muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;" title="Days to expiry">DTE</th>
+                    <th data-ua-sort="volume"     style="text-align:right;padding:6px 8px;color:var(--muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;">Volume</th>
+                    <th data-ua-sort="oi"         style="text-align:right;padding:6px 8px;color:var(--muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;">OI</th>
+                    <th data-ua-sort="vol_oi"     style="text-align:right;padding:6px 8px;color:var(--blue);font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;" title="Volume divided by open interest — primary unusual-activity signal">Vol/OI ↓</th>
+                    <th data-ua-sort="premium"    style="text-align:right;padding:6px 8px;color:var(--muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;" title="Cost per contract = last price × 100">Premium</th>
+                    <th data-ua-sort="flow"       style="text-align:right;padding:6px 8px;color:var(--muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;" title="Notional flow = premium × volume">Flow $</th>
+                    <th data-ua-sort="pct_change" style="text-align:right;padding:6px 8px;color:var(--muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;">Chg%</th>
+                    <th                           style="text-align:left;padding:6px 8px;color:var(--muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.3px;" title="Raw volume cannot tell direction — see disclaimer at top.">Sentiment</th>
+                  </tr>
+                </thead>
+                <tbody id="ua-tbody"></tbody>
+              </table>
+            </div>
+            <div id="ua-empty" style="display:none;padding:24px;text-align:center;color:var(--muted);font-size:12px;">
+              No unusual activity detected at the current thresholds (vol &gt; OI × 1.5 AND vol &gt; 500).
+            </div>
+          </div><!-- /opts-unusual-section -->
 
         </div><!-- /opts-results -->
 
@@ -2532,6 +2648,45 @@ header h1 { font-size:15px; font-weight:600; }
       </div>
     </div>
 
+    <!-- ── Structural Price Targets card (Max High / Max Downside) ── -->
+    <div class="card" id="pt-card">
+      <div class="card-title">
+        <span>Price Targets
+          <span style="font-size:10px;font-weight:400;color:var(--muted);">(Fib + S/R)</span>
+        </span>
+      </div>
+
+      <!-- Swing reference note -->
+      <div class="pt-swing-note" id="pt-swing-note">
+        Swing: <span id="pt-swing-low">—</span> → <span id="pt-swing-high">—</span>
+      </div>
+
+      <!-- Max High / Max Downside boxes -->
+      <div class="pt-card-grid">
+        <div class="pt-box up">
+          <div class="pt-box-lbl">▲ Max High</div>
+          <div class="pt-box-price" id="pt-high-price">—</div>
+          <div class="pt-box-pct"   id="pt-high-pct"></div>
+          <div class="pt-box-conf"  id="pt-high-conf"></div>
+        </div>
+        <div class="pt-box down">
+          <div class="pt-box-lbl">▼ Max Downside</div>
+          <div class="pt-box-price" id="pt-dn-price">—</div>
+          <div class="pt-box-pct"   id="pt-dn-pct"></div>
+          <div class="pt-box-conf"  id="pt-dn-conf"></div>
+        </div>
+      </div>
+
+      <!-- Collapsible Fibonacci level grid -->
+      <button class="pt-fib-toggle" onclick="toggleFibGrid()">
+        <span>📐 Fibonacci levels</span>
+        <span id="pt-fib-arrow">▼</span>
+      </button>
+      <div class="pt-fib-grid" id="pt-fib-grid">
+        <!-- populated by updatePriceTargets() -->
+      </div>
+    </div>
+
     <!-- Drift breakdown -->
     <div class="card">
       <div class="card-title">Drift &amp; risk</div>
@@ -2654,6 +2809,7 @@ header h1 { font-size:15px; font-weight:600; }
   </div>
 </div>
 
+<!-- legacy-css-3 (sentiment/scanner/market-structure styles → merged into /static/css/dashboard.css; kept here only for diff history)
 <style>
 /* ── Sentiment panel styles ───────────────────────────────────────── */
 .sent-grid3 {
@@ -2897,10 +3053,20 @@ header h1 { font-size:15px; font-weight:600; }
   background: linear-gradient(90deg, var(--blue), var(--purple));
 }
 </style>
+end-legacy-css-3 -->
 
-<script>
+<!-- ── Phase 2/3/4 refactor: external JS modules ── -->
+<!-- index.js runs first; tab modules monkey-patch the inline render fns once
+     DOMContentLoaded fires (i.e. after the inline <script> blocks below run). -->
+<script src="/static/js/index.js"></script>
+<script src="/static/js/scanner.js"></script>
+<script src="/static/js/tabs/options.js"></script>
+<script src="/static/js/tabs/market-structure.js"></script>
+<script src="/static/js/tabs/sentiment.js"></script>
+<script type="text/x-disabled-legacy" data-extracted-to="/static/js/scanner.js">
 // ══════════════════════════════════════════════════════════════════
-// Scanner logic
+// Scanner logic — disabled inline copy kept only for diff history.
+// Active version lives in /static/js/scanner.js (loaded above).
 // ══════════════════════════════════════════════════════════════════
 let _scanData    = [];
 let _scanSortKey = 'score';
@@ -3351,10 +3517,15 @@ async function runSentiment(forceRefresh) {
     _lastSentTicker = ticker;   // record successfully-fetched ticker
     _renderSentimentPanel(data);
     _updateSidebarSummary(data);
-    // Refresh news panel whenever the ticker changes (non-blocking)
-    if (ticker !== prevTicker && !_newsLoading) {
-      _newsFetched = false;   // allow re-fetch for new ticker
-      runNewsPanel();
+    // Phase 5: initialise / switch live news feed WS
+    if (typeof window.initSentimentFeed === 'function') {
+      try {
+        if (ticker !== prevTicker) {
+          window.switchSentimentTicker(ticker);
+        } else {
+          window.initSentimentFeed(ticker);
+        }
+      } catch (e) { console.warn('[sentiment] initSentimentFeed error', e); }
     }
   } catch (e) {
     if (errorEl) {
@@ -3717,6 +3888,13 @@ function _renderSentimentPanel(data) {
     }
   }
 
+  // ── Sector Cramer fallback (Phase 5) ─────────────────────────────────────
+  // If the ticker has no recent Cramer coverage, renderSectorCramer() in
+  // sentiment.js fires a GET /api/sentiment/sector-cramer and fills the card.
+  if (typeof window.renderSectorCramer === 'function') {
+    try { window.renderSectorCramer(data); } catch (e) { console.warn('[sentiment] renderSectorCramer error', e); }
+  }
+
   // ── Sentiment type breakdown (full section + Reddit card mini-bars) ──────
   const aggTypes   = (agg.type_breakdown) || {};
   const typeLabels = {
@@ -3933,6 +4111,13 @@ function _renderSentimentPanel(data) {
   }
 
   log(`Sentiment [${data.ticker}] → ${label} (${_scoreStr(score)}) | PCR: ${opts.pcr_volume ?? '—'} | X: ${xData.post_count ?? 0} tweets | Cramer: ${cramer.cramer_signal ?? '?'} → Inverse ${cramer.inverse_signal ?? 'WAIT'}`);
+
+  // ── Phase 3: render Unusual Activity (provided by /static/js/tabs/options.js) ──
+  // Safe to call even if the module did not load — the inline guard is defensive.
+  if (typeof window.renderUnusualActivity === 'function') {
+    try { window.renderUnusualActivity(data); }
+    catch (e) { console.warn('[options] renderUnusualActivity failed:', e); }
+  }
 }
 
 // Update the mini sidebar card after a fetch
@@ -4978,6 +5163,7 @@ function _updateUI(d) {
 
   // ── Trade Setup sidebar card ───────────────────────────────────
   updateTradeSetup(d.trade_setup);
+  updatePriceTargets(d.trade_setup, d.current_price);
   updateSRCard(d.zones, d.indicators, d.current_price);
 
   buildCharts(d);
@@ -5172,6 +5358,109 @@ function updateTradeSetup(ts) {
   }
 
   wrap.style.display = 'block';
+}
+
+// ── Price Targets card (Max High / Max Downside + Fibonacci) ────────────
+function updatePriceTargets(ts, currentPrice) {
+  if (!ts) return;
+  const $ = id => document.getElementById(id);
+  const set = (id, fn) => { const el = $(id); if (el) fn(el); };
+  const f2 = v => (v != null && isFinite(v)) ? '$' + Number(v).toFixed(2) : '—';
+  const fp = v => (v != null && isFinite(v))
+    ? (v >= 0 ? '+' : '') + Number(v).toFixed(1) + '% from current'
+    : '';
+
+  const mh  = ts.max_high;
+  const mdn = ts.max_downside;
+  const fib = ts.fib;
+
+  // ── Max High ──────────────────────────────────────────────────
+  if (mh && mh.price) {
+    set('pt-high-price', el => el.textContent = f2(mh.price));
+    set('pt-high-pct',   el => el.textContent = fp(mh.pct_from_price));
+    set('pt-high-conf',  el => {
+      const score = mh.score || 0;
+      const stars = score >= 3.5 ? '★★★ ' : score >= 2.0 ? '★★ ' : score >= 1.0 ? '★ ' : '';
+      el.textContent = stars + (mh.confluence || mh.method || '');
+    });
+  }
+
+  // ── Max Downside ──────────────────────────────────────────────
+  if (mdn && mdn.price) {
+    set('pt-dn-price', el => el.textContent = f2(mdn.price));
+    set('pt-dn-pct',   el => el.textContent = fp(mdn.pct_from_price));
+    set('pt-dn-conf',  el => {
+      const score = mdn.score || 0;
+      const stars = score >= 3.5 ? '★★★ ' : score >= 2.0 ? '★★ ' : score >= 1.0 ? '★ ' : '';
+      el.textContent = stars + (mdn.confluence || mdn.method || '');
+    });
+  }
+
+  // ── Swing reference note ──────────────────────────────────────
+  if (fib) {
+    set('pt-swing-low',  el => el.textContent = f2(fib.swing_low));
+    set('pt-swing-high', el => el.textContent = f2(fib.swing_high));
+  }
+
+  // ── Fibonacci grid ────────────────────────────────────────────
+  if (fib && currentPrice) {
+    const grid = $('pt-fib-grid');
+    if (!grid) return;
+    const price = currentPrice;
+
+    const levels = [
+      { label: 'Ext 261.8%', price: fib.e_2618, ratio: '261.8%', ext: true },
+      { label: 'Ext 200%',   price: fib.e_2000, ratio: '200%',   ext: true },
+      { label: 'Ext 161.8%', price: fib.e_1618, ratio: '161.8% ✦', ext: true },
+      { label: 'Ext 127.2%', price: fib.e_1272, ratio: '127.2%', ext: true },
+      { label: 'Swing High', price: fib.swing_high, ratio: '100%', anchor: true },
+      { label: 'Ret 23.6%',  price: fib.r_236,  ratio: '23.6%'  },
+      { label: 'Ret 38.2%',  price: fib.r_382,  ratio: '38.2%'  },
+      { label: 'Ret 50.0%',  price: fib.r_500,  ratio: '50.0%'  },
+      { label: 'Ret 61.8%',  price: fib.r_618,  ratio: '61.8% ✦' },
+      { label: 'Ret 78.6%',  price: fib.r_786,  ratio: '78.6%'  },
+      { label: 'Swing Low',  price: fib.swing_low, ratio: '0%', anchor: true },
+      { label: 'Ext −127.2%',price: fib.d_1272, ratio: '−127.2%', ext: true },
+      { label: 'Ext −161.8%',price: fib.d_1618, ratio: '−161.8% ✦', ext: true },
+      { label: 'Ext −261.8%',price: fib.d_2618, ratio: '−261.8%', ext: true },
+    ];
+
+    // Sort descending by price so the grid reads top = highest
+    levels.sort((a, b) => (b.price || 0) - (a.price || 0));
+
+    const priceProx = price * 0.003;  // within 0.3% = "at price"
+    let html = '';
+    for (const lv of levels) {
+      if (!lv.price || !isFinite(lv.price)) continue;
+      const pct  = ((lv.price - price) / price * 100).toFixed(1);
+      const sign = lv.price > price ? '+' : '';
+      const atPrice = Math.abs(lv.price - price) <= priceProx;
+      const cls  = atPrice ? 'pt-fib-row at-price'
+                 : lv.price > price ? 'pt-fib-row above'
+                 : 'pt-fib-row below';
+      const bold = (lv.anchor || lv.ratio?.includes('✦')) ? 'font-weight:700;' : '';
+      const priceStr = '$' + Number(lv.price).toFixed(2);
+      html += `
+        <div class="${cls}" style="${bold}">
+          <span>${lv.label}</span>
+          <span style="display:flex;gap:12px;align-items:center;">
+            <span class="fib-ratio">${lv.ratio}</span>
+            <span>${priceStr}</span>
+            <span style="font-size:10px;opacity:.6;">${sign}${pct}%</span>
+          </span>
+        </div>`;
+    }
+    grid.innerHTML = html;
+  }
+}
+
+function toggleFibGrid() {
+  const grid  = document.getElementById('pt-fib-grid');
+  const arrow = document.getElementById('pt-fib-arrow');
+  if (!grid) return;
+  const open = grid.style.display === 'block';
+  grid.style.display  = open ? 'none'  : 'block';
+  if (arrow) arrow.textContent = open ? '▼' : '▲';
 }
 
 // ── Support & Resistance card updater ────────────────────────────────────
@@ -6300,9 +6589,9 @@ function switchScannerTab(tab) {
     if (currentVal && currentVal !== _lastSentTicker && !_sentLoading) {
       runSentiment(true);
     }
-    // Auto-fetch News/VIX/F&G once per session when sentiment tab first opens
-    if (!_newsFetched && !_newsLoading) {
-      runNewsPanel();
+    // Phase 5: also update live news feed subscription if ticker changed
+    if (typeof window.switchSentimentTicker === 'function' && currentVal) {
+      try { window.switchSentimentTicker(currentVal); } catch (e) { console.warn(e); }
     }
   }
   // When the options tab opens, auto-run if ticker changed or no data yet

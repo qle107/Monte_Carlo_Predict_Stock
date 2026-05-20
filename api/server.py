@@ -34,7 +34,8 @@ from core.scanner import scan_tickers, get_watchlist, WATCHLISTS
 from core.signal import compute_signal
 from core.store import SignalStore
 from core.trade_setup import trade_setup_from_analysis, trade_setup_from_scan
-from core.sentiment import fetch_global_market_sentiment, get_sentiment
+from core.sentiment import fetch_global_market_sentiment, get_sentiment, _cramer_for_sector, get_ticker_sector
+from core.news_stream import news_stream
 from core.zone_scanner import zone_scan_tickers
 from core.zones import detect_zones
 from core.volume_profile import compute_volume_profile
@@ -130,30 +131,33 @@ def _classify_category(title: str, ticker: str = "") -> str:
 logger = logging.getLogger(__name__)
 
 # ─── State ──────────────────────────────────────────────────────────────────
-clients:       Set[WebSocket]            = set()
-_last_result:  dict                      = {}
-_poll_task:    Optional[asyncio.Task]    = None
-_store:        Optional[SignalStore]     = None
-_analysis_lock: Optional[asyncio.Lock]  = None   # guards _run_analysis — set in lifespan
+clients:             Set[WebSocket]            = set()
+_last_result:        dict                      = {}
+_poll_task:          Optional[asyncio.Task]    = None
+_news_stream_task:   Optional[asyncio.Task]    = None
+_store:              Optional[SignalStore]      = None
+_analysis_lock:      Optional[asyncio.Lock]    = None   # guards _run_analysis — set in lifespan
 
 
 # ─── Lifespan (replaces deprecated @app.on_event) ───────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _poll_task, _store, _analysis_lock
+    global _poll_task, _news_stream_task, _store, _analysis_lock
     _store = SignalStore(cfg.db_path)
     _analysis_lock = asyncio.Lock()          # must be created inside the running loop
     _poll_task = asyncio.create_task(_poll_loop())
+    _news_stream_task = asyncio.create_task(news_stream.run_loop())
     logger.info("Lifespan startup complete (db=%s)", cfg.db_path)
     try:
         yield
     finally:
-        if _poll_task and not _poll_task.done():
-            _poll_task.cancel()
-            try:
-                await _poll_task
-            except (asyncio.CancelledError, Exception):
-                pass
+        for task in (_poll_task, _news_stream_task):
+            if task and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
         if _store:
             _store.close()
         logger.info("Lifespan shutdown complete")
@@ -473,49 +477,75 @@ async def api_market_structure(ticker: Optional[str] = None):
 
 
 async def _api_market_structure_impl(symbol: str, loop):
-    """Market structure analysis with parallelised sub-tasks."""
+    """
+    Market structure analysis with parallelised sub-tasks.
+
+    Phase 4 refactor (May 2026) — diagnostic improvements:
+    ─────────────────────────────────────────────────────
+    • HMM and Hawkes are now ALWAYS run here, regardless of cfg.hmm_enabled /
+      cfg.hawkes_enabled. Those flags exist to gate the live poll loop (whose
+      latency budget is tight); the dedicated /api/market-structure endpoint
+      has its own loading spinner and the user explicitly clicks "Analyse",
+      so we always do the heavy work here. Previously a False flag silently
+      returned `{"disabled": true}` and the UI rendered an empty card.
+    • Each sub-result carries `state ∈ {"ok", "error", "insufficient_data",
+      "no_zones"}` plus `error_reason` / `min_bars_required` where relevant,
+      so the frontend can render a meaningful error/empty state with retry
+      instead of blank cards.
+    • Pipeline-step logs emitted at `data-fetch → preprocess → model-fit →
+      classify → render` boundaries (logger.debug, only visible at DEBUG).
+    """
+    HMM_MIN_BARS    = 40   # matches core.hmm_regime.MIN_BARS
+    HAWKES_MIN_BARS = 20   # matches core.hawkes.analyse_hawkes
     try:
-        # ── 1. Fetch OHLCV data ───────────────────────────────────────────
+        # ── 1. data-fetch ────────────────────────────────────────────────
+        logger.debug("[ms] data-fetch start  symbol=%s interval=%s", symbol, cfg.interval)
         df = await loop.run_in_executor(
             None, fetch_candles, symbol, cfg.interval,
             max(cfg.lookback, cfg.chart_bars), cfg.extended,
         )
+        n_bars = len(df)
+        spot   = float(df["close"].iloc[-1]) if not df.empty else None
+        logger.debug("[ms] data-fetch done   bars=%d spot=%s", n_bars, spot)
 
-        spot        = float(df["close"].iloc[-1]) if not df.empty else None
+        # ── 2. preprocess ────────────────────────────────────────────────
         log_returns = df["close"].pct_change().dropna().values.tolist()
+        n_returns   = len(log_returns)
+        logger.debug("[ms] preprocess        n_returns=%d", n_returns)
 
-        # ── 2. Run volume-profile, zones, options-flow (and optionally HMM) in parallel ─
-        # HMM is gated by cfg.hmm_enabled (default False) — adds ~5 s.
-        # Hawkes is gated by cfg.hawkes_enabled (default False) — adds ~3 s.
-        # Both are still available here because market-structure is the dedicated
-        # heavy-analysis endpoint (has its own loading spinner in the UI).
+        # ── 3. model-fit: volume-profile, zones, options-flow, HMM in parallel ─
+        # HMM and Hawkes are always run here (see docstring). Each helper still
+        # falls back gracefully on its own short-input branch.
         _ms_tasks = [
             loop.run_in_executor(None, compute_volume_profile, df),
             loop.run_in_executor(None, detect_zones, df),
             loop.run_in_executor(None, fetch_options_flow, symbol, spot),
+            loop.run_in_executor(None, analyse_hmm, log_returns),
         ]
-        if cfg.hmm_enabled:
-            _ms_tasks.append(loop.run_in_executor(None, analyse_hmm, log_returns))
-
-        _ms_raw = await asyncio.gather(*_ms_tasks, return_exceptions=True)
-
-        if cfg.hmm_enabled:
-            vp_raw, zone_raw, of_raw, hmm_raw = _ms_raw
-        else:
-            vp_raw, zone_raw, of_raw = _ms_raw
-            hmm_raw = None
-
-        # Unpack volume profile
-        vp_dict = (
-            vp_raw.to_dict()
-            if not isinstance(vp_raw, BaseException) and vp_raw
-            else {"error": str(vp_raw) if isinstance(vp_raw, BaseException) else "vp_failed"}
+        vp_raw, zone_raw, of_raw, hmm_raw = await asyncio.gather(
+            *_ms_tasks, return_exceptions=True,
         )
+        logger.debug("[ms] model-fit done   vp=%s zones=%s of=%s hmm=%s",
+                     type(vp_raw).__name__, type(zone_raw).__name__,
+                     type(of_raw).__name__, type(hmm_raw).__name__)
 
-        # Unpack zones
+        # ── 4a. classify: unpack volume profile ──────────────────────────
+        if isinstance(vp_raw, BaseException):
+            vp_dict = {"state": "error", "error": str(vp_raw)[:120]}
+        elif vp_raw is None:
+            vp_dict = {"state": "error", "error": "vp_failed"}
+        else:
+            vp_dict = vp_raw.to_dict()
+            vp_dict.setdefault("state", "ok")
+
+        # ── 4b. classify: unpack zones ───────────────────────────────────
         if isinstance(zone_raw, BaseException):
-            logger.warning("market-structure zone detect: %s", zone_raw)
-            zones_data, zone_list = {}, []
+            logger.warning("[ms] zone detect: %s", zone_raw)
+            zones_data = {
+                "state": "error", "error": str(zone_raw)[:120],
+                "demand_zones": [], "supply_zones": [],
+            }
+            zone_list = []
         else:
             zones_data = zone_raw.to_dict()
             zone_list = [
@@ -525,36 +555,70 @@ async def _api_market_structure_impl(symbol: str, loop):
                 {"level": z.level, "zone_type": "supply", "strength": z.strength}
                 for z in zone_raw.supply_zones
             ]
+            if not zone_list:
+                zones_data["state"] = "no_zones"
+                # Zone detection needs at least zone_pivot_window*2+1 bars to
+                # find any swing pivots. Surface that to the user.
+                zones_data["min_bars_required"] = int(cfg.zone_pivot_window) * 2 + 1
+                zones_data["bars_available"]    = n_bars
+            else:
+                zones_data.setdefault("state", "ok")
 
-        # Unpack options flow
-        of_dict = (
-            of_raw.to_dict()
-            if not isinstance(of_raw, BaseException)
-            else {"error": str(of_raw)}
-        )
+        # ── 4c. classify: unpack options flow ────────────────────────────
+        if isinstance(of_raw, BaseException):
+            of_dict = {"state": "error", "error": str(of_raw)[:120]}
+        else:
+            of_dict = of_raw.to_dict()
+            of_dict.setdefault("state", "error" if of_dict.get("error") else "ok")
 
-        # Unpack HMM
-        if hmm_raw is None:
-            hmm_result, hmm_dict = None, {"disabled": True}
-        elif isinstance(hmm_raw, BaseException):
-            logger.warning("market-structure HMM failed: %s", hmm_raw)
-            hmm_result, hmm_dict = None, {"error": str(hmm_raw)}
+        # ── 4d. classify: unpack HMM ─────────────────────────────────────
+        if isinstance(hmm_raw, BaseException):
+            logger.warning("[ms] HMM raised: %s", hmm_raw)
+            hmm_result = None
+            hmm_dict   = {"state": "error", "error": str(hmm_raw)[:120]}
         else:
             hmm_result = hmm_raw
             hmm_dict   = hmm_raw.to_dict()
+            # Surface the insufficient-data path with a clear contract for the UI.
+            if (hmm_raw.error == "too_few_bars" or hmm_raw.fit_method == "none"):
+                hmm_dict["state"]              = "insufficient_data"
+                hmm_dict["min_bars_required"]  = HMM_MIN_BARS
+                hmm_dict["bars_available"]     = n_returns
+                hmm_dict.setdefault("error_reason",
+                    f"HMM needs at least {HMM_MIN_BARS} return bars; only {n_returns} available. "
+                    f"Switch to a longer timeframe or wait for more candles.")
+            else:
+                hmm_dict["state"] = "ok"
 
-        # ── 3. Hawkes process (needs zone_list from step 2) ───────────────
-        # Gated by cfg.hawkes_enabled — runs ~3 s; disabled by default.
-        if cfg.hawkes_enabled and zone_list:
-            hawkes_result = await loop.run_in_executor(
-                None, analyse_hawkes, log_returns, zone_list,
-            )
-            hawkes_dict = hawkes_result.to_dict()
+        # ── 5. Hawkes (always run, needs zone_list + enough returns) ─────
+        if zone_list and n_returns >= HAWKES_MIN_BARS:
+            try:
+                hawkes_result = await loop.run_in_executor(
+                    None, analyse_hawkes, log_returns, zone_list,
+                )
+                hawkes_dict = hawkes_result.to_dict()
+                hawkes_dict.setdefault("state", "ok")
+            except Exception as exc:
+                logger.warning("[ms] Hawkes raised: %s", exc)
+                hawkes_result = None
+                hawkes_dict   = {"state": "error", "error": str(exc)[:120]}
         else:
             hawkes_result = None
-            hawkes_dict   = {"disabled": True}
+            hawkes_dict = {
+                "state":             "insufficient_data" if n_returns < HAWKES_MIN_BARS else "no_zones",
+                "min_bars_required": HAWKES_MIN_BARS,
+                "bars_available":    n_returns,
+                "error_reason":      (
+                    f"Hawkes process needs at least {HAWKES_MIN_BARS} return bars; "
+                    f"only {n_returns} available."
+                    if n_returns < HAWKES_MIN_BARS
+                    else "No demand/supply zones detected — Hawkes excitation requires them."
+                ),
+            }
 
-        # ── 4. Blended zone-reaction probabilities ────────────────────────
+        # ── 6. Blended zone-reaction probabilities ───────────────────────
+        # Now also produces rows when HMM is missing — falls back to a 40/30/30
+        # base so the table never goes empty just because Baum-Welch under-ran.
         blended_zones = []
         for z in zone_list:
             hk_probs = None
@@ -573,19 +637,37 @@ async def _api_market_structure_impl(symbol: str, loop):
                     hawkes_probs=hk_probs,
                     zone_strength=z.get("strength", 0.5),
                 )
-                blended_zones.append({
-                    "level":            round(z["level"], 4),
-                    "zone_type":        z["zone_type"],
-                    "strength":         round(z.get("strength", 0.5), 3),
-                    "bounce_prob":      blended["bounce"],
-                    "break_prob":       blended["break"],
-                    "consolidate_prob": blended["consolidate"],
-                })
+            elif hk_probs is not None:
+                blended = hk_probs
+            else:
+                # Neither HMM nor Hawkes — fall back to neutral priors so the
+                # zone row at least renders something. Marked so the UI can
+                # caveat the row.
+                blended = {"bounce": 0.40, "break": 0.30, "consolidate": 0.30}
+            blended_zones.append({
+                "level":            round(z["level"], 4),
+                "zone_type":        z["zone_type"],
+                "strength":         round(z.get("strength", 0.5), 3),
+                "bounce_prob":      round(blended["bounce"],      4),
+                "break_prob":       round(blended["break"],       4),
+                "consolidate_prob": round(blended["consolidate"], 4),
+                "blend_source":     (
+                    "hmm+hawkes" if hmm_result is not None and hk_probs is not None else
+                    "hmm"        if hmm_result is not None else
+                    "hawkes"     if hk_probs    is not None else
+                    "fallback"
+                ),
+            })
+
+        # ── 7. render-ready payload ─────────────────────────────────────
+        logger.debug("[ms] render-ready     zones=%d hmm_state=%s hawkes_state=%s",
+                     len(blended_zones), hmm_dict.get("state"), hawkes_dict.get("state"))
 
         return {
             "ticker":          symbol,
             "interval":        cfg.interval,
             "current_price":   round(spot or 0.0, 4),
+            "bars_available":  n_bars,
             "volume_profile":  vp_dict,
             "options_flow":    of_dict,
             "hawkes":          hawkes_dict,
@@ -597,7 +679,7 @@ async def _api_market_structure_impl(symbol: str, loop):
 
     except asyncio.TimeoutError:
         raise
-    except Exception as exc:
+    except Exception:
         logger.exception("_api_market_structure_impl failed for %s", symbol)
         raise
 
@@ -985,6 +1067,70 @@ async def _broadcast(data: dict):
         except Exception:
             dead.add(ws)
     clients.difference_update(dead)
+
+
+# ─── WebSocket: live news feed ────────────────────────────────────────────────
+
+@app.websocket("/ws/news")
+async def ws_news(ws: WebSocket):
+    """
+    Live news WebSocket.
+
+    Protocol (client → server):
+        {"ticker": "AAPL"}   — subscribe / switch ticker
+
+    Protocol (server → client):
+        {"type": "init",   "ticker": "AAPL", "items": [...]}  — on subscribe
+        {"type": "update", "ticker": "AAPL", "items": [...]}  — new headlines
+    """
+    await ws.accept()
+    logger.debug("[ws/news] client connected")
+    try:
+        while True:
+            msg = await ws.receive_json()
+            ticker = (msg.get("ticker") or "").upper().strip()
+            if not ticker:
+                continue
+            init_items = await news_stream.subscribe(ws, ticker)
+            await ws.send_json({
+                "type":   "init",
+                "ticker": ticker,
+                "items":  init_items,
+            })
+    except WebSocketDisconnect:
+        logger.debug("[ws/news] client disconnected")
+    except Exception as exc:
+        logger.warning("[ws/news] error: %s", exc)
+    finally:
+        await news_stream.unsubscribe(ws)
+
+
+# ─── REST: sector Cramer fallback ─────────────────────────────────────────────
+
+@app.get("/api/sentiment/sector-cramer")
+async def api_sector_cramer(ticker: Optional[str] = None, sector: Optional[str] = None):
+    """
+    Return Cramer coverage for the sector peers of `ticker` (or for `sector` directly).
+    Used by the frontend when the ticker-specific Cramer lookup returns no articles.
+    """
+    resolved_sector = sector
+    if not resolved_sector and ticker:
+        resolved_sector = get_ticker_sector(ticker.upper())
+    if not resolved_sector:
+        return {
+            "available": False,
+            "article_count": 0,
+            "cramer_signal": "unknown",
+            "inverse_signal": "WAIT",
+            "inverse_score": 0.0,
+            "confidence": "low",
+            "articles": [],
+            "source_label": "Sector Cramer Signal",
+            "reason": "unknown sector",
+        }
+    result = await _cramer_for_sector(resolved_sector)
+    result["sector"] = resolved_sector
+    return result
 
 
 # ─── Multi-timeframe helpers ─────────────────────────────────────────────────

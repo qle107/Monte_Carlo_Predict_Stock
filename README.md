@@ -256,6 +256,58 @@ Position sizing is computed two ways: a half-Kelly using
 ratio, and a 1%-of-equity fixed-fractional sizing using the tighter of
 the two stops.
 
+### Estimating max downside
+
+The most empirically validated tool for bounding the downside is
+**horizontal support/resistance**. Osler's 2000 Federal Reserve study
+found strong evidence that S/R levels help predict intraday trend
+interruptions. More recent quantitative work shows that high-volume S/R
+zones have significantly longer lifetimes, with precision improving by
+10–16 percentage points over classical methods and false-breakout rates
+declining by 12–15%. This is why `core/zones.py` anchors stop-loss
+placement to the nearest meaningful demand zone — a zone that has been
+tested repeatedly and held is the strongest argument for where a move
+should find support.
+
+**ATR is the volatility ruler.** It answers the question *how far is
+"normal" for this specific stock right now?* The ATR-based SL
+multiplier in `trade_setup.py` (1.5×–3.0× depending on regime) is not
+arbitrary: a stop tighter than 1× ATR will be hit by routine noise; a
+stop wider than 3× ATR usually implies an unfavourable R:R. When S/R
+and ATR agree — the nearest demand zone sits within 1.5–2× ATR of
+entry — that is a high-confidence stop anchor.
+
+The bottom line: **no method works reliably in isolation.** The
+professional approach is confluence — when a prior swing low, a
+high-volume zone, and 2–3× ATR all cluster at the same price, that is
+your high-confidence downside target.
+
+### Estimating max high (bounce magnitude and reversal)
+
+**Fibonacci retracements** are the most widely used tool for projecting
+bounce magnitude, but the academic evidence is sobering. Research
+across the Dow Jones, NASDAQ, and DAX found a positive relationship
+between Fibonacci zone width and bounce probability — but the
+probability of prices bouncing precisely on a Fibonacci level is
+statistically indistinguishable from random when tested in isolation.
+That said, Fibonacci retracements provide correct entry/exit timing in
+roughly 70% of cases through the Golden Ratio (61.8%) *when combined
+with other signals*. This is why the zone targets in `TradeSetup` are
+not Fibonacci-only: they layer S/R zones on top.
+
+**Elliott Wave** is the most structured system for identifying where a
+move tops and reverses. The WASP system — combining Elliott Wave with
+neuro-fuzzy AI — achieved hit rates above 75% over 400 consecutive
+trading days, consistently outperforming a buy-and-hold strategy. The
+practical implication for `trade_setup.py` is directional: TP2 at
+P90/2.5× ATR corresponds roughly to an extended 5th-wave target, while
+TP1 at P75/1.5× ATR sits closer to a 3rd-wave interim high.
+
+The confluence rule applies on the upside too: when RSI divergence
+fires at a Fibonacci resistance level while the MC path is completing
+its projected move and a supply zone overhead has held before — that is
+your reversal warning, not any single indicator in isolation.
+
 `core/backtest.py` is a walk-forward harness: it slides through history,
 recomputes the full pipeline on each bar's prefix, runs the MC, and
 compares to the realised `n_forward`-bar move. The May 2026 pass fixed

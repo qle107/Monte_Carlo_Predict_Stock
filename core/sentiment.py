@@ -1012,10 +1012,76 @@ async def _fetch_stocktwits_sentiment(ticker: str) -> dict:
 # Options flow  (yfinance — blocking → run in executor)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _scan_unusual_activity(
+    calls_df,
+    puts_df,
+    exp_str: str,
+    today,
+    min_vol: int = 500,
+    vol_oi_mult: float = 1.5,
+) -> List[Dict]:
+    """
+    Identify contracts where volume > open_interest × vol_oi_mult AND volume > min_vol.
+
+    Returns a list of dicts shaped for the Unusual Activity table:
+    {expiry, dte, strike, type, volume, oi, vol_oi, premium, flow, pct_change,
+     iv, in_money, leaps}.
+
+    `leaps` is True when DTE > 60 — surfaced as a separate group in the UI.
+
+    Note: raw volume tells you contracts traded, NOT direction (buy vs sell).
+    yfinance does not expose aggressor-side, so the row carries no sentiment
+    label here; the frontend renders a "Flow direction unavailable" disclaimer.
+    """
+    out: List[Dict] = []
+    try:
+        exp_dt = datetime.strptime(exp_str, "%Y-%m-%d").date()
+        dte = max((exp_dt - today).days, 0)
+    except Exception:
+        dte = 0
+    is_leaps = dte > 60
+
+    for type_str, df in (("call", calls_df), ("put", puts_df)):
+        if df is None or df.empty:
+            continue
+        d = df.copy()
+        d["volume"]       = d["volume"].fillna(0).astype(int)
+        d["openInterest"] = d["openInterest"].fillna(0).astype(int)
+        mask = (d["volume"] > min_vol) & (d["volume"] > d["openInterest"] * vol_oi_mult)
+        rows = d[mask]
+        for _, row in rows.iterrows():
+            vol = int(row["volume"])
+            oi  = int(row["openInterest"])
+            lp  = float(row.get("lastPrice", 0) or 0)
+            chg = float(row.get("percentChange", 0) or 0)
+            iv  = float(row.get("impliedVolatility", 0) or 0)
+            ratio = round(vol / max(oi, 1), 2)
+            premium = round(lp * 100, 2)        # cost per contract (USD)
+            flow    = round(lp * 100 * vol, 2)  # notional flow (USD)
+            out.append({
+                "expiry":     exp_str,
+                "dte":        dte,
+                "strike":     float(row["strike"]),
+                "type":       type_str,
+                "volume":     vol,
+                "oi":         oi,
+                "vol_oi":     ratio,
+                "premium":    premium,
+                "flow":       flow,
+                "pct_change": round(chg, 2),
+                "iv":         round(iv * 100, 1),
+                "in_money":   bool(row.get("inTheMoney", False)),
+                "leaps":      is_leaps,
+            })
+    return out
+
+
 def _options_flow_sync(ticker: str) -> dict:
     """
     Fetch the nearest 3 expiry dates' call + put volume / open interest.
-    Also identifies the top call and put strikes by volume.
+    Also identifies the top call and put strikes by volume, plus a separate
+    pass that scans up to 8 expirations for **unusual activity** (high
+    volume relative to open interest — see _scan_unusual_activity).
 
     PCR < 0.7  → call-heavy (bullish crowd positioning)
     0.7–1.0    → neutral
@@ -1027,12 +1093,16 @@ def _options_flow_sync(ticker: str) -> dict:
         if not expirations:
             return {"available": False, "reason": "no options data"}
 
-        n_exp          = min(3, len(expirations))
-        total_call_vol = total_put_vol = 0
-        total_call_oi  = total_put_oi  = 0
-        chains_summary = []
+        n_exp                = min(3, len(expirations))
+        n_unusual_exp        = min(8, len(expirations))   # deeper scan for LEAPS
+        today_date           = datetime.now(timezone.utc).date()
+        total_call_vol       = total_put_vol = 0
+        total_call_oi        = total_put_oi  = 0
+        chains_summary       = []
         hot_calls: List[Dict] = []
         hot_puts:  List[Dict] = []
+        unusual_activity: List[Dict] = []
+        scanned_for_unusual: set = set()
 
         for exp in expirations[:n_exp]:
             try:
@@ -1078,8 +1148,8 @@ def _options_flow_sync(ticker: str) -> dict:
                 # Top 5 put strikes by volume
                 puts_df = chain.puts.copy()
                 puts_df["volume"] = puts_df["volume"].fillna(0)
-                puts_df = puts_df[puts_df["volume"] > 0].nlargest(5, "volume")
-                for _, row in puts_df.iterrows():
+                puts_df_top = puts_df[puts_df["volume"] > 0].nlargest(5, "volume")
+                for _, row in puts_df_top.iterrows():
                     lp  = float(row.get("lastPrice", 0) or 0)
                     chg = float(row.get("percentChange", 0) or 0)
                     hot_puts.append({
@@ -1094,8 +1164,33 @@ def _options_flow_sync(ticker: str) -> dict:
                         "pct_change":  round(chg, 2),
                     })
 
+                # ── Unusual Activity scan (full chain, not just top 5) ──
+                unusual_activity.extend(
+                    _scan_unusual_activity(chain.calls, chain.puts, exp, today_date)
+                )
+                scanned_for_unusual.add(exp)
+
             except Exception:
                 pass
+
+        # ── Deeper unusual-activity scan: LEAPS / longer-dated expiries ──
+        # Fetch up to 5 more expirations beyond the first 3 to catch LEAPS-type
+        # unusual flow. Each chain fetch is ~0.5–1 s; the 5-min sentiment cache
+        # amortises the cost.
+        for exp in expirations[:n_unusual_exp]:
+            if exp in scanned_for_unusual:
+                continue
+            try:
+                chain = t.option_chain(exp)
+                unusual_activity.extend(
+                    _scan_unusual_activity(chain.calls, chain.puts, exp, today_date)
+                )
+            except Exception:
+                pass
+
+        # Sort by vol/OI ratio descending; cap to keep the payload small
+        unusual_activity.sort(key=lambda x: x["vol_oi"], reverse=True)
+        unusual_activity = unusual_activity[:50]
 
         total_vol = total_call_vol + total_put_vol
         pcr_vol   = round(total_put_vol / total_call_vol,  3) if total_call_vol else None
@@ -1141,6 +1236,10 @@ def _options_flow_sync(ticker: str) -> dict:
             "chains":           chains_summary,
             "hot_calls":        hot_calls[:10],
             "hot_puts":         hot_puts[:10],
+            # Unusual Activity: contracts with vol > OI×1.5 AND vol > 500.
+            # Raw exchange volume — NOT aggressor-side; the UI shows a disclaimer.
+            "unusual_activity": unusual_activity,
+            "flow_direction_available": False,  # yfinance never has aggressor side
         }
 
     except Exception as exc:
@@ -1815,3 +1914,139 @@ async def get_sentiment(ticker: str, force_refresh: bool = False) -> dict:
     }
     _sentiment_cache_put(ticker, result)
     return result
+
+
+# ── Ticker → sector lookup table ──────────────────────────────────────────────
+# Used by the Inverse Cramer sector-fallback path: when the requested ticker
+# has no recent Cramer coverage we look up peers in the same sector and
+# return their most recent mentions.  yfinance's Ticker.info["sector"] is
+# available but slow and unreliable; this table covers the most-traded names.
+# Sectors deliberately match the bucket names used in _SECTOR_KEYWORDS above.
+
+_TICKER_SECTOR_MAP: Dict[str, str] = {
+    # Technology
+    "AAPL": "tech", "MSFT": "tech", "GOOG": "tech", "GOOGL": "tech",
+    "META": "tech", "AMZN": "tech", "TSLA": "tech", "NVDA": "tech",
+    "AMD": "tech",  "INTC": "tech", "CRM": "tech",  "ORCL": "tech",
+    "ADBE": "tech", "QCOM": "tech", "AVGO": "tech", "TXN": "tech",
+    "NFLX": "tech", "UBER": "tech", "LYFT": "tech", "SNAP": "tech",
+    "PINS": "tech", "TWTR": "tech", "SPOT": "tech", "ZM": "tech",
+    "SHOP": "tech", "SQ": "tech",   "PYPL": "tech", "NET": "tech",
+    "DDOG": "tech", "SNOW": "tech", "PLTR": "tech", "RBLX": "tech",
+    "HOOD": "tech", "COIN": "tech", "MSTR": "tech",
+    # Energy
+    "XOM": "energy", "CVX": "energy", "COP": "energy", "SLB": "energy",
+    "OXY": "energy", "MPC": "energy", "VLO": "energy", "PSX": "energy",
+    "EOG": "energy", "PXD": "energy", "HAL": "energy", "BKR": "energy",
+    "DVN": "energy", "FANG": "energy", "APA": "energy",
+    # Financials
+    "JPM": "financials", "BAC": "financials", "WFC": "financials",
+    "GS": "financials",  "MS": "financials",  "C": "financials",
+    "BRK.B": "financials", "BLK": "financials", "SCHW": "financials",
+    "AXP": "financials", "V": "financials",  "MA": "financials",
+    "COF": "financials", "DFS": "financials", "SYF": "financials",
+    "ALLY": "financials", "BX": "financials", "KKR": "financials",
+    # Healthcare
+    "JNJ": "healthcare", "PFE": "healthcare", "MRK": "healthcare",
+    "ABBV": "healthcare", "BMY": "healthcare", "AMGN": "healthcare",
+    "GILD": "healthcare", "BIIB": "healthcare", "REGN": "healthcare",
+    "LLY": "healthcare", "UNH": "healthcare",  "CVS": "healthcare",
+    "HUM": "healthcare", "CI": "healthcare",   "ISRG": "healthcare",
+    "MRNA": "healthcare", "BNTX": "healthcare", "NVAX": "healthcare",
+}
+
+# Sector → representative tickers to search Cramer coverage for
+_SECTOR_PEER_TICKERS: Dict[str, List[str]] = {
+    "tech":       ["AAPL", "MSFT", "NVDA", "GOOG", "META", "AMZN", "TSLA"],
+    "energy":     ["XOM",  "CVX",  "COP",  "OXY",  "SLB"],
+    "financials": ["JPM",  "BAC",  "GS",   "MS",   "V",   "MA"],
+    "healthcare": ["JNJ",  "PFE",  "MRK",  "ABBV", "UNH", "LLY"],
+}
+
+
+async def _cramer_for_sector(sector: str) -> dict:
+    """
+    Fetch recent Jim Cramer mentions for the peer tickers in `sector`.
+
+    Called when the requested ticker has no Cramer coverage in the past 30 days.
+    Returns a lightweight dict shaped like fetch_cramer_sentiment() but with
+    source_label set to "Sector Cramer Signal".
+
+    The function tries peers in order and stops once it has ≥ 3 articles.
+    """
+    peers = _SECTOR_PEER_TICKERS.get(sector, [])
+    if not peers:
+        return {
+            "available": False, "article_count": 0,
+            "cramer_signal": "unknown", "inverse_signal": "WAIT",
+            "inverse_score": 0.0, "confidence": "low",
+            "buy_signals": 0, "sell_signals": 0,
+            "articles": [], "picks": [], "type_breakdown": {},
+            "source_label": "Sector Cramer Signal",
+        }
+
+    collected_articles: List[Dict] = []
+    total_buy = total_sell = 0
+
+    for peer in peers:
+        if len(collected_articles) >= 5:
+            break
+        try:
+            result = await fetch_cramer_sentiment(peer)
+            if not result.get("available"):
+                continue
+            for art in result.get("articles", [])[:3]:
+                # Tag each article with the peer ticker it came from
+                art = dict(art)
+                art["peer_ticker"] = peer
+                collected_articles.append(art)
+            total_buy  += result.get("buy_signals",  0)
+            total_sell += result.get("sell_signals", 0)
+        except Exception as exc:
+            logger.debug("[_cramer_for_sector] peer %s error: %s", peer, exc)
+
+    n = len(collected_articles)
+    if n == 0:
+        cramer_signal = "unknown"
+        inverse_signal = "WAIT"
+        inverse_score = 0.0
+        confidence = "low"
+    else:
+        if total_buy > total_sell * 1.4:
+            cramer_signal = "bullish"
+        elif total_sell > total_buy * 1.4:
+            cramer_signal = "bearish"
+        else:
+            cramer_signal = "mixed"
+
+        if cramer_signal == "bullish":
+            inverse_signal = "SELL"; inverse_score = -0.45
+        elif cramer_signal == "bearish":
+            inverse_signal = "BUY";  inverse_score = +0.45
+        else:
+            inverse_signal = "WAIT"; inverse_score = 0.0
+
+        strength = abs(total_buy - total_sell) / max(total_buy + total_sell, 1)
+        confidence = "high" if n >= 5 and strength >= 0.5 else (
+            "medium" if n >= 2 and strength >= 0.25 else "low"
+        )
+
+    return {
+        "available":      n > 0,
+        "article_count":  n,
+        "cramer_signal":  cramer_signal,
+        "inverse_signal": inverse_signal,
+        "inverse_score":  round(inverse_score, 4),
+        "confidence":     confidence,
+        "buy_signals":    total_buy,
+        "sell_signals":   total_sell,
+        "articles":       collected_articles[:5],
+        "picks":          [],
+        "type_breakdown": {},
+        "source_label":   "Sector Cramer Signal",
+    }
+
+
+def get_ticker_sector(ticker: str) -> Optional[str]:
+    """Return the sector for a ticker, or None if unknown."""
+    return _TICKER_SECTOR_MAP.get(ticker.upper())
