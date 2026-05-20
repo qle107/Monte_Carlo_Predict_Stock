@@ -21,11 +21,11 @@ def test_backtest_runs(synth_df):
     assert -1 <= rep["expected_vs_real"] <= 1
 
     # ── Transaction cost fields ───────────────────────────────────────────────
-    assert "commission"      in rep
-    assert "slippage"        in rep
+    assert "commission" in rep
+    assert "slippage" in rep
     assert "round_trip_cost" in rep
-    assert rep["commission"]      >= 0
-    assert rep["slippage"]        >= 0
+    assert rep["commission"] >= 0
+    assert rep["slippage"] >= 0
     assert rep["round_trip_cost"] >= 0
 
     # ── Trade-level statistics ────────────────────────────────────────────────
@@ -74,17 +74,28 @@ def test_backtest_runs(synth_df):
 
 def test_backtest_too_few_bars():
     idx = pd.date_range("2024-01-02", periods=20, freq="15min", tz="UTC")
-    df = pd.DataFrame({
-        "open": np.linspace(100, 110, 20), "high": np.linspace(101, 111, 20),
-        "low": np.linspace(99, 109, 20),   "close": np.linspace(100, 110, 20),
-        "volume": [1000] * 20,
-    }, index=idx)
+    df = pd.DataFrame(
+        {
+            "open": np.linspace(100, 110, 20),
+            "high": np.linspace(101, 111, 20),
+            "low": np.linspace(99, 109, 20),
+            "close": np.linspace(100, 110, 20),
+            "volume": [1000] * 20,
+        },
+        index=idx,
+    )
     rep = walk_forward(df, n_forward=10, n_sim=50)
     assert rep["ok"] is False
     assert rep["n_evaluated"] == 0
     # Error result should still have all expected keys
-    for key in ("hit_rate", "brier_score", "sharpe_ratio", "max_drawdown",
-                "profit_factor", "max_consec_losses"):
+    for key in (
+        "hit_rate",
+        "brier_score",
+        "sharpe_ratio",
+        "max_drawdown",
+        "profit_factor",
+        "max_consec_losses",
+    ):
         assert key in rep
 
 
@@ -102,6 +113,6 @@ def test_backtest_downtrend(trend_down_df):
     rep = walk_forward(trend_down_df, n_forward=5, n_sim=50, mc_model="gaussian", step=5)
     assert rep["ok"] is True
     sell_count = sum(1 for r in rep["signals"] if "Sell" in r["label"])
-    buy_count  = sum(1 for r in rep["signals"] if "Buy"  in r["label"])
+    buy_count = sum(1 for r in rep["signals"] if "Buy" in r["label"])
     # In a clear downtrend sell signals should dominate (or at least exist)
     assert sell_count + buy_count > 0, "No directional signals generated"

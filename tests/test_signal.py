@@ -8,8 +8,8 @@ from core.signal import compute_signal
 
 def test_signal_basic(synth_df):
     sig = compute_signal(compute_indicators(synth_df))
-    assert -1.0 <= sig.composite  <= 1.0
-    assert  0.0 <= sig.confidence <= 1.0
+    assert -1.0 <= sig.composite <= 1.0
+    assert 0.0 <= sig.confidence <= 1.0
     assert sig.label in {"Strong buy", "Buy", "Neutral", "Sell", "Strong sell"}
     # vol_adj is clamped between 0.003 and 0.06
     assert 0.003 <= sig.vol_adj <= 0.06

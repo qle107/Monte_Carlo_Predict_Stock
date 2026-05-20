@@ -33,7 +33,6 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
-from typing import Dict, List, Optional, Set
 
 import httpx
 import yfinance as yf
@@ -43,48 +42,202 @@ logger = logging.getLogger(__name__)
 # ── Sentiment + category keyword sets ─────────────────────────────────────────
 # Kept in sync with the originals in api/server.py.
 
-_SENTIMENT_POSITIVE: Set[str] = {
-    "beat", "beats", "surge", "surges", "rally", "rallies", "gain", "gains",
-    "growth", "grew", "profit", "profits", "record", "upgrade", "upgraded",
-    "bullish", "outperform", "strong", "strength", "boom", "booming",
-    "breakthrough", "positive", "rise", "rises", "rose", "higher", "upbeat",
-    "recovery", "recover", "momentum", "accelerate", "accelerates", "expansion",
-    "exceeds", "exceed", "topped", "tops", "above expectations", "above forecast",
+_SENTIMENT_POSITIVE: set[str] = {
+    "beat",
+    "beats",
+    "surge",
+    "surges",
+    "rally",
+    "rallies",
+    "gain",
+    "gains",
+    "growth",
+    "grew",
+    "profit",
+    "profits",
+    "record",
+    "upgrade",
+    "upgraded",
+    "bullish",
+    "outperform",
+    "strong",
+    "strength",
+    "boom",
+    "booming",
+    "breakthrough",
+    "positive",
+    "rise",
+    "rises",
+    "rose",
+    "higher",
+    "upbeat",
+    "recovery",
+    "recover",
+    "momentum",
+    "accelerate",
+    "accelerates",
+    "expansion",
+    "exceeds",
+    "exceed",
+    "topped",
+    "tops",
+    "above expectations",
+    "above forecast",
 }
 
-_SENTIMENT_NEGATIVE: Set[str] = {
-    "miss", "misses", "drop", "drops", "dropped", "fall", "falls", "fell",
-    "loss", "losses", "decline", "declines", "declined", "bearish", "downgrade",
-    "downgraded", "underperform", "weak", "weakness", "recession", "crash",
-    "crashing", "fear", "risk", "risks", "cut", "cuts", "layoff", "layoffs",
-    "below expectations", "below forecast", "disappoints", "disappointing",
-    "concern", "concerns", "warning", "warns", "slump", "slumps", "plunge",
-    "plunges", "correction", "sell-off", "selloff", "contraction", "default",
-    "bankruptcy", "debt", "inflation", "stagflation", "tariff", "tariffs",
+_SENTIMENT_NEGATIVE: set[str] = {
+    "miss",
+    "misses",
+    "drop",
+    "drops",
+    "dropped",
+    "fall",
+    "falls",
+    "fell",
+    "loss",
+    "losses",
+    "decline",
+    "declines",
+    "declined",
+    "bearish",
+    "downgrade",
+    "downgraded",
+    "underperform",
+    "weak",
+    "weakness",
+    "recession",
+    "crash",
+    "crashing",
+    "fear",
+    "risk",
+    "risks",
+    "cut",
+    "cuts",
+    "layoff",
+    "layoffs",
+    "below expectations",
+    "below forecast",
+    "disappoints",
+    "disappointing",
+    "concern",
+    "concerns",
+    "warning",
+    "warns",
+    "slump",
+    "slumps",
+    "plunge",
+    "plunges",
+    "correction",
+    "sell-off",
+    "selloff",
+    "contraction",
+    "default",
+    "bankruptcy",
+    "debt",
+    "inflation",
+    "stagflation",
+    "tariff",
+    "tariffs",
 }
 
-_MACRO_KEYWORDS: Set[str] = {
-    "fed", "federal reserve", "fomc", "rate", "rates", "inflation", "cpi",
-    "ppi", "pce", "gdp", "unemployment", "jobs", "payroll", "treasury",
-    "yield", "yields", "recession", "economy", "economic", "interest rate",
-    "bls", "bea", "ism", "pmi", "debt ceiling", "fiscal", "monetary",
-    "jerome powell", "powell", "central bank", "quantitative", "tapering",
+_MACRO_KEYWORDS: set[str] = {
+    "fed",
+    "federal reserve",
+    "fomc",
+    "rate",
+    "rates",
+    "inflation",
+    "cpi",
+    "ppi",
+    "pce",
+    "gdp",
+    "unemployment",
+    "jobs",
+    "payroll",
+    "treasury",
+    "yield",
+    "yields",
+    "recession",
+    "economy",
+    "economic",
+    "interest rate",
+    "bls",
+    "bea",
+    "ism",
+    "pmi",
+    "debt ceiling",
+    "fiscal",
+    "monetary",
+    "jerome powell",
+    "powell",
+    "central bank",
+    "quantitative",
+    "tapering",
 }
 
-_SECTOR_KEYWORDS: Dict[str, Set[str]] = {
-    "tech": {"technology", "software", "chip", "semiconductor", "ai", "cloud", "nvidia",
-             "apple", "google", "microsoft", "meta", "amazon", "tesla"},
-    "energy": {"oil", "gas", "energy", "opec", "crude", "refinery", "exxon", "chevron",
-               "lng", "pipeline", "coal", "renewables", "solar", "wind"},
-    "financials": {"bank", "banking", "jpmorgan", "goldman", "morgan stanley", "credit",
-                   "loan", "lending", "fintech", "insurance", "brokerage"},
-    "healthcare": {"fda", "drug", "pharma", "biotech", "clinical", "trial", "approval",
-                   "vaccine", "healthcare", "hospital", "medical"},
+_SECTOR_KEYWORDS: dict[str, set[str]] = {
+    "tech": {
+        "technology",
+        "software",
+        "chip",
+        "semiconductor",
+        "ai",
+        "cloud",
+        "nvidia",
+        "apple",
+        "google",
+        "microsoft",
+        "meta",
+        "amazon",
+        "tesla",
+    },
+    "energy": {
+        "oil",
+        "gas",
+        "energy",
+        "opec",
+        "crude",
+        "refinery",
+        "exxon",
+        "chevron",
+        "lng",
+        "pipeline",
+        "coal",
+        "renewables",
+        "solar",
+        "wind",
+    },
+    "financials": {
+        "bank",
+        "banking",
+        "jpmorgan",
+        "goldman",
+        "morgan stanley",
+        "credit",
+        "loan",
+        "lending",
+        "fintech",
+        "insurance",
+        "brokerage",
+    },
+    "healthcare": {
+        "fda",
+        "drug",
+        "pharma",
+        "biotech",
+        "clinical",
+        "trial",
+        "approval",
+        "vaccine",
+        "healthcare",
+        "hospital",
+        "medical",
+    },
 }
 
 _BUFFER_MAX = 50
-_POLL_INTERVAL = 20          # seconds between poll cycles per ticker
-_MIN_TICKER_CYCLE = 5        # seconds between polling individual tickers in a cycle
+_POLL_INTERVAL = 20  # seconds between poll cycles per ticker
+_MIN_TICKER_CYCLE = 5  # seconds between polling individual tickers in a cycle
 
 
 def _score_sentiment(title: str, summary: str = "") -> str:
@@ -119,6 +272,7 @@ def _dedup_key(title: str) -> str:
 
 # ── NewsStream ─────────────────────────────────────────────────────────────────
 
+
 class NewsStream:
     """
     Singleton-ish object that owns the polling loop and subscription state.
@@ -127,20 +281,20 @@ class NewsStream:
 
     def __init__(self) -> None:
         # Per-ticker ring buffer: ticker → list[item] (newest-first, max 50)
-        self._buffers: Dict[str, List[dict]] = defaultdict(list)
+        self._buffers: dict[str, list[dict]] = defaultdict(list)
         # Per-ticker seen-set for dedup
-        self._seen: Dict[str, Set[str]] = defaultdict(set)
+        self._seen: dict[str, set[str]] = defaultdict(set)
         # WS client → subscribed ticker
-        self._subscribers: Dict[object, str] = {}   # WebSocket → ticker
+        self._subscribers: dict[object, str] = {}  # WebSocket → ticker
         self._lock = asyncio.Lock()
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
-    def recent(self, ticker: str) -> List[dict]:
+    def recent(self, ticker: str) -> list[dict]:
         """Return current buffer for ticker (newest first, up to 50 items)."""
         return list(self._buffers.get(ticker.upper(), []))
 
-    async def subscribe(self, ws, ticker: str) -> List[dict]:
+    async def subscribe(self, ws, ticker: str) -> list[dict]:
         """
         Register (or update) a WebSocket client's ticker subscription.
         Returns the current buffer so the caller can send an init burst.
@@ -154,7 +308,7 @@ class NewsStream:
         async with self._lock:
             self._subscribers.pop(ws, None)
 
-    def active_tickers(self) -> Set[str]:
+    def active_tickers(self) -> set[str]:
         """Set of tickers currently watched by at least one WS client."""
         return set(self._subscribers.values())
 
@@ -189,16 +343,17 @@ class NewsStream:
 
     # ── Internal helpers ───────────────────────────────────────────────────────
 
-    async def _poll_ticker(self, ticker: str) -> List[dict]:
+    async def _poll_ticker(self, ticker: str) -> list[dict]:
         """
         Fetch fresh news for `ticker` from yfinance + Google News RSS.
         Returns only items not already in the buffer (new-to-us).
         """
         loop = asyncio.get_running_loop()
-        raw: List[dict] = []
+        raw: list[dict] = []
 
         # 1. yfinance news (quick, blocking, offloaded to thread pool)
         try:
+
             def _yf():
                 t_obj = yf.Ticker(ticker)
                 return t_obj.news or []
@@ -207,7 +362,7 @@ class NewsStream:
             cutoff = datetime.now(timezone.utc) - timedelta(days=7)
             for item in yf_items[:12]:
                 pub_ts = item.get("providerPublishTime") or item.get("publish_time")
-                dt: Optional[datetime] = None
+                dt: datetime | None = None
                 if pub_ts:
                     try:
                         dt = datetime.fromtimestamp(int(pub_ts), tz=timezone.utc)
@@ -218,37 +373,36 @@ class NewsStream:
                 title = (item.get("title") or "").strip()
                 if not title:
                     continue
-                raw.append({
-                    "ticker":        ticker,
-                    "title":         title,
-                    "url":           item.get("link") or item.get("url", ""),
-                    "source":        item.get("publisher", "Yahoo Finance"),
-                    "published_iso": dt.isoformat() if dt else "",
-                    "sentiment":     _score_sentiment(title),
-                    "category":      _classify_category(title, ticker),
-                })
+                raw.append(
+                    {
+                        "ticker": ticker,
+                        "title": title,
+                        "url": item.get("link") or item.get("url", ""),
+                        "source": item.get("publisher", "Yahoo Finance"),
+                        "published_iso": dt.isoformat() if dt else "",
+                        "sentiment": _score_sentiment(title),
+                        "category": _classify_category(title, ticker),
+                    }
+                )
         except Exception as exc:
             logger.debug("[news_stream] yfinance error for %s: %s", ticker, exc)
 
         # 2. Google News RSS
         try:
             query = f"{ticker} stock"
-            rss_url = (
-                f"https://news.google.com/rss/search"
-                f"?q={query}&hl=en-US&gl=US&ceid=US:en"
-            )
+            rss_url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
             async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
                 resp = await client.get(rss_url, headers={"User-Agent": "Mozilla/5.0"})
             if resp.status_code == 200:
                 root = ET.fromstring(resp.text)
                 cutoff = datetime.now(timezone.utc) - timedelta(days=7)
-                for item in (root.find("channel") or []):
+                for item in root.find("channel") or []:
                     if item.tag != "item":
                         continue
-                    title   = (item.findtext("title") or "").strip()
-                    url     = (item.findtext("link")  or "").strip()
+                    title = (item.findtext("title") or "").strip()
+                    url = (item.findtext("link") or "").strip()
                     pub_str = (item.findtext("pubDate") or "").strip()
-                    source  = (item.findtext("source") or "Google News").strip()
+                    source = (item.findtext("source") or "Google News").strip()
                     if not title or not url:
                         continue
                     try:
@@ -257,57 +411,59 @@ class NewsStream:
                         dt = None
                     if dt and dt < cutoff:
                         continue
-                    raw.append({
-                        "ticker":        ticker,
-                        "title":         title,
-                        "url":           url,
-                        "source":        source,
-                        "published_iso": dt.isoformat() if dt else "",
-                        "sentiment":     _score_sentiment(title),
-                        "category":      _classify_category(title, ticker),
-                    })
+                    raw.append(
+                        {
+                            "ticker": ticker,
+                            "title": title,
+                            "url": url,
+                            "source": source,
+                            "published_iso": dt.isoformat() if dt else "",
+                            "sentiment": _score_sentiment(title),
+                            "category": _classify_category(title, ticker),
+                        }
+                    )
                     if len(raw) >= 40:
                         break
         except Exception as exc:
             logger.debug("[news_stream] Google News RSS error for %s: %s", ticker, exc)
 
         # 3. Dedup against seen set and update buffer
-        new_items: List[dict] = []
+        new_items: list[dict] = []
         async with self._lock:
             seen = self._seen[ticker]
-            buf  = self._buffers[ticker]
+            buf = self._buffers[ticker]
             for item in raw:
                 key = _dedup_key(item["title"])
                 if key in seen:
                     continue
                 seen.add(key)
                 new_items.append(item)
-                buf.insert(0, item)   # newest first
+                buf.insert(0, item)  # newest first
             # Trim buffer to max size
             if len(buf) > _BUFFER_MAX:
-                removed = buf[_BUFFER_MAX:]
+                buf[_BUFFER_MAX:]
                 del buf[_BUFFER_MAX:]
                 # Also prune the seen-set to avoid unbounded growth
                 # (keep only keys that are still in the buffer)
                 active_keys = {_dedup_key(i["title"]) for i in buf}
                 self._seen[ticker] = active_keys
 
-        return new_items   # list ordered newest-first
+        return new_items  # list ordered newest-first
 
-    async def _broadcast(self, ticker: str, items: List[dict]) -> None:
+    async def _broadcast(self, ticker: str, items: list[dict]) -> None:
         """Fan-out new items to all clients subscribed to `ticker`."""
         dead = []
         async with self._lock:
-            subscribers = {
-                ws for ws, t in self._subscribers.items() if t == ticker
-            }
+            subscribers = {ws for ws, t in self._subscribers.items() if t == ticker}
         for ws in subscribers:
             try:
-                await ws.send_json({
-                    "type":   "update",
-                    "ticker": ticker,
-                    "items":  items,
-                })
+                await ws.send_json(
+                    {
+                        "type": "update",
+                        "ticker": ticker,
+                        "items": items,
+                    }
+                )
             except Exception:
                 dead.append(ws)
         # Clean up broken connections

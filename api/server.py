@@ -10,42 +10,40 @@ import hashlib
 import io
 import logging
 import xml.etree.ElementTree as ET
-from contextlib import asynccontextmanager
-from datetime import date as _date, datetime, timedelta, timezone
+from contextlib import asynccontextmanager, suppress
+from datetime import date as _date
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Optional, Set
 
 import httpx
 import pandas as pd
 import yfinance as yf
-
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Header
+from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from config import VALID_INTERVALS, VALID_MC_MODELS, cfg
-from core import analyse, _df_to_candles
+from core import _df_to_candles, analyse
 from core.backtest import walk_forward
 from core.fetcher import fetch_candles
+from core.hawkes import analyse_hawkes
+from core.hmm_regime import analyse_hmm, blend_zone_probability
 from core.indicators import compute_indicators
+from core.macro import fetch_macro_indicators  # ← NEW: macroeconomic indicators
+from core.news_stream import news_stream
+from core.options_flow import fetch_options_flow
 from core.regime import detect_regime
-from core.scanner import scan_tickers, get_watchlist, WATCHLISTS
+from core.scanner import WATCHLISTS, get_watchlist, scan_tickers
+from core.sentiment import _cramer_for_sector, fetch_global_market_sentiment, get_sentiment, get_ticker_sector
 from core.signal import compute_signal
 from core.store import SignalStore
 from core.trade_setup import trade_setup_from_analysis, trade_setup_from_scan
-from core.sentiment import fetch_global_market_sentiment, get_sentiment, _cramer_for_sector, get_ticker_sector
-from core.news_stream import news_stream
+from core.volume_profile import compute_volume_profile
 from core.zone_scanner import zone_scan_tickers
 from core.zones import detect_zones
-from core.volume_profile import compute_volume_profile
-from core.options_flow import fetch_options_flow
-from core.hawkes import analyse_hawkes
-from core.hmm_regime import analyse_hmm, blend_zone_probability
-from core.macro import fetch_macro_indicators   # ← NEW: macroeconomic indicators
 
 from .models import BacktestRequest, ConfigUpdate, ScanRequest
-
 
 # ── News sentiment & category helpers ─────────────────────────────────────────
 # Lightweight keyword-based approach — no NLP library required.
@@ -53,42 +51,196 @@ from .models import BacktestRequest, ConfigUpdate, ScanRequest
 # Category: classify by dominant topic keywords.
 
 _SENTIMENT_POSITIVE = {
-    "beat", "beats", "surge", "surges", "rally", "rallies", "gain", "gains",
-    "growth", "grew", "profit", "profits", "record", "upgrade", "upgraded",
-    "bullish", "outperform", "strong", "strength", "boom", "booming",
-    "breakthrough", "positive", "rise", "rises", "rose", "higher", "upbeat",
-    "recovery", "recover", "momentum", "accelerate", "accelerates", "expansion",
-    "exceeds", "exceed", "topped", "tops", "above expectations", "above forecast",
+    "beat",
+    "beats",
+    "surge",
+    "surges",
+    "rally",
+    "rallies",
+    "gain",
+    "gains",
+    "growth",
+    "grew",
+    "profit",
+    "profits",
+    "record",
+    "upgrade",
+    "upgraded",
+    "bullish",
+    "outperform",
+    "strong",
+    "strength",
+    "boom",
+    "booming",
+    "breakthrough",
+    "positive",
+    "rise",
+    "rises",
+    "rose",
+    "higher",
+    "upbeat",
+    "recovery",
+    "recover",
+    "momentum",
+    "accelerate",
+    "accelerates",
+    "expansion",
+    "exceeds",
+    "exceed",
+    "topped",
+    "tops",
+    "above expectations",
+    "above forecast",
 }
 
 _SENTIMENT_NEGATIVE = {
-    "miss", "misses", "drop", "drops", "dropped", "fall", "falls", "fell",
-    "loss", "losses", "decline", "declines", "declined", "bearish", "downgrade",
-    "downgraded", "underperform", "weak", "weakness", "recession", "crash",
-    "crashing", "fear", "risk", "risks", "cut", "cuts", "layoff", "layoffs",
-    "below expectations", "below forecast", "disappoints", "disappointing",
-    "concern", "concerns", "warning", "warns", "slump", "slumps", "plunge",
-    "plunges", "correction", "sell-off", "selloff", "contraction", "default",
-    "bankruptcy", "debt", "inflation", "stagflation", "tariff", "tariffs",
+    "miss",
+    "misses",
+    "drop",
+    "drops",
+    "dropped",
+    "fall",
+    "falls",
+    "fell",
+    "loss",
+    "losses",
+    "decline",
+    "declines",
+    "declined",
+    "bearish",
+    "downgrade",
+    "downgraded",
+    "underperform",
+    "weak",
+    "weakness",
+    "recession",
+    "crash",
+    "crashing",
+    "fear",
+    "risk",
+    "risks",
+    "cut",
+    "cuts",
+    "layoff",
+    "layoffs",
+    "below expectations",
+    "below forecast",
+    "disappoints",
+    "disappointing",
+    "concern",
+    "concerns",
+    "warning",
+    "warns",
+    "slump",
+    "slumps",
+    "plunge",
+    "plunges",
+    "correction",
+    "sell-off",
+    "selloff",
+    "contraction",
+    "default",
+    "bankruptcy",
+    "debt",
+    "inflation",
+    "stagflation",
+    "tariff",
+    "tariffs",
 }
 
 _MACRO_KEYWORDS = {
-    "fed", "federal reserve", "fomc", "rate", "rates", "inflation", "cpi",
-    "ppi", "pce", "gdp", "unemployment", "jobs", "payroll", "treasury",
-    "yield", "yields", "recession", "economy", "economic", "interest rate",
-    "bls", "bea", "ism", "pmi", "debt ceiling", "fiscal", "monetary",
-    "jerome powell", "powell", "central bank", "quantitative", "tapering",
+    "fed",
+    "federal reserve",
+    "fomc",
+    "rate",
+    "rates",
+    "inflation",
+    "cpi",
+    "ppi",
+    "pce",
+    "gdp",
+    "unemployment",
+    "jobs",
+    "payroll",
+    "treasury",
+    "yield",
+    "yields",
+    "recession",
+    "economy",
+    "economic",
+    "interest rate",
+    "bls",
+    "bea",
+    "ism",
+    "pmi",
+    "debt ceiling",
+    "fiscal",
+    "monetary",
+    "jerome powell",
+    "powell",
+    "central bank",
+    "quantitative",
+    "tapering",
 }
 
 _SECTOR_KEYWORDS = {
-    "tech": {"technology", "software", "chip", "semiconductor", "ai", "cloud", "nvidia",
-              "apple", "google", "microsoft", "meta", "amazon", "tesla"},
-    "energy": {"oil", "gas", "energy", "opec", "crude", "refinery", "exxon", "chevron",
-                "lng", "pipeline", "coal", "renewables", "solar", "wind"},
-    "financials": {"bank", "banking", "jpmorgan", "goldman", "morgan stanley", "credit",
-                   "loan", "lending", "fintech", "insurance", "brokerage"},
-    "healthcare": {"fda", "drug", "pharma", "biotech", "clinical", "trial", "approval",
-                   "vaccine", "healthcare", "hospital", "medical"},
+    "tech": {
+        "technology",
+        "software",
+        "chip",
+        "semiconductor",
+        "ai",
+        "cloud",
+        "nvidia",
+        "apple",
+        "google",
+        "microsoft",
+        "meta",
+        "amazon",
+        "tesla",
+    },
+    "energy": {
+        "oil",
+        "gas",
+        "energy",
+        "opec",
+        "crude",
+        "refinery",
+        "exxon",
+        "chevron",
+        "lng",
+        "pipeline",
+        "coal",
+        "renewables",
+        "solar",
+        "wind",
+    },
+    "financials": {
+        "bank",
+        "banking",
+        "jpmorgan",
+        "goldman",
+        "morgan stanley",
+        "credit",
+        "loan",
+        "lending",
+        "fintech",
+        "insurance",
+        "brokerage",
+    },
+    "healthcare": {
+        "fda",
+        "drug",
+        "pharma",
+        "biotech",
+        "clinical",
+        "trial",
+        "approval",
+        "vaccine",
+        "healthcare",
+        "hospital",
+        "medical",
+    },
     "macro": _MACRO_KEYWORDS,
 }
 
@@ -128,15 +280,16 @@ def _classify_category(title: str, ticker: str = "") -> str:
             return "Sector"
     return "General"
 
+
 logger = logging.getLogger(__name__)
 
 # ─── State ──────────────────────────────────────────────────────────────────
-clients:             Set[WebSocket]            = set()
-_last_result:        dict                      = {}
-_poll_task:          Optional[asyncio.Task]    = None
-_news_stream_task:   Optional[asyncio.Task]    = None
-_store:              Optional[SignalStore]      = None
-_analysis_lock:      Optional[asyncio.Lock]    = None   # guards _run_analysis — set in lifespan
+clients: set[WebSocket] = set()
+_last_result: dict = {}
+_poll_task: asyncio.Task | None = None
+_news_stream_task: asyncio.Task | None = None
+_store: SignalStore | None = None
+_analysis_lock: asyncio.Lock | None = None  # guards _run_analysis — set in lifespan
 
 
 # ─── Lifespan (replaces deprecated @app.on_event) ───────────────────────────
@@ -144,7 +297,7 @@ _analysis_lock:      Optional[asyncio.Lock]    = None   # guards _run_analysis �
 async def lifespan(app: FastAPI):
     global _poll_task, _news_stream_task, _store, _analysis_lock
     _store = SignalStore(cfg.db_path)
-    _analysis_lock = asyncio.Lock()          # must be created inside the running loop
+    _analysis_lock = asyncio.Lock()  # must be created inside the running loop
     _poll_task = asyncio.create_task(_poll_loop())
     _news_stream_task = asyncio.create_task(news_stream.run_loop())
     logger.info("Lifespan startup complete (db=%s)", cfg.db_path)
@@ -154,10 +307,8 @@ async def lifespan(app: FastAPI):
         for task in (_poll_task, _news_stream_task):
             if task and not task.done():
                 task.cancel()
-                try:
+                with suppress(asyncio.CancelledError, Exception):
                     await task
-                except (asyncio.CancelledError, Exception):
-                    pass
         if _store:
             _store.close()
         logger.info("Lifespan shutdown complete")
@@ -173,6 +324,7 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # ─── HTML ────────────────────────────────────────────────────────────────────
 
+
 @app.get("/", response_class=HTMLResponse)
 async def root():
     html = Path(__file__).parent.parent / "templates" / "dashboard.html"
@@ -180,6 +332,7 @@ async def root():
 
 
 # ─── REST: signal/config/health ──────────────────────────────────────────────
+
 
 @app.get("/api/signal")
 async def get_signal():
@@ -200,11 +353,11 @@ async def get_config():
 
 
 @app.post("/api/config")
-async def update_config(update: ConfigUpdate, api_key: Optional[str] = Header(None)):
+async def update_config(update: ConfigUpdate, api_key: str | None = Header(None)):
     """Apply config changes; restart poll loop; return fresh analysis."""
     if cfg.api_key and (not api_key or api_key != cfg.api_key):
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
-    
+
     global _poll_task
 
     changed: list[str] = []
@@ -222,10 +375,8 @@ async def update_config(update: ConfigUpdate, api_key: Optional[str] = Header(No
     # Restart poll loop with new settings
     if _poll_task and not _poll_task.done():
         _poll_task.cancel()
-        try:
+        with suppress(asyncio.CancelledError, Exception):
             await _poll_task
-        except (asyncio.CancelledError, Exception):
-            pass
 
     # Immediate fresh analysis — include full result in response so the
     # frontend can update the chart instantly without waiting for WS broadcast.
@@ -239,34 +390,35 @@ async def update_config(update: ConfigUpdate, api_key: Optional[str] = Header(No
     _poll_task = asyncio.create_task(_poll_loop())
 
     return {
-        "status":  "ok",
+        "status": "ok",
         "changed": changed,
-        "config":  await get_config(),
-        "result":  result if "error" not in result else None,
+        "config": await get_config(),
+        "result": result if "error" not in result else None,
     }
 
 
 @app.get("/api/health")
 async def health():
     return {
-        "status":    "ok",
-        "ticker":    cfg.ticker,
-        "interval":  cfg.interval,
-        "mc_model":  cfg.mc_model,
+        "status": "ok",
+        "ticker": cfg.ticker,
+        "interval": cfg.interval,
+        "mc_model": cfg.mc_model,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
 # ─── REST: backtest / history / metrics / export ────────────────────────────
 
+
 @app.post("/api/backtest")
 async def api_backtest(req: BacktestRequest):
     """Walk-forward backtest. Reports hit-rate, Brier score, calibration."""
-    ticker       = (req.ticker or cfg.ticker).upper().strip()
-    interval     = req.interval     or cfg.interval
-    n_forward    = req.n_forward    or cfg.n_forward
-    n_sim        = req.n_sim        or min(cfg.n_sim, 1000)  # cap for backtest speed
-    mc_model     = req.mc_model     or cfg.mc_model
+    ticker = (req.ticker or cfg.ticker).upper().strip()
+    interval = req.interval or cfg.interval
+    n_forward = req.n_forward or cfg.n_forward
+    n_sim = req.n_sim or min(cfg.n_sim, 1000)  # cap for backtest speed
+    mc_model = req.mc_model or cfg.mc_model
     history_bars = req.history_bars or 200
 
     try:
@@ -277,23 +429,27 @@ async def api_backtest(req: BacktestRequest):
         report = await loop.run_in_executor(
             None,
             walk_forward,
-            df, n_forward, n_sim, mc_model, 50,
+            df,
+            n_forward,
+            n_sim,
+            mc_model,
+            50,
         )
     except Exception as e:
         logger.exception("Backtest failed")
-        raise HTTPException(status_code=400, detail=f"backtest failed: {e}")
+        raise HTTPException(status_code=400, detail=f"backtest failed: {e}")  # noqa: B904
 
     return {
-        "ticker":     ticker,
-        "interval":   interval,
-        "mc_model":   mc_model,
-        "n_forward":  n_forward,
+        "ticker": ticker,
+        "interval": interval,
+        "mc_model": mc_model,
+        "n_forward": n_forward,
         **report,
     }
 
 
 @app.get("/api/history")
-async def api_history(ticker: Optional[str] = None, limit: int = 100):
+async def api_history(ticker: str | None = None, limit: int = 100):
     """Recent persisted signals (newest first)."""
     if _store is None:
         return {"items": []}
@@ -303,7 +459,7 @@ async def api_history(ticker: Optional[str] = None, limit: int = 100):
 
 
 @app.get("/api/metrics")
-async def api_metrics(ticker: Optional[str] = None):
+async def api_metrics(ticker: str | None = None):
     """Aggregate accuracy stats from persisted history."""
     if _store is None:
         return {"signals": 0}
@@ -311,7 +467,7 @@ async def api_metrics(ticker: Optional[str] = None):
 
 
 @app.get("/api/metrics/accuracy")
-async def api_accuracy(ticker: Optional[str] = None, limit: int = 200):
+async def api_accuracy(ticker: str | None = None, limit: int = 200):
     """
     Directional hit-rate computed from stored signal history.
 
@@ -320,8 +476,7 @@ async def api_accuracy(ticker: Optional[str] = None, limit: int = 200):
     average prob_up for Buy vs Sell calls.
     """
     if _store is None:
-        return {"n_calls": 0, "hit_rate": None,
-                "avg_prob_up_on_buys": None, "avg_prob_up_on_sells": None}
+        return {"n_calls": 0, "hit_rate": None, "avg_prob_up_on_buys": None, "avg_prob_up_on_sells": None}
     return _store.accuracy_window(ticker=ticker, limit=max(10, min(limit, 5000)))
 
 
@@ -339,7 +494,7 @@ async def api_prune(days: int = 30):
 
 
 @app.get("/api/export.csv")
-async def api_export_csv(ticker: Optional[str] = None, limit: int = 1000):
+async def api_export_csv(ticker: str | None = None, limit: int = 1000):
     """Stream signal history as CSV."""
     if _store is None:
         rows = []
@@ -349,25 +504,53 @@ async def api_export_csv(ticker: Optional[str] = None, limit: int = 1000):
     def _gen():
         buf = io.StringIO()
         w = csv.writer(buf)
-        w.writerow([
-            "ts", "ticker", "interval", "price", "label", "confidence",
-            "drift_bias", "prob_up", "prob_flat", "prob_down",
-            "median_price", "mc_model", "regime",
-            "potential_up", "potential_down", "potential_flat",
-        ])
-        yield buf.getvalue(); buf.seek(0); buf.truncate(0)
+        w.writerow(
+            [
+                "ts",
+                "ticker",
+                "interval",
+                "price",
+                "label",
+                "confidence",
+                "drift_bias",
+                "prob_up",
+                "prob_flat",
+                "prob_down",
+                "median_price",
+                "mc_model",
+                "regime",
+                "potential_up",
+                "potential_down",
+                "potential_flat",
+            ]
+        )
+        yield buf.getvalue()
+        buf.seek(0)
+        buf.truncate(0)
         for r in rows:
-            w.writerow([
-                r.get("ts", ""), r.get("ticker", ""), r.get("interval", ""),
-                r.get("price", ""), r.get("label", ""), r.get("confidence", ""),
-                r.get("drift_bias", ""), r.get("prob_up", ""),
-                r.get("prob_flat", ""), r.get("prob_down", ""),
-                r.get("median_price", ""), r.get("mc_model", ""),
-                r.get("regime", ""),
-                r.get("potential_up", ""), r.get("potential_down", ""),
-                r.get("potential_flat", ""),
-            ])
-            yield buf.getvalue(); buf.seek(0); buf.truncate(0)
+            w.writerow(
+                [
+                    r.get("ts", ""),
+                    r.get("ticker", ""),
+                    r.get("interval", ""),
+                    r.get("price", ""),
+                    r.get("label", ""),
+                    r.get("confidence", ""),
+                    r.get("drift_bias", ""),
+                    r.get("prob_up", ""),
+                    r.get("prob_flat", ""),
+                    r.get("prob_down", ""),
+                    r.get("median_price", ""),
+                    r.get("mc_model", ""),
+                    r.get("regime", ""),
+                    r.get("potential_up", ""),
+                    r.get("potential_down", ""),
+                    r.get("potential_flat", ""),
+                ]
+            )
+            yield buf.getvalue()
+            buf.seek(0)
+            buf.truncate(0)
 
     fname = f"mc_trader_{(ticker or 'all').lower()}.csv"
     return StreamingResponse(
@@ -379,6 +562,7 @@ async def api_export_csv(ticker: Optional[str] = None, limit: int = 1000):
 
 # ─── REST: portfolio price proxy ─────────────────────────────────────────────
 
+
 @app.get("/api/portfolio/price/historical")
 async def portfolio_price_historical(ticker: str, date: str):
     """
@@ -389,10 +573,9 @@ async def portfolio_price_historical(ticker: str, date: str):
         target = _date.fromisoformat(date)
         # Fetch a window around the target date to handle weekends/holidays
         start = (target - timedelta(days=5)).isoformat()
-        end   = (target + timedelta(days=2)).isoformat()
+        end = (target + timedelta(days=2)).isoformat()
         df = await asyncio.get_running_loop().run_in_executor(
-            None,
-            lambda: yf.download(ticker.upper(), start=start, end=end, progress=False, auto_adjust=True)
+            None, lambda: yf.download(ticker.upper(), start=start, end=end, progress=False, auto_adjust=True)
         )
         if df.empty:
             raise HTTPException(status_code=404, detail=f"No data for {ticker}")
@@ -409,7 +592,7 @@ async def portfolio_price_historical(ticker: str, date: str):
         raise
     except Exception as e:
         logger.warning("portfolio historical price failed for %s on %s: %s", ticker, date, e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))  # noqa: B904
 
 
 @app.get("/api/portfolio/price/live")
@@ -436,13 +619,14 @@ async def portfolio_price_live(ticker: str):
         raise
     except Exception as e:
         logger.warning("portfolio live price failed for %s: %s", ticker, e)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))  # noqa: B904
 
 
 # ─── REST: market structure ──────────────────────────────────────────────────
 
+
 @app.get("/api/market-structure")
-async def api_market_structure(ticker: Optional[str] = None):
+async def api_market_structure(ticker: str | None = None):
     """
     Run all four structural analysis models and return a unified result.
 
@@ -454,11 +638,11 @@ async def api_market_structure(ticker: Optional[str] = None):
 
     Also returns blended zone-reaction probabilities that combine
     HMM regime priors + Hawkes excitation + zone strength.
-    
+
     Timeout: 40 seconds total to prevent indefinite hanging.
     """
     symbol = (ticker or cfg.ticker).upper().strip()
-    loop   = asyncio.get_running_loop()
+    loop = asyncio.get_running_loop()
 
     try:
         # Wrap entire analysis with timeout to prevent hanging
@@ -470,10 +654,10 @@ async def api_market_structure(ticker: Optional[str] = None):
 
     except asyncio.TimeoutError:
         logger.error("market-structure timeout after 40s for %s", symbol)
-        raise HTTPException(status_code=504, detail="Market structure analysis timed out (>40s)")
+        raise HTTPException(status_code=504, detail="Market structure analysis timed out (>40s)")  # noqa: B904
     except Exception as exc:
         logger.exception("market-structure failed for %s", symbol)
-        raise HTTPException(status_code=500, detail=f"market structure failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"market structure failed: {exc}")  # noqa: B904
 
 
 async def _api_market_structure_impl(symbol: str, loop):
@@ -495,22 +679,26 @@ async def _api_market_structure_impl(symbol: str, loop):
     • Pipeline-step logs emitted at `data-fetch → preprocess → model-fit →
       classify → render` boundaries (logger.debug, only visible at DEBUG).
     """
-    HMM_MIN_BARS    = 40   # matches core.hmm_regime.MIN_BARS
-    HAWKES_MIN_BARS = 20   # matches core.hawkes.analyse_hawkes
+    HMM_MIN_BARS = 40  # matches core.hmm_regime.MIN_BARS
+    HAWKES_MIN_BARS = 20  # matches core.hawkes.analyse_hawkes
     try:
         # ── 1. data-fetch ────────────────────────────────────────────────
         logger.debug("[ms] data-fetch start  symbol=%s interval=%s", symbol, cfg.interval)
         df = await loop.run_in_executor(
-            None, fetch_candles, symbol, cfg.interval,
-            max(cfg.lookback, cfg.chart_bars), cfg.extended,
+            None,
+            fetch_candles,
+            symbol,
+            cfg.interval,
+            max(cfg.lookback, cfg.chart_bars),
+            cfg.extended,
         )
         n_bars = len(df)
-        spot   = float(df["close"].iloc[-1]) if not df.empty else None
+        spot = float(df["close"].iloc[-1]) if not df.empty else None
         logger.debug("[ms] data-fetch done   bars=%d spot=%s", n_bars, spot)
 
         # ── 2. preprocess ────────────────────────────────────────────────
         log_returns = df["close"].pct_change().dropna().values.tolist()
-        n_returns   = len(log_returns)
+        n_returns = len(log_returns)
         logger.debug("[ms] preprocess        n_returns=%d", n_returns)
 
         # ── 3. model-fit: volume-profile, zones, options-flow, HMM in parallel ─
@@ -523,11 +711,16 @@ async def _api_market_structure_impl(symbol: str, loop):
             loop.run_in_executor(None, analyse_hmm, log_returns),
         ]
         vp_raw, zone_raw, of_raw, hmm_raw = await asyncio.gather(
-            *_ms_tasks, return_exceptions=True,
+            *_ms_tasks,
+            return_exceptions=True,
         )
-        logger.debug("[ms] model-fit done   vp=%s zones=%s of=%s hmm=%s",
-                     type(vp_raw).__name__, type(zone_raw).__name__,
-                     type(of_raw).__name__, type(hmm_raw).__name__)
+        logger.debug(
+            "[ms] model-fit done   vp=%s zones=%s of=%s hmm=%s",
+            type(vp_raw).__name__,
+            type(zone_raw).__name__,
+            type(of_raw).__name__,
+            type(hmm_raw).__name__,
+        )
 
         # ── 4a. classify: unpack volume profile ──────────────────────────
         if isinstance(vp_raw, BaseException):
@@ -542,8 +735,10 @@ async def _api_market_structure_impl(symbol: str, loop):
         if isinstance(zone_raw, BaseException):
             logger.warning("[ms] zone detect: %s", zone_raw)
             zones_data = {
-                "state": "error", "error": str(zone_raw)[:120],
-                "demand_zones": [], "supply_zones": [],
+                "state": "error",
+                "error": str(zone_raw)[:120],
+                "demand_zones": [],
+                "supply_zones": [],
             }
             zone_list = []
         else:
@@ -560,7 +755,7 @@ async def _api_market_structure_impl(symbol: str, loop):
                 # Zone detection needs at least zone_pivot_window*2+1 bars to
                 # find any swing pivots. Surface that to the user.
                 zones_data["min_bars_required"] = int(cfg.zone_pivot_window) * 2 + 1
-                zones_data["bars_available"]    = n_bars
+                zones_data["bars_available"] = n_bars
             else:
                 zones_data.setdefault("state", "ok")
 
@@ -575,18 +770,20 @@ async def _api_market_structure_impl(symbol: str, loop):
         if isinstance(hmm_raw, BaseException):
             logger.warning("[ms] HMM raised: %s", hmm_raw)
             hmm_result = None
-            hmm_dict   = {"state": "error", "error": str(hmm_raw)[:120]}
+            hmm_dict = {"state": "error", "error": str(hmm_raw)[:120]}
         else:
             hmm_result = hmm_raw
-            hmm_dict   = hmm_raw.to_dict()
+            hmm_dict = hmm_raw.to_dict()
             # Surface the insufficient-data path with a clear contract for the UI.
-            if (hmm_raw.error == "too_few_bars" or hmm_raw.fit_method == "none"):
-                hmm_dict["state"]              = "insufficient_data"
-                hmm_dict["min_bars_required"]  = HMM_MIN_BARS
-                hmm_dict["bars_available"]     = n_returns
-                hmm_dict.setdefault("error_reason",
+            if hmm_raw.error == "too_few_bars" or hmm_raw.fit_method == "none":
+                hmm_dict["state"] = "insufficient_data"
+                hmm_dict["min_bars_required"] = HMM_MIN_BARS
+                hmm_dict["bars_available"] = n_returns
+                hmm_dict.setdefault(
+                    "error_reason",
                     f"HMM needs at least {HMM_MIN_BARS} return bars; only {n_returns} available. "
-                    f"Switch to a longer timeframe or wait for more candles.")
+                    f"Switch to a longer timeframe or wait for more candles.",
+                )
             else:
                 hmm_dict["state"] = "ok"
 
@@ -594,21 +791,24 @@ async def _api_market_structure_impl(symbol: str, loop):
         if zone_list and n_returns >= HAWKES_MIN_BARS:
             try:
                 hawkes_result = await loop.run_in_executor(
-                    None, analyse_hawkes, log_returns, zone_list,
+                    None,
+                    analyse_hawkes,
+                    log_returns,
+                    zone_list,
                 )
                 hawkes_dict = hawkes_result.to_dict()
                 hawkes_dict.setdefault("state", "ok")
             except Exception as exc:
                 logger.warning("[ms] Hawkes raised: %s", exc)
                 hawkes_result = None
-                hawkes_dict   = {"state": "error", "error": str(exc)[:120]}
+                hawkes_dict = {"state": "error", "error": str(exc)[:120]}
         else:
             hawkes_result = None
             hawkes_dict = {
-                "state":             "insufficient_data" if n_returns < HAWKES_MIN_BARS else "no_zones",
+                "state": "insufficient_data" if n_returns < HAWKES_MIN_BARS else "no_zones",
                 "min_bars_required": HAWKES_MIN_BARS,
-                "bars_available":    n_returns,
-                "error_reason":      (
+                "bars_available": n_returns,
+                "error_reason": (
                     f"Hawkes process needs at least {HAWKES_MIN_BARS} return bars; "
                     f"only {n_returns} available."
                     if n_returns < HAWKES_MIN_BARS
@@ -626,8 +826,8 @@ async def _api_market_structure_impl(symbol: str, loop):
                 for hr in hawkes_result.zone_reactions:
                     if abs(hr.level - z["level"]) < 0.01:
                         hk_probs = {
-                            "bounce":      hr.bounce_prob,
-                            "break":       hr.break_prob,
+                            "bounce": hr.bounce_prob,
+                            "break": hr.break_prob,
                             "consolidate": hr.consolidate_prob,
                         }
                         break
@@ -644,37 +844,46 @@ async def _api_market_structure_impl(symbol: str, loop):
                 # zone row at least renders something. Marked so the UI can
                 # caveat the row.
                 blended = {"bounce": 0.40, "break": 0.30, "consolidate": 0.30}
-            blended_zones.append({
-                "level":            round(z["level"], 4),
-                "zone_type":        z["zone_type"],
-                "strength":         round(z.get("strength", 0.5), 3),
-                "bounce_prob":      round(blended["bounce"],      4),
-                "break_prob":       round(blended["break"],       4),
-                "consolidate_prob": round(blended["consolidate"], 4),
-                "blend_source":     (
-                    "hmm+hawkes" if hmm_result is not None and hk_probs is not None else
-                    "hmm"        if hmm_result is not None else
-                    "hawkes"     if hk_probs    is not None else
-                    "fallback"
-                ),
-            })
+            blended_zones.append(
+                {
+                    "level": round(z["level"], 4),
+                    "zone_type": z["zone_type"],
+                    "strength": round(z.get("strength", 0.5), 3),
+                    "bounce_prob": round(blended["bounce"], 4),
+                    "break_prob": round(blended["break"], 4),
+                    "consolidate_prob": round(blended["consolidate"], 4),
+                    "blend_source": (
+                        "hmm+hawkes"
+                        if hmm_result is not None and hk_probs is not None
+                        else "hmm"
+                        if hmm_result is not None
+                        else "hawkes"
+                        if hk_probs is not None
+                        else "fallback"
+                    ),
+                }
+            )
 
         # ── 7. render-ready payload ─────────────────────────────────────
-        logger.debug("[ms] render-ready     zones=%d hmm_state=%s hawkes_state=%s",
-                     len(blended_zones), hmm_dict.get("state"), hawkes_dict.get("state"))
+        logger.debug(
+            "[ms] render-ready     zones=%d hmm_state=%s hawkes_state=%s",
+            len(blended_zones),
+            hmm_dict.get("state"),
+            hawkes_dict.get("state"),
+        )
 
         return {
-            "ticker":          symbol,
-            "interval":        cfg.interval,
-            "current_price":   round(spot or 0.0, 4),
-            "bars_available":  n_bars,
-            "volume_profile":  vp_dict,
-            "options_flow":    of_dict,
-            "hawkes":          hawkes_dict,
-            "hmm":             hmm_dict,
-            "blended_zones":   blended_zones,
-            "zones":           zones_data,
-            "updated_at":      datetime.now(timezone.utc).isoformat(),
+            "ticker": symbol,
+            "interval": cfg.interval,
+            "current_price": round(spot or 0.0, 4),
+            "bars_available": n_bars,
+            "volume_profile": vp_dict,
+            "options_flow": of_dict,
+            "hawkes": hawkes_dict,
+            "hmm": hmm_dict,
+            "blended_zones": blended_zones,
+            "zones": zones_data,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
 
     except asyncio.TimeoutError:
@@ -686,8 +895,9 @@ async def _api_market_structure_impl(symbol: str, loop):
 
 # ─── REST: sentiment ─────────────────────────────────────────────────────────
 
+
 @app.get("/api/sentiment")
-async def api_sentiment(ticker: Optional[str] = None, force: int = 0):
+async def api_sentiment(ticker: str | None = None, force: int = 0):
     """
     Aggregate social sentiment + Inverse Cramer + options flow for `ticker`.
     Pass force=1 to bypass the 5-minute cache and always fetch fresh data.
@@ -698,7 +908,7 @@ async def api_sentiment(ticker: Optional[str] = None, force: int = 0):
         return result
     except Exception as e:
         logger.exception("Sentiment fetch failed for %s", symbol)
-        raise HTTPException(status_code=500, detail=f"sentiment failed: {e}")
+        raise HTTPException(status_code=500, detail=f"sentiment failed: {e}")  # noqa: B904
 
 
 @app.get("/api/sentiment/global")
@@ -712,13 +922,14 @@ async def api_global_sentiment(force: int = 0):
         return result
     except Exception as e:
         logger.exception("Global sentiment fetch failed")
-        raise HTTPException(status_code=500, detail=f"global sentiment failed: {e}")
+        raise HTTPException(status_code=500, detail=f"global sentiment failed: {e}")  # noqa: B904
 
 
 # ─── REST: financial news aggregator ────────────────────────────────────────
 
+
 @app.get("/api/news")
-async def api_news(ticker: Optional[str] = None, limit: int = 20):
+async def api_news(ticker: str | None = None, limit: int = 20):
     """
     Aggregate recent financial news headlines from multiple free sources:
       - Yahoo Finance / yfinance news for the ticker (or general if no ticker)
@@ -727,16 +938,18 @@ async def api_news(ticker: Optional[str] = None, limit: int = 20):
     Returns articles sorted newest-first, deduplicated by title similarity.
     """
     articles = []
-    loop     = asyncio.get_running_loop()
-    symbol   = (ticker or "").upper().strip()
+    loop = asyncio.get_running_loop()
+    symbol = (ticker or "").upper().strip()
 
     # ── 1. Yahoo Finance news via yfinance ──────────────────────────────────
     try:
+
         def _yf_news():
             t = yf.Ticker(symbol if symbol else "SPY")
             return t.news or []
+
         yf_items = await loop.run_in_executor(None, _yf_news)
-        cutoff   = datetime.now(timezone.utc) - timedelta(days=30)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
         for item in yf_items[:15]:
             pub = item.get("providerPublishTime") or item.get("publish_time")
             if pub:
@@ -748,13 +961,17 @@ async def api_news(ticker: Optional[str] = None, limit: int = 20):
                 dt = None
             if dt and dt < cutoff:
                 continue
-            articles.append({
-                "title":     item.get("title", ""),
-                "url":       item.get("link") or item.get("url", ""),
-                "source":    item.get("publisher", "Yahoo Finance"),
-                "published": dt.isoformat() if dt else "",
-                "img":       (item.get("thumbnail") or {}).get("resolutions", [{}])[0].get("url", "") if item.get("thumbnail") else "",
-            })
+            articles.append(
+                {
+                    "title": item.get("title", ""),
+                    "url": item.get("link") or item.get("url", ""),
+                    "source": item.get("publisher", "Yahoo Finance"),
+                    "published": dt.isoformat() if dt else "",
+                    "img": (item.get("thumbnail") or {}).get("resolutions", [{}])[0].get("url", "")
+                    if item.get("thumbnail")
+                    else "",
+                }
+            )
     except Exception as exc:
         logger.warning("yfinance news failed: %s", exc)
 
@@ -766,15 +983,14 @@ async def api_news(ticker: Optional[str] = None, limit: int = 20):
             resp = await client.get(rss_url, headers={"User-Agent": "Mozilla/5.0"})
         if resp.status_code == 200:
             root = ET.fromstring(resp.text)
-            ns   = {"dc": "http://purl.org/dc/elements/1.1/"}
             cutoff = datetime.now(timezone.utc) - timedelta(days=30)
-            for item in (root.find("channel") or []):
+            for item in root.find("channel") or []:
                 if item.tag != "item":
                     continue
-                title   = (item.findtext("title") or "").strip()
-                url     = (item.findtext("link")  or "").strip()
+                title = (item.findtext("title") or "").strip()
+                url = (item.findtext("link") or "").strip()
                 pub_str = (item.findtext("pubDate") or "").strip()
-                source  = (item.findtext("source") or "Google News").strip()
+                source = (item.findtext("source") or "Google News").strip()
                 try:
                     dt = parsedate_to_datetime(pub_str).astimezone(timezone.utc) if pub_str else None
                 except Exception:
@@ -783,24 +999,26 @@ async def api_news(ticker: Optional[str] = None, limit: int = 20):
                     continue
                 if not title or not url:
                     continue
-                articles.append({
-                    "title":     title,
-                    "url":       url,
-                    "source":    source,
-                    "published": dt.isoformat() if dt else "",
-                    "img":       "",
-                })
+                articles.append(
+                    {
+                        "title": title,
+                        "url": url,
+                        "source": source,
+                        "published": dt.isoformat() if dt else "",
+                        "img": "",
+                    }
+                )
                 if len(articles) >= 40:
                     break
     except Exception as exc:
         logger.warning("Google News RSS failed: %s", exc)
 
     # ── 3. Deduplicate by title prefix (first 60 chars) ─────────────────────
-    seen   = set()
+    seen = set()
     unique = []
     for a in articles:
         key = a["title"][:60].lower()
-        h   = hashlib.md5(key.encode()).hexdigest()
+        h = hashlib.md5(key.encode()).hexdigest()
         if h not in seen:
             seen.add(h)
             unique.append(a)
@@ -812,15 +1030,17 @@ async def api_news(ticker: Optional[str] = None, limit: int = 20):
     # Uses lightweight keyword matching — no external NLP service required.
     for a in unique:
         a["sentiment"] = _score_sentiment(a["title"])
-        a["category"]  = _classify_category(a["title"], ticker=symbol)
+        a["category"] = _classify_category(a["title"], ticker=symbol)
 
     # ── 4. Fetch VIX level ───────────────────────────────────────────────────
     vix = None
     try:
+
         def _vix():
             v = yf.Ticker("^VIX")
             info = v.fast_info
             return getattr(info, "last_price", None) or getattr(info, "regular_market_price", None)
+
         vix = await loop.run_in_executor(None, _vix)
         if vix:
             vix = round(float(vix), 2)
@@ -828,14 +1048,15 @@ async def api_news(ticker: Optional[str] = None, limit: int = 20):
         pass
 
     return {
-        "ticker":   symbol or "MARKET",
+        "ticker": symbol or "MARKET",
         "articles": unique[:limit],
-        "vix":      vix,
+        "vix": vix,
         "fetched_at": datetime.now(timezone.utc).isoformat(),
     }
 
 
 # ─── REST: Fear & Greed Index ─────────────────────────────────────────────────
+
 
 @app.get("/api/fear-greed")
 async def api_fear_greed():
@@ -854,50 +1075,62 @@ async def api_fear_greed():
                 headers={"User-Agent": "Mozilla/5.0", "Referer": "https://edition.cnn.com/"},
             )
         if resp.status_code == 200:
-            j    = resp.json()
-            fg   = j.get("fear_and_greed", {})
+            j = resp.json()
+            fg = j.get("fear_and_greed", {})
             score = float(fg.get("score", 50))
             return {
-                "score":       round(score, 1),
-                "label":       fg.get("rating", _fg_label(score)),
+                "score": round(score, 1),
+                "label": fg.get("rating", _fg_label(score)),
                 "previous_close": float(fg.get("previous_close", score)),
-                "one_week_ago":   float(fg.get("one_week_ago",  score)),
-                "one_month_ago":  float(fg.get("one_month_ago", score)),
-                "source":      "cnn",
-                "fetched_at":  datetime.now(timezone.utc).isoformat(),
+                "one_week_ago": float(fg.get("one_week_ago", score)),
+                "one_month_ago": float(fg.get("one_month_ago", score)),
+                "source": "cnn",
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
             }
     except Exception as exc:
         logger.warning("CNN F&G failed: %s", exc)
 
     # Fallback: derive from VIX
     try:
+
         def _vix_score():
             v = yf.Ticker("^VIX")
             price = getattr(v.fast_info, "last_price", None) or 20.0
             # VIX 10 ≈ Extreme Greed (100); VIX 40 ≈ Extreme Fear (0)
             score = max(0, min(100, 100 - (float(price) - 10) * (100 / 30)))
             return round(score, 1)
+
         score = await loop.run_in_executor(None, _vix_score)
         return {
-            "score":   score,
-            "label":   _fg_label(score),
-            "source":  "vix_proxy",
+            "score": score,
+            "label": _fg_label(score),
+            "source": "vix_proxy",
             "fetched_at": datetime.now(timezone.utc).isoformat(),
         }
     except Exception as exc:
         logger.warning("VIX fallback failed: %s", exc)
-        return {"score": 50, "label": "Neutral", "source": "default", "fetched_at": datetime.now(timezone.utc).isoformat()}
+        return {
+            "score": 50,
+            "label": "Neutral",
+            "source": "default",
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+        }
 
 
 def _fg_label(score: float) -> str:
-    if score >= 75: return "Extreme Greed"
-    if score >= 55: return "Greed"
-    if score >= 45: return "Neutral"
-    if score >= 25: return "Fear"
+    if score >= 75:
+        return "Extreme Greed"
+    if score >= 55:
+        return "Greed"
+    if score >= 45:
+        return "Neutral"
+    if score >= 25:
+        return "Fear"
     return "Extreme Fear"
 
 
 # ─── REST: macroeconomic indicators ─────────────────────────────────────────
+
 
 @app.get("/api/macro")
 async def api_macro(force: int = 0):
@@ -926,22 +1159,21 @@ async def api_macro(force: int = 0):
     Pass force=1 to bypass the cache and force a fresh fetch.
     """
     try:
-        loop   = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            None, fetch_macro_indicators, bool(force)
-        )
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, fetch_macro_indicators, bool(force))
         return result
     except Exception as e:
         logger.exception("Macro indicators fetch failed")
-        raise HTTPException(status_code=500, detail=f"macro fetch failed: {e}")
+        raise HTTPException(status_code=500, detail=f"macro fetch failed: {e}")  # noqa: B904
 
 
 # ─── REST: scanner ───────────────────────────────────────────────────────────
 
+
 @app.get("/api/scan/watchlists")
 async def api_scan_watchlists():
     """Return available watchlist names and their tickers."""
-    return {name: tickers for name, tickers in WATCHLISTS.items()}
+    return dict(WATCHLISTS.items())
 
 
 @app.post("/api/scan")
@@ -960,23 +1192,23 @@ async def api_scan(req: ScanRequest):
     if len(tickers) > 200:
         raise HTTPException(status_code=400, detail="Max 200 tickers per scan")
 
-    interval   = req.interval or "1d"
-    lookback   = req.lookback or 60
-    extended   = req.extended if req.extended is not None else cfg.extended
+    interval = req.interval or "1d"
+    lookback = req.lookback or 60
+    extended = req.extended if req.extended is not None else cfg.extended
     concurrent = min(req.max_concurrent or 8, 20)
 
     try:
         report = await scan_tickers(
-            tickers        = tickers,
-            interval       = interval,
-            lookback       = lookback,
-            extended       = extended,
-            max_concurrent = concurrent,
-            min_score_abs  = req.min_score_abs or 0.0,
+            tickers=tickers,
+            interval=interval,
+            lookback=lookback,
+            extended=extended,
+            max_concurrent=concurrent,
+            min_score_abs=req.min_score_abs or 0.0,
         )
     except Exception as e:
         logger.exception("Scan failed")
-        raise HTTPException(status_code=500, detail=f"scan failed: {e}")
+        raise HTTPException(status_code=500, detail=f"scan failed: {e}")  # noqa: B904
 
     # ── Attach trade setup to every scan result ───────────────────────────
     def _enrich(items: list) -> list:
@@ -989,10 +1221,10 @@ async def api_scan(req: ScanRequest):
             enriched.append(r)
         return enriched
 
-    report["breakouts"]  = _enrich(report.get("breakouts",  []))
+    report["breakouts"] = _enrich(report.get("breakouts", []))
     report["breakdowns"] = _enrich(report.get("breakdowns", []))
-    report["neutral"]    = _enrich(report.get("neutral",    []))
-    report["all"]        = _enrich(report.get("all",        []))
+    report["neutral"] = _enrich(report.get("neutral", []))
+    report["all"] = _enrich(report.get("all", []))
 
     return report
 
@@ -1014,29 +1246,30 @@ async def api_zone_scan(req: ScanRequest):
     if len(tickers) > 200:
         raise HTTPException(status_code=400, detail="Max 200 tickers per scan")
 
-    interval   = req.interval or "1d"
-    lookback   = req.lookback or 120    # need more bars for EMA200
-    extended   = req.extended if req.extended is not None else cfg.extended
+    interval = req.interval or "1d"
+    lookback = req.lookback or 120  # need more bars for EMA200
+    extended = req.extended if req.extended is not None else cfg.extended
     concurrent = min(req.max_concurrent or 8, 20)
-    min_score  = float(req.min_score_abs or 0.0)
+    min_score = float(req.min_score_abs or 0.0)
 
     try:
         report = await zone_scan_tickers(
-            tickers        = tickers,
-            interval       = interval,
-            lookback       = lookback,
-            extended       = extended,
-            max_concurrent = concurrent,
-            min_score      = min_score,
+            tickers=tickers,
+            interval=interval,
+            lookback=lookback,
+            extended=extended,
+            max_concurrent=concurrent,
+            min_score=min_score,
         )
     except Exception as e:
         logger.exception("Zone scan failed")
-        raise HTTPException(status_code=500, detail=f"zone scan failed: {e}")
+        raise HTTPException(status_code=500, detail=f"zone scan failed: {e}")  # noqa: B904
 
     return report
 
 
 # ─── WebSocket ───────────────────────────────────────────────────────────────
+
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
@@ -1044,10 +1277,8 @@ async def ws_endpoint(ws: WebSocket):
     clients.add(ws)
     logger.debug("WS client connected (%d total)", len(clients))
     if _last_result:
-        try:
+        with suppress(Exception):
             await ws.send_json(_last_result)
-        except Exception:
-            pass
     try:
         while True:
             await ws.receive_text()
@@ -1071,6 +1302,7 @@ async def _broadcast(data: dict):
 
 # ─── WebSocket: live news feed ────────────────────────────────────────────────
 
+
 @app.websocket("/ws/news")
 async def ws_news(ws: WebSocket):
     """
@@ -1092,11 +1324,13 @@ async def ws_news(ws: WebSocket):
             if not ticker:
                 continue
             init_items = await news_stream.subscribe(ws, ticker)
-            await ws.send_json({
-                "type":   "init",
-                "ticker": ticker,
-                "items":  init_items,
-            })
+            await ws.send_json(
+                {
+                    "type": "init",
+                    "ticker": ticker,
+                    "items": init_items,
+                }
+            )
     except WebSocketDisconnect:
         logger.debug("[ws/news] client disconnected")
     except Exception as exc:
@@ -1107,8 +1341,9 @@ async def ws_news(ws: WebSocket):
 
 # ─── REST: sector Cramer fallback ─────────────────────────────────────────────
 
+
 @app.get("/api/sentiment/sector-cramer")
-async def api_sector_cramer(ticker: Optional[str] = None, sector: Optional[str] = None):
+async def api_sector_cramer(ticker: str | None = None, sector: str | None = None):
     """
     Return Cramer coverage for the sector peers of `ticker` (or for `sector` directly).
     Used by the frontend when the ticker-specific Cramer lookup returns no articles.
@@ -1136,19 +1371,18 @@ async def api_sector_cramer(ticker: Optional[str] = None, sector: Optional[str] 
 # ─── Multi-timeframe helpers ─────────────────────────────────────────────────
 
 _HTF_MAP = {
-    "1m":  "15m",
-    "2m":  "15m",
-    "5m":  "1h",
+    "1m": "15m",
+    "2m": "15m",
+    "5m": "1h",
     "15m": "1h",
     "30m": "4h",
-    "1h":  "1d",
-    "4h":  "1d",
-    "1d":  "1d",  # already daily — skip HTF
+    "1h": "1d",
+    "4h": "1d",
+    "1d": "1d",  # already daily — skip HTF
 }
 
 
-async def _htf_confirmation(ticker: str, base_interval: str,
-                            extended: bool, loop) -> dict:
+async def _htf_confirmation(ticker: str, base_interval: str, extended: bool, loop) -> dict:
     """
     Fetch one timeframe higher than base_interval and compute a lightweight
     regime + signal snapshot.  Returns a compact dict for the dashboard.
@@ -1157,27 +1391,23 @@ async def _htf_confirmation(ticker: str, base_interval: str,
     if not htf or htf == base_interval:
         return {"available": False, "reason": "no higher timeframe"}
     try:
-        df  = await loop.run_in_executor(
-            None, fetch_candles, ticker, htf, 60, extended
-        )
+        df = await loop.run_in_executor(None, fetch_candles, ticker, htf, 60, extended)
         ind = await loop.run_in_executor(None, compute_indicators, df)
-        reg = await loop.run_in_executor(
-            None, detect_regime, df, ind.adx, ind.obv_slope
-        )
+        reg = await loop.run_in_executor(None, detect_regime, df, ind.adx, ind.obv_slope)
         sig = await loop.run_in_executor(None, compute_signal, ind, reg)
         return {
-            "available":    True,
-            "interval":     htf,
-            "regime":       reg.regime,
-            "trend_score":  reg.trend_score,
+            "available": True,
+            "interval": htf,
+            "regime": reg.regime,
+            "trend_score": reg.trend_score,
             "potential_up": reg.potential_up,
             "potential_down": reg.potential_down,
             "signal_label": sig.label,
-            "composite":    sig.composite,
-            "confidence":   sig.confidence,
-            "rsi":          ind.rsi,
-            "adx":          ind.adx,
-            "ema_cross":    ind.ema_cross,
+            "composite": sig.composite,
+            "confidence": sig.confidence,
+            "rsi": ind.rsi,
+            "adx": ind.adx,
+            "ema_cross": ind.ema_cross,
             # Alignment: does HTF agree with the base-TF direction?
             # Caller computes this after receiving HTF + base signal.
         }
@@ -1187,6 +1417,7 @@ async def _htf_confirmation(ticker: str, base_interval: str,
 
 
 # ─── Analysis ────────────────────────────────────────────────────────────────
+
 
 async def _run_analysis() -> dict:
     global _last_result
@@ -1226,14 +1457,16 @@ async def _run_analysis() -> dict:
             # The frontend handles type="partial" by rendering only the chart
             # and showing "Analyzing…" on signal cards.
             try:
-                await _broadcast({
-                    "type":          "partial",
-                    "ticker":        cfg.ticker,
-                    "interval":      cfg.interval,
-                    "current_price": round(float(df_full["close"].iloc[-1]), 4),
-                    "candles":       _df_to_candles(df_full),
-                    "updated_at":    datetime.now(timezone.utc).isoformat(),
-                })
+                await _broadcast(
+                    {
+                        "type": "partial",
+                        "ticker": cfg.ticker,
+                        "interval": cfg.interval,
+                        "current_price": round(float(df_full["close"].iloc[-1]), 4),
+                        "candles": _df_to_candles(df_full),
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
             except Exception as _pe:
                 logger.debug("partial broadcast failed: %s", _pe)
 
@@ -1269,9 +1502,14 @@ async def _run_analysis() -> dict:
             # ── Unpack zone result ────────────────────────────────────────────
             if isinstance(zone_raw, BaseException):
                 logger.warning("zone detect failed: %s", zone_raw)
-                zones_data = {"demand_zones": [], "supply_zones": [],
-                              "nearest_demand": None, "nearest_supply": None,
-                              "price_context": "unknown", "atr": 0.0}
+                zones_data = {
+                    "demand_zones": [],
+                    "supply_zones": [],
+                    "nearest_demand": None,
+                    "nearest_supply": None,
+                    "price_context": "unknown",
+                    "atr": 0.0,
+                }
             else:
                 zones_data = zone_raw.to_dict()
 
@@ -1310,7 +1548,10 @@ async def _run_analysis() -> dict:
             mc_paths_full = result.pop("_mc_paths_full", None)
             try:
                 trade_setup = trade_setup_from_analysis(
-                    cfg.ticker, result, interval=cfg.interval, df=df,
+                    cfg.ticker,
+                    result,
+                    interval=cfg.interval,
+                    df=df,
                     mc_paths_full=mc_paths_full,
                 )
             except Exception as e:
@@ -1320,7 +1561,7 @@ async def _run_analysis() -> dict:
             # ── HTF alignment (needs both analyse + HTF results) ──────────────
             if htf_data.get("available"):
                 base_comp = float(result.get("signal", {}).get("composite", 0.0))
-                htf_comp  = float(htf_data.get("composite", 0.0))
+                htf_comp = float(htf_data.get("composite", 0.0))
                 if base_comp > 0.05 and htf_comp > 0.05:
                     htf_data["alignment"] = "confirm_bullish"
                 elif base_comp < -0.05 and htf_comp < -0.05:
@@ -1330,27 +1571,29 @@ async def _run_analysis() -> dict:
                 else:
                     htf_data["alignment"] = "neutral"
 
-            result.update({
-                "ticker":         cfg.ticker,
-                "interval":       cfg.interval,
-                "extended":       cfg.extended,
-                "mc_model":       cfg.mc_model,
-                "trade_setup":    trade_setup,
-                "zones":          zones_data,
-                "volume_profile": vp_data,
-                "hmm":            hmm_data,
-                "htf":            htf_data,
-                "config": {
-                    "n_sim":        cfg.n_sim,
-                    "n_forward":    cfg.n_forward,
-                    "lookback":     cfg.lookback,
-                    "chart_bars":   cfg.chart_bars,
-                    "poll_seconds": cfg.poll_seconds,
-                    "extended":     cfg.extended,
-                    "mc_model":     cfg.mc_model,
-                },
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            })
+            result.update(
+                {
+                    "ticker": cfg.ticker,
+                    "interval": cfg.interval,
+                    "extended": cfg.extended,
+                    "mc_model": cfg.mc_model,
+                    "trade_setup": trade_setup,
+                    "zones": zones_data,
+                    "volume_profile": vp_data,
+                    "hmm": hmm_data,
+                    "htf": htf_data,
+                    "config": {
+                        "n_sim": cfg.n_sim,
+                        "n_forward": cfg.n_forward,
+                        "lookback": cfg.lookback,
+                        "chart_bars": cfg.chart_bars,
+                        "poll_seconds": cfg.poll_seconds,
+                        "extended": cfg.extended,
+                        "mc_model": cfg.mc_model,
+                    },
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
             _last_result = result
 
             # Persist
@@ -1365,11 +1608,16 @@ async def _run_analysis() -> dict:
             warn_str = f"  ⚠ {result['warnings'][0]}" if result.get("warnings") else ""
             logger.info(
                 "%s %s [%s]  price=%.2f  regime=%s  pot up/dn/flat=%.0f/%.0f/%.0f  signal=%s (conf=%.0f%%)%s",
-                cfg.ticker, cfg.interval, cfg.mc_model,
+                cfg.ticker,
+                cfg.interval,
+                cfg.mc_model,
                 result["current_price"],
                 reg.get("regime", "?"),
-                reg.get("potential_up", 0), reg.get("potential_down", 0), reg.get("potential_flat", 0),
-                sig["label"], sig["confidence"] * 100,
+                reg.get("potential_up", 0),
+                reg.get("potential_down", 0),
+                reg.get("potential_flat", 0),
+                sig["label"],
+                sig["confidence"] * 100,
                 warn_str,
             )
             return result
@@ -1379,6 +1627,7 @@ async def _run_analysis() -> dict:
 
 
 # ─── Poll loop ──────────────────────────────────────────────────────────────
+
 
 async def _poll_loop():
     logger.info("Poll loop started: %s %s every %ds", cfg.ticker, cfg.interval, cfg.poll_seconds)

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from typing import List, Optional
 
 from pydantic import BaseModel, field_validator
 
@@ -13,70 +12,70 @@ _TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
 
 
 class ConfigUpdate(BaseModel):
-    ticker:       Optional[str]   = None
-    interval:     Optional[str]   = None
-    n_sim:        Optional[int]   = None
-    n_forward:    Optional[int]   = None
-    lookback:     Optional[int]   = None
-    chart_bars:   Optional[int]   = None
-    poll_seconds: Optional[int]   = None
-    extended:     Optional[bool]  = None
-    mc_model:     Optional[str]   = None
+    ticker: str | None = None
+    interval: str | None = None
+    n_sim: int | None = None
+    n_forward: int | None = None
+    lookback: int | None = None
+    chart_bars: int | None = None
+    poll_seconds: int | None = None
+    extended: bool | None = None
+    mc_model: str | None = None
 
-    garch_alpha:      Optional[float] = None
-    garch_beta:       Optional[float] = None
-    mc_clip:          Optional[float] = None
-    jump_intensity:   Optional[float] = None
-    jump_sigma_mult:  Optional[float] = None
+    garch_alpha: float | None = None
+    garch_beta: float | None = None
+    mc_clip: float | None = None
+    jump_intensity: float | None = None
+    jump_sigma_mult: float | None = None
 
-    min_score:        Optional[float] = None
-    min_adx:          Optional[float] = None
-    min_conf:         Optional[float] = None
-    min_mc_prob:      Optional[float] = None
-    min_rr:           Optional[float] = None
-    min_score_choppy: Optional[float] = None
-    rsi_overbought:   Optional[float] = None
-    rsi_oversold:     Optional[float] = None
-    sl_max_pct:       Optional[float] = None
+    min_score: float | None = None
+    min_adx: float | None = None
+    min_conf: float | None = None
+    min_mc_prob: float | None = None
+    min_rr: float | None = None
+    min_score_choppy: float | None = None
+    rsi_overbought: float | None = None
+    rsi_oversold: float | None = None
+    sl_max_pct: float | None = None
 
-    rsi_period:       Optional[int]   = None
-    ema_fast:         Optional[int]   = None
-    ema_slow:         Optional[int]   = None
-    ema_long:         Optional[int]   = None
-    macd_fast:        Optional[int]   = None
-    macd_slow:        Optional[int]   = None
-    macd_signal:      Optional[int]   = None
-    bb_period:        Optional[int]   = None
-    bb_k:             Optional[float] = None
-    atr_period:       Optional[int]   = None
-    adx_period:       Optional[int]   = None
-    obv_period:       Optional[int]   = None
-    slope_period:     Optional[int]   = None
-    mom_period:       Optional[int]   = None
-    vwap_period:      Optional[int]   = None
-    rsi_div_lookback: Optional[int]   = None
+    rsi_period: int | None = None
+    ema_fast: int | None = None
+    ema_slow: int | None = None
+    ema_long: int | None = None
+    macd_fast: int | None = None
+    macd_slow: int | None = None
+    macd_signal: int | None = None
+    bb_period: int | None = None
+    bb_k: float | None = None
+    atr_period: int | None = None
+    adx_period: int | None = None
+    obv_period: int | None = None
+    slope_period: int | None = None
+    mom_period: int | None = None
+    vwap_period: int | None = None
+    rsi_div_lookback: int | None = None
 
-    zone_pivot_window:  Optional[int]   = None
-    zone_cluster_atr:   Optional[float] = None
-    zone_touch_atr:     Optional[float] = None
-    zone_break_atr:     Optional[float] = None
-    zone_max_demand:    Optional[int]   = None
-    zone_max_supply:    Optional[int]   = None
-    zone_width_atr:     Optional[float] = None
+    zone_pivot_window: int | None = None
+    zone_cluster_atr: float | None = None
+    zone_touch_atr: float | None = None
+    zone_break_atr: float | None = None
+    zone_max_demand: int | None = None
+    zone_max_supply: int | None = None
+    zone_width_atr: float | None = None
 
-    backtest_band_pct:   Optional[float] = None
-    backtest_commission: Optional[float] = None
-    backtest_slippage:   Optional[float] = None
+    backtest_band_pct: float | None = None
+    backtest_commission: float | None = None
+    backtest_slippage: float | None = None
 
-    scan_min_score:      Optional[float] = None
-    scan_max_concurrent: Optional[int]   = None
+    scan_min_score: float | None = None
+    scan_max_concurrent: int | None = None
 
-    regime_hurst_lags:  Optional[int] = None
-    regime_donchian_n:  Optional[int] = None
-    regime_pivot_wing:  Optional[int] = None
+    regime_hurst_lags: int | None = None
+    regime_donchian_n: int | None = None
+    regime_pivot_wing: int | None = None
 
-    signal_base_weights: Optional[str]   = None
-    gap_threshold:       Optional[float] = None
+    signal_base_weights: str | None = None
+    gap_threshold: float | None = None
 
     @field_validator("ticker")
     @classmethod
@@ -140,13 +139,14 @@ class ConfigUpdate(BaseModel):
 
 class ScanRequest(BaseModel):
     """Request model for POST /api/scan."""
-    tickers:        Optional[List[str]] = None
-    watchlist:      Optional[str]       = None
-    interval:       Optional[str]       = None
-    lookback:       Optional[int]       = None
-    extended:       Optional[bool]      = None
-    max_concurrent: Optional[int]       = None
-    min_score_abs:  Optional[float]     = None
+
+    tickers: list[str] | None = None
+    watchlist: str | None = None
+    interval: str | None = None
+    lookback: int | None = None
+    extended: bool | None = None
+    max_concurrent: int | None = None
+    min_score_abs: float | None = None
 
     @field_validator("tickers")
     @classmethod
@@ -187,13 +187,14 @@ class ScanRequest(BaseModel):
 
 class BacktestRequest(BaseModel):
     """Optional overrides for POST /api/backtest."""
-    ticker:       Optional[str]  = None
-    interval:     Optional[str]  = None
-    lookback:     Optional[int]  = None
-    n_forward:    Optional[int]  = None
-    n_sim:        Optional[int]  = None
-    mc_model:     Optional[str]  = None
-    history_bars: Optional[int]  = None
+
+    ticker: str | None = None
+    interval: str | None = None
+    lookback: int | None = None
+    n_forward: int | None = None
+    n_sim: int | None = None
+    mc_model: str | None = None
+    history_bars: int | None = None
 
     @field_validator("history_bars")
     @classmethod

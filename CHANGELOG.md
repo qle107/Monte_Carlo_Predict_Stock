@@ -1,5 +1,244 @@
 # CHANGELOG
 
+## Phase 8 — Final Checks
+
+### Ruff: zero lint errors
+
+Starting state after Phase 7 had 568+ ruff violations across the Python
+codebase. Applied auto-fixes in batch then resolved the remaining 40 manually:
+
+- **`core/sentiment.py`** (largest surface): auto-fixed `UP006`/`UP035`/`UP045`
+  (deprecated `typing.List`, `typing.Dict`, `typing.Optional` → lowercase builtins
+  and `X | None`), `I001` import ordering, `E401` multiple-imports-per-line.
+  Manual fixes for `E701`/`E702` one-liner `if`/`elif`/`else` and semicoloned
+  statements (~25 locations), `B905` `zip()` missing `strict=False` (3 calls),
+  `F841` unused `BadRequest` variable in the twikit fallback block, and `F401`
+  stale `BadRequest` import.
+- **`core/hawkes.py`**: moved late `import math` (was after all definitions at
+  EOF) to the standard import block; removed redundant `import math as math`
+  inside the `analyse_hawkes` closure.
+- **`api/server.py`**: removed 6 stale `# noqa: B904` directives on `raise
+  HTTPException(...)` statements that were not inside `except` blocks (RUF100).
+- **`core/__init__.py`**: removed unused `import numpy as np` and two unused
+  `from .fetcher import …` lines; renamed loop variable `l` → `lo` (E741).
+- **`core/store.py`**: added `suppress` to contextlib import; replaced bare
+  `try/except/pass` with `with suppress(sqlite3.OperationalError):`.
+- **`api/__init__.py`**: changed `from .server import app` to
+  `from .server import app as app` to satisfy `F401` explicit re-export.
+- **`pyproject.toml`**: extended `per-file-ignores` to cover E741 in
+  `core/zones.py`, `core/zone_scanner.py`, `core/regime.py`,
+  `core/volume_profile.py`, `core/hawkes.py`, `core/hmm_regime.py`; added
+  `RUF001`/`RUF002`/`RUF003` to global ignores (math notation: `μ`, `α`, `β`
+  are intentional Unicode in docstrings/comments).
+
+Final state: `ruff check .` exits 0, no suppressions beyond the documented
+per-file-ignores.
+
+### Pytest: 58/58 passing
+
+All existing tests pass after installing the project's runtime dependencies
+(`scipy`, `numpy`, `pandas`, `httpx`, `fastapi`, `yfinance`) in the CI
+environment. No tests were added or removed. Previously missing-module errors
+in `test_api.py` were environment-only (missing `yfinance`/`httpx` in the
+sandbox); the application code was not changed to fix them.
+
+Test files in scope: `test_api.py`, `test_backtest.py`, `test_montecarlo.py`,
+`test_signal.py`, `test_zones.py` (49 unit tests + 9 API integration tests).
+
+### WebSocket cleanup audit — `/ws/news`
+
+`static/js/tabs/sentiment.js` registers `_disconnect` on **both**
+`window.addEventListener('beforeunload', _disconnect)` and
+`window.addEventListener('pagehide', _disconnect)`. `_disconnect` sets
+`_ws.onclose = null` before calling `_ws.close()` so the exponential-backoff
+reconnect loop is suppressed on intentional teardown. No changes required.
+
+### Static file audit — zero 404s
+
+All eight `/static/` paths referenced in `templates/dashboard.html` are
+present on disk:
+
+| Path | Status |
+|---|---|
+| `static/css/dashboard.css` | ✓ |
+| `static/css/portfolio.css` | ✓ |
+| `static/js/index.js` | ✓ |
+| `static/js/right-panel.js` | ✓ |
+| `static/js/scanner.js` | ✓ |
+| `static/js/tabs/market-structure.js` | ✓ |
+| `static/js/tabs/options.js` | ✓ |
+| `static/js/tabs/sentiment.js` | ✓ |
+
+All DOM IDs referenced in `right-panel.js` (`ts-banner`, `ts-levels-wrap`,
+`ts-side-pill`, `ts-zone-wrap`, `conf-bar`, `conf-val`, `bt-hit`, `bt-brier`,
+`bt-ll`, `bt-corr`) resolve to elements in `dashboard.html`. No broken
+references from the Phase 7 extraction.
+
+### Files touched
+
+- `core/sentiment.py` — lint fixes only (no behavioural change)
+- `core/hawkes.py` — import order fix
+- `core/store.py` — contextlib.suppress, null-byte strip
+- `core/__init__.py` — unused imports removed, E741 rename
+- `api/__init__.py` — explicit re-export
+- `api/server.py` — stale noqa removed
+- `pyproject.toml` — extended per-file-ignores and global ignores
+
+---
+
+## Phase 7 — Right Panel Audit
+
+### A — Confidence score colour scale
+
+The `#conf-bar` fill and `#conf-val` text previously used a single hardcoded
+colour regardless of value. Fixed to a three-tier scale applied in both
+`dashboard.html` (`_updateUI` inline block) and the new `right-panel.js`
+module:
+
+| Range | Colour |
+|---|---|
+| `confidence < 30%` | `var(--muted)` — grey |
+| `30% ≤ confidence ≤ 50%` | `var(--amber)` — amber |
+| `confidence > 50%` | `var(--green)` — green |
+
+### B — Trade Setup confidence gate
+
+`updateTradeSetup(ts, confPct)` now enforces two independent conditions before
+showing entry levels:
+
+1. `ts.valid === true` — the signal engine considers the setup structurally
+   valid (stop-loss below entry for longs, etc.).
+2. `confPct > 40` — the model's confidence score exceeds 40%.
+
+Three render states:
+
+- **Invalid setup** (`!ts.valid`): banner shows `⊘  No Entry Right Now` with
+  amber background; the levels grid is hidden.
+- **Valid but low confidence** (`ts.valid && confPct ≤ 40`): banner shows
+  `⊘  No Edge` with grey background; the levels grid is hidden.
+- **Valid + confident** (`ts.valid && confPct > 40`): entry / stop / target
+  levels render normally in the grid.
+
+Previously the levels grid was shown whenever `ts.valid` was true, ignoring
+confidence entirely.
+
+### C — Walk-Forward Backtest verification
+
+The `/api/backtest` endpoint (`_runBacktest` in `right-panel.js`) was audited
+and confirmed working. The backtest card paints four KPIs on success:
+
+- `#bt-hit` — directional hit rate (%)
+- `#bt-brier` — Brier score
+- `#bt-ll` — log-loss
+- `#bt-corr` — Spearman rank correlation
+
+No changes to the backtest logic itself; the extraction to `right-panel.js`
+preserves the original behaviour exactly.
+
+### Extraction — `static/js/right-panel.js` (new, ~400 lines)
+
+The right-panel rendering functions were extracted from the inline `<script>`
+block in `dashboard.html` into a self-contained IIFE module at
+`/static/js/right-panel.js`. The module uses the same IIFE + `DOMContentLoaded`
+monkey-patch pattern established in `market-structure.js`.
+
+Public surface exposed on `window`:
+
+| Symbol | Description |
+|---|---|
+| `window.renderRightPanel(d)` | Main facade — called by `_updateUI` on every WS tick |
+| `window.updateTradeSetup(ts, confPct)` | Phase-B gated trade-setup renderer |
+| `window.runBacktest()` | Triggers `/api/backtest` and paints the KPI cells |
+
+`dashboard.html`'s `_updateUI` function calls `window.renderRightPanel(d)` when
+the module is loaded and falls back to the original inline functions otherwise,
+so the page degrades gracefully if the script fails to load.
+
+`window.updatePriceTargets` and `window.updateSRCard` are exported from the
+inline block so `right-panel.js` can delegate to them without duplication.
+
+### Files touched
+
+- `templates/dashboard.html` — confidence colour scale, trade-setup gating,
+  `window.updatePriceTargets` / `window.updateSRCard` exports,
+  `<script src="/static/js/right-panel.js">` tag added.
+- `static/js/right-panel.js` — **new**.
+- `static/js/index.js` — version bumped to `'phase-7'`, `'right-panel.js'`
+  added to `extracted` array.
+
+### How to verify
+
+1. `python main.py`, open `http://localhost:8000`.
+2. Load any ticker — the AI Signal card confidence bar should be grey /
+   amber / green matching the threshold table above.
+3. On a low-confidence signal (< 40%) the Trade Setup card should show
+   **⊘  No Edge**; levels grid must be hidden.
+4. On a high-confidence signal (> 40%) the Trade Setup card should show
+   entry / stop / target rows.
+5. Click **Run Backtest** in the Backtest card — four KPI cells should
+   populate within a few seconds.
+6. Open browser DevTools → Sources → confirm `right-panel.js` loads without
+   errors; confirm no double-call to `_updateMicrostructureCard` in the
+   Network tab.
+
+---
+
+## Phase 5 — Social Sentiment Tab
+
+### Extraction — `static/js/tabs/sentiment.js` (new, ~440 lines)
+
+All live-news-feed logic was extracted from the inline `<script>` block into
+an IIFE at `/static/js/tabs/sentiment.js`. Key capabilities owned by the
+module:
+
+- **`/ws/news` WebSocket** with exponential-backoff reconnect (1 s → 30 s
+  ceiling). Reconnect is suppressed on intentional teardown (see Phase 8
+  WS audit).
+- **50-item ring buffer** with client-side dedup via a djb2-hash fingerprint
+  so duplicate headlines from multiple sources don't stack.
+- **Pause / Resume**: new items still arrive and are stored in `_pending[]`
+  while paused; they drain into the buffer on resume.
+- **Filter pills**: All · Company · Macro · Sector · Positive · Negative
+  (client-side, no extra network call).
+- **Live "X seconds ago" timestamps** refreshed every second via
+  `setInterval`.
+- **Sector Cramer fallback**: when `cramer.articles.length === 0` fires
+  `GET /api/sentiment/sector-cramer` and renders a "Sector Cramer Signal"
+  card below the feed.
+
+Public surface:
+
+| Symbol | Description |
+|---|---|
+| `window.initSentimentFeed(ticker)` | Call when Sentiment tab first opens |
+| `window.switchSentimentTicker(ticker)` | Call on ticker change |
+| `window.renderSectorCramer(data)` | Render the sector-cramer result card |
+
+### WebSocket teardown
+
+`_disconnect` is bound to both `beforeunload` and `pagehide`. It nulls the
+`onclose` handler before calling `_ws.close()` so the backoff-reconnect loop
+does not fire on page unload.
+
+### Files touched
+
+- `templates/dashboard.html` — `<script src="/static/js/tabs/sentiment.js">`
+  tag added; inline news-feed functions shimmed to delegate to `window.*`.
+- `static/js/tabs/sentiment.js` — **new**.
+- `static/js/index.js` — version bumped, `'tabs/sentiment.js'` added to
+  `extracted` array.
+
+### Phase 6 — News & Macro tab (deferred)
+
+The News & Macro tab JS remains inline in `dashboard.html`. `static/js/index.js`
+marks it `⏳ pending (Phase 6)`. Extraction was deferred because the tab's
+rendering functions are tightly coupled to shared helpers in the main inline
+block (the macro indicator cards share the `log()` helper and `currentConfig`
+with the rest of the page). It is safe to leave inline until the tab itself
+requires a feature change.
+
+---
+
 ## Phase 4 — Market Structure Fix
 
 ### Root cause

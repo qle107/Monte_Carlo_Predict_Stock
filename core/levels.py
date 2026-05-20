@@ -30,29 +30,27 @@ Research basis (see README § Estimating max downside / max high):
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
-
 # ─── Constants ────────────────────────────────────────────────────────────────
 
-_RETRACEMENTS: List[float] = [0.236, 0.382, 0.500, 0.618, 0.786]
-_EXTENSIONS:   List[float] = [1.000, 1.272, 1.618, 2.000, 2.618]
+_RETRACEMENTS: list[float] = [0.236, 0.382, 0.500, 0.618, 0.786]
+_EXTENSIONS: list[float] = [1.000, 1.272, 1.618, 2.000, 2.618]
 
 # Ratios with the highest empirical confluence weight
 _KEY_FIBS: frozenset = frozenset({0.382, 0.500, 0.618, 0.786})
 
 # A level is "at" a zone if it is within this fraction of current price
-_ZONE_PROX_PCT: float = 0.005   # 0.5 %
+_ZONE_PROX_PCT: float = 0.005  # 0.5 %
 
 # Labels shown in the UI
 _FIB_LABELS = {
     0.236: "23.6%",
     0.382: "38.2%",
     0.500: "50.0%",
-    0.618: "61.8% ✦",   # golden ratio highlight
+    0.618: "61.8% ✦",  # golden ratio highlight
     0.786: "78.6%",
     1.000: "100%",
     1.272: "127.2%",
@@ -64,17 +62,19 @@ _FIB_LABELS = {
 
 # ─── Data classes ─────────────────────────────────────────────────────────────
 
+
 @dataclass
 class FibLevels:
     """All Fibonacci levels derived from the most recent significant swing."""
+
     swing_high: float
-    swing_low:  float
+    swing_low: float
     # Retracements (count down from swing_high)
-    r_236:  float
-    r_382:  float
-    r_500:  float
-    r_618:  float
-    r_786:  float
+    r_236: float
+    r_382: float
+    r_500: float
+    r_618: float
+    r_786: float
     # Extensions above swing_high (upside targets)
     e_1000: float
     e_1272: float
@@ -90,18 +90,20 @@ class FibLevels:
 @dataclass
 class StructuralTarget:
     """A single max-high or max-downside price target with confluence metadata."""
-    price:          float
-    pct_from_price: float           # positive = above current price
-    method:         str             # "fib_zone" | "fib" | "zone" | "atr"
-    confluence:     str             # human-readable label for the UI
-    fib_ratio:      Optional[float] = None
-    zone_price:     Optional[float] = None
-    score:          float           = 0.0
+
+    price: float
+    pct_from_price: float  # positive = above current price
+    method: str  # "fib_zone" | "fib" | "zone" | "atr"
+    confluence: str  # human-readable label for the UI
+    fib_ratio: float | None = None
+    zone_price: float | None = None
+    score: float = 0.0
 
 
 # ─── Internal helpers ─────────────────────────────────────────────────────────
 
-def _find_swing(df: pd.DataFrame, window: int = 8) -> Tuple[float, float]:
+
+def _find_swing(df: pd.DataFrame, window: int = 8) -> tuple[float, float]:
     """
     Return (swing_high, swing_low) from the most significant pivot pair in df.
 
@@ -119,13 +121,13 @@ def _find_swing(df: pd.DataFrame, window: int = 8) -> Tuple[float, float]:
         return 0.0, 0.0
 
     highs = df["high"].to_numpy(dtype=float)
-    lows  = df["low"].to_numpy(dtype=float)
+    lows = df["low"].to_numpy(dtype=float)
 
     if n < window * 3:
         return float(np.nanmax(highs)), float(np.nanmin(lows))
 
-    pivot_highs: List[float] = []
-    pivot_lows:  List[float] = []
+    pivot_highs: list[float] = []
+    pivot_lows: list[float] = []
 
     for i in range(window, n - window):
         lo_idx = max(0, i - window)
@@ -136,7 +138,7 @@ def _find_swing(df: pd.DataFrame, window: int = 8) -> Tuple[float, float]:
             pivot_lows.append(float(lows[i]))
 
     sh = max(pivot_highs) if pivot_highs else float(np.nanmax(highs))
-    sl = min(pivot_lows)  if pivot_lows  else float(np.nanmin(lows))
+    sl = min(pivot_lows) if pivot_lows else float(np.nanmin(lows))
     return sh, sl
 
 
@@ -155,30 +157,30 @@ def _build_fib_levels(swing_high: float, swing_low: float) -> FibLevels:
         return round(swing_high - rng * r, 4)
 
     return FibLevels(
-        swing_high = round(swing_high, 4),
-        swing_low  = round(swing_low,  4),
-        r_236  = retrace(0.236),
-        r_382  = retrace(0.382),
-        r_500  = retrace(0.500),
-        r_618  = retrace(0.618),
-        r_786  = retrace(0.786),
-        e_1000 = ext_up(1.000),
-        e_1272 = ext_up(1.272),
-        e_1618 = ext_up(1.618),
-        e_2000 = ext_up(2.000),
-        e_2618 = ext_up(2.618),
-        d_1272 = ext_dn(1.272),
-        d_1618 = ext_dn(1.618),
-        d_2618 = ext_dn(2.618),
+        swing_high=round(swing_high, 4),
+        swing_low=round(swing_low, 4),
+        r_236=retrace(0.236),
+        r_382=retrace(0.382),
+        r_500=retrace(0.500),
+        r_618=retrace(0.618),
+        r_786=retrace(0.786),
+        e_1000=ext_up(1.000),
+        e_1272=ext_up(1.272),
+        e_1618=ext_up(1.618),
+        e_2000=ext_up(2.000),
+        e_2618=ext_up(2.618),
+        d_1272=ext_dn(1.272),
+        d_1618=ext_dn(1.618),
+        d_2618=ext_dn(2.618),
     )
 
 
 def _score_level(
-    level:         float,
+    level: float,
     current_price: float,
-    atr_dollar:    float,
-    fib_ratio:     Optional[float],
-    zone_prices:   List[float],
+    atr_dollar: float,
+    fib_ratio: float | None,
+    zone_prices: list[float],
 ) -> float:
     """Confluence score for one candidate price level."""
     score = 0.0
@@ -199,8 +201,7 @@ def _score_level(
     if atr_dollar > 0:
         tolerance = atr_dollar * 0.25
         for mult in (1.0, 1.5, 2.0, 2.5, 3.0):
-            for base in (current_price + mult * atr_dollar,
-                         current_price - mult * atr_dollar):
+            for base in (current_price + mult * atr_dollar, current_price - mult * atr_dollar):
                 if abs(level - base) <= tolerance:
                     score += 0.5
                     break
@@ -209,13 +210,13 @@ def _score_level(
 
 
 def _confluence_label(
-    fib_ratio:  Optional[float],
-    zone_price: Optional[float],
-    method:     str,
+    fib_ratio: float | None,
+    zone_price: float | None,
+    method: str,
 ) -> str:
-    parts: List[str] = []
+    parts: list[str] = []
     if fib_ratio is not None:
-        parts.append(_FIB_LABELS.get(fib_ratio, f"{fib_ratio*100:.1f}%") + " Fib")
+        parts.append(_FIB_LABELS.get(fib_ratio, f"{fib_ratio * 100:.1f}%") + " Fib")
     if zone_price is not None:
         parts.append("S/R zone")
     if not parts:
@@ -224,18 +225,18 @@ def _confluence_label(
 
 
 def _best_target(
-    candidates:    List[Tuple[float, Optional[float]]],  # (price, fib_ratio)
-    zone_pool:     List[float],
+    candidates: list[tuple[float, float | None]],  # (price, fib_ratio)
+    zone_pool: list[float],
     current_price: float,
-    atr_dollar:    float,
-    is_above:      bool,
+    atr_dollar: float,
+    is_above: bool,
 ) -> StructuralTarget:
     """
     Pick the highest-confluence candidate.  Falls back to:
       1. Nearest zone in the correct direction.
       2. 2× ATR from current price.
     """
-    scored: List[Tuple[float, float, Optional[float]]] = []
+    scored: list[tuple[float, float, float | None]] = []
 
     for lvl, fib_r in candidates:
         if not np.isfinite(lvl) or lvl <= 0:
@@ -249,57 +250,57 @@ def _best_target(
     if scored:
         best_score, best_lvl, best_fib = scored[0]
         prox = _ZONE_PROX_PCT * current_price
-        zone_hit = next(
-            (z for z in zone_pool if abs(best_lvl - z) <= prox), None
-        )
+        zone_hit = next((z for z in zone_pool if abs(best_lvl - z) <= prox), None)
         method = (
-            "fib_zone" if best_fib is not None and zone_hit is not None
-            else "fib"  if best_fib is not None
+            "fib_zone"
+            if best_fib is not None and zone_hit is not None
+            else "fib"
+            if best_fib is not None
             else "zone"
         )
         return StructuralTarget(
-            price          = round(best_lvl, 4),
-            pct_from_price = round((best_lvl - current_price) / current_price * 100, 2),
-            method         = method,
-            confluence     = _confluence_label(best_fib, zone_hit, method),
-            fib_ratio      = best_fib,
-            zone_price     = zone_hit,
-            score          = best_score,
+            price=round(best_lvl, 4),
+            pct_from_price=round((best_lvl - current_price) / current_price * 100, 2),
+            method=method,
+            confluence=_confluence_label(best_fib, zone_hit, method),
+            fib_ratio=best_fib,
+            zone_price=zone_hit,
+            score=best_score,
         )
 
     # Fallback 1: nearest zone
-    valid_zones = [z for z in zone_pool
-                   if (z > current_price if is_above else z < current_price)]
+    valid_zones = [z for z in zone_pool if (z > current_price if is_above else z < current_price)]
     if valid_zones:
         zp = min(valid_zones, key=lambda z: abs(z - current_price))
         return StructuralTarget(
-            price          = round(zp, 4),
-            pct_from_price = round((zp - current_price) / current_price * 100, 2),
-            method         = "zone",
-            confluence     = "S/R zone",
-            score          = 1.0,
+            price=round(zp, 4),
+            pct_from_price=round((zp - current_price) / current_price * 100, 2),
+            method="zone",
+            confluence="S/R zone",
+            score=1.0,
         )
 
     # Fallback 2: 2× ATR
-    sign    = 1 if is_above else -1
+    sign = 1 if is_above else -1
     fallback = round(current_price + sign * 2 * atr_dollar, 4)
     return StructuralTarget(
-        price          = fallback,
-        pct_from_price = round((fallback - current_price) / current_price * 100, 2),
-        method         = "atr",
-        confluence     = "2× ATR",
-        score          = 0.0,
+        price=fallback,
+        pct_from_price=round((fallback - current_price) / current_price * 100, 2),
+        method="atr",
+        confluence="2× ATR",
+        score=0.0,
     )
 
 
 # ─── Public API ───────────────────────────────────────────────────────────────
 
+
 def compute_price_targets(
-    df:            pd.DataFrame,
+    df: pd.DataFrame,
     current_price: float,
-    atr_pct:       float,
-    zones          = None,       # ZoneResult | None
-    swing_window:  int = 8,
+    atr_pct: float,
+    zones=None,  # ZoneResult | None
+    swing_window: int = 8,
 ) -> dict:
     """
     Compute max_downside and max_high structural price targets.
@@ -329,26 +330,20 @@ def compute_price_targets(
 
     # Clamp so levels stay useful even after a breakout / breakdown
     swing_high = max(swing_high, current_price * 1.001)
-    swing_low  = min(swing_low,  current_price * 0.999)
+    swing_low = min(swing_low, current_price * 0.999)
 
     fib = _build_fib_levels(swing_high, swing_low)
     rng = swing_high - swing_low
 
     # ── 2. Collect zone prices ────────────────────────────────────────
-    supply_prices: List[float] = []
-    demand_prices: List[float] = []
+    supply_prices: list[float] = []
+    demand_prices: list[float] = []
     if zones is not None:
-        supply_prices = [
-            z.level for z in (zones.supply_zones or [])
-            if z.level > current_price * 0.97
-        ]
-        demand_prices = [
-            z.level for z in (zones.demand_zones or [])
-            if z.level < current_price * 1.03
-        ]
+        supply_prices = [z.level for z in (zones.supply_zones or []) if z.level > current_price * 0.97]
+        demand_prices = [z.level for z in (zones.demand_zones or []) if z.level < current_price * 1.03]
 
     # ── 3. Candidate levels above current price (max high) ────────────
-    above: List[Tuple[float, Optional[float]]] = []
+    above: list[tuple[float, float | None]] = []
 
     # Retracement levels that happen to sit above current price
     # (can occur when price pulled back below the midpoint)
@@ -369,7 +364,7 @@ def compute_price_targets(
             above.append((zp, None))
 
     # ── 4. Candidate levels below current price (max downside) ────────
-    below: List[Tuple[float, Optional[float]]] = []
+    below: list[tuple[float, float | None]] = []
 
     # Retracement levels below current price (the natural pullback targets)
     for ratio in _RETRACEMENTS:
@@ -389,11 +384,11 @@ def compute_price_targets(
             below.append((zp, None))
 
     # ── 5. Score and pick ─────────────────────────────────────────────
-    max_high     = _best_target(above, supply_prices, current_price, atr_dollar, is_above=True)
+    max_high = _best_target(above, supply_prices, current_price, atr_dollar, is_above=True)
     max_downside = _best_target(below, demand_prices, current_price, atr_dollar, is_above=False)
 
     return {
-        "max_high":     asdict(max_high),
+        "max_high": asdict(max_high),
         "max_downside": asdict(max_downside),
-        "fib":          asdict(fib),
+        "fib": asdict(fib),
     }

@@ -1,21 +1,14 @@
-# ──────────────────────────────────────────────────────────────────────────
-# pyproject.toml — Python tooling config.
-# Added in the May 2026 Phase 2 refactor.
+# pyproject.toml - Python tooling config.
+# Added Phase 2; extended Phase 8.
 #
 # Run ruff with:
 #   ruff check .
 #   ruff format .
-#
-# Install ruff first:
-#   pip install ruff
-# ──────────────────────────────────────────────────────────────────────────
 
 [tool.ruff]
-# Match the Python version the .venv targets (see .venv/pyvenv.cfg).
 target-version = "py310"
 line-length    = 110
 
-# Don't try to lint the venv, build artifacts, or test fixtures.
 exclude = [
     ".venv",
     ".git",
@@ -24,48 +17,58 @@ exclude = [
     "build",
     "dist",
     "resource_image",
-    "static/monte_carlo_microstructure.py",  # legacy file scheduled for removal
+    "static/monte_carlo_microstructure.py",
 ]
 
 [tool.ruff.lint]
-# A pragmatic starting rule set — strict on real bugs, lenient on style nits
-# that the existing codebase doesn't conform to.
 select = [
-    "E",       # pycodestyle errors
-    "F",       # pyflakes (undefined names, unused imports)
-    "W",       # pycodestyle warnings
-    "I",       # isort (import ordering)
-    "B",       # bugbear (likely bugs, e.g. mutable default args)
-    "C4",      # comprehensions
-    "UP",      # pyupgrade — flag obsolete syntax
-    "SIM",     # flake8-simplify
-    "RUF",     # ruff-specific rules
+    "E",
+    "F",
+    "W",
+    "I",
+    "B",
+    "C4",
+    "UP",
+    "SIM",
+    "RUF",
 ]
 ignore = [
-    "E501",    # line too long — we set line-length already and don't want this firing on existing prose
-    "E731",    # lambda assignment — used in several places intentionally for short helpers
-    "B008",    # function call in default arg — false positives with FastAPI's Depends(...)
-    "SIM108",  # ternary instead of if/else — readability call, leave as-is
-    "RUF012",  # mutable class attrs without ClassVar — false positives in dataclasses
+    "E501",
+    "E731",
+    "B008",
+    "SIM108",
+    "RUF012",
+    # Mathematical notation intentional throughout this quant codebase.
+    # Greek letters (alpha, sigma), en-dash ranges, multiplication signs
+    # appear in docstrings, comments, and string literals for readability.
+    "RUF001",
+    "RUF002",
+    "RUF003",
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*"           = ["E402"]  # allow late imports in test files
-"core/montecarlo.py" = ["E741"] # ambiguous variable names (l, I, O) in math code
-"core/signal.py"     = ["E741"]
-"core/indicators.py" = ["E741"]
+"tests/*"             = ["E402"]
+"core/montecarlo.py"  = ["E741"]
+"core/signal.py"      = ["E741"]
+"core/indicators.py"  = ["E741"]
+"core/zones.py"       = ["E741"]
+"core/zone_scanner.py" = ["E741"]
+"core/regime.py"      = ["E741"]
+"core/volume_profile.py" = ["E741"]
+"core/hawkes.py"      = ["E741"]
+"core/hmm_regime.py"  = ["E741"]
+"tests/test_zones.py" = ["E741", "RUF059"]
 
 [tool.ruff.format]
-quote-style          = "double"
-indent-style         = "space"
-line-ending          = "auto"
+quote-style           = "double"
+indent-style          = "space"
+line-ending           = "auto"
 docstring-code-format = true
 
-# ── pytest ────────────────────────────────────────────────────────────────
 [tool.pytest.ini_options]
-minversion       = "9.0"
-testpaths        = ["tests"]
-filterwarnings   = [
+minversion     = "9.0"
+testpaths      = ["tests"]
+filterwarnings = [
     "ignore::DeprecationWarning:yfinance.*",
     "ignore::DeprecationWarning:pkg_resources.*",
 ]

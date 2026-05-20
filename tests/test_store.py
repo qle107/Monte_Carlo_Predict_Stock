@@ -7,12 +7,20 @@ from core.store import SignalStore
 
 def _fake_result(ticker="AAPL", price=100.0, label="Buy", prob_up=60.0):
     return {
-        "ticker": ticker, "interval": "15m", "current_price": price,
-        "updated_at": "2025-01-02T15:00:00+00:00", "mc_model": "gaussian",
-        "signal": {"label": label, "confidence": 0.5, "drift_bias": 0.0001,
-                   "sub_scores": {"rsi": 0.1}},
-        "mc": {"prob_up": prob_up, "prob_flat": 30.0, "prob_down": 10.0,
-               "median_price": price * 1.01, "expected_return": 0.5, "cvar_5": -2.0},
+        "ticker": ticker,
+        "interval": "15m",
+        "current_price": price,
+        "updated_at": "2025-01-02T15:00:00+00:00",
+        "mc_model": "gaussian",
+        "signal": {"label": label, "confidence": 0.5, "drift_bias": 0.0001, "sub_scores": {"rsi": 0.1}},
+        "mc": {
+            "prob_up": prob_up,
+            "prob_flat": 30.0,
+            "prob_down": 10.0,
+            "median_price": price * 1.01,
+            "expected_return": 0.5,
+            "cvar_5": -2.0,
+        },
         "indicators": {},
     }
 

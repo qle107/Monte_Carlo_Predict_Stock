@@ -39,19 +39,16 @@ from __future__ import annotations
 
 import logging
 import math
-import time
 import threading
-from dataclasses import dataclass, field
-from typing import List, Optional
-
-import numpy as np
+import time
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
 # ─── Cache (avoid hammering yfinance) ────────────────────────────────────────
 _cache_lock = threading.RLock()
-_cache: dict = {}      # key → (result, expire_time)
-_CACHE_TTL = 300.0     # 5 minutes
+_cache: dict = {}  # key → (result, expire_time)
+_CACHE_TTL = 300.0  # 5 minutes
 
 
 def _cache_get(key):
@@ -69,48 +66,49 @@ def _cache_put(key, value):
 
 # ─── Dataclasses ─────────────────────────────────────────────────────────────
 
+
 @dataclass
 class GEXBar:
     strike: float
-    gex:    float          # net GEX at this strike (calls positive, puts negative)
+    gex: float  # net GEX at this strike (calls positive, puts negative)
     call_oi: int
-    put_oi:  int
+    put_oi: int
 
 
 @dataclass
 class OptionsFlow:
-    ticker:         str
-    expiry:         str                 # expiry date used (YYYY-MM-DD)
-    spot:           float
-    max_pain:       float
-    call_wall:      float               # strike with peak call OI
-    put_wall:       float               # strike with peak put OI
-    gamma_flip:     float               # price where net GEX ≈ 0
-    net_gex:        float               # total dealer net GEX
-    gex_positive:   bool                # True = volatility-damping regime
+    ticker: str
+    expiry: str  # expiry date used (YYYY-MM-DD)
+    spot: float
+    max_pain: float
+    call_wall: float  # strike with peak call OI
+    put_wall: float  # strike with peak put OI
+    gamma_flip: float  # price where net GEX ≈ 0
+    net_gex: float  # total dealer net GEX
+    gex_positive: bool  # True = volatility-damping regime
     days_to_expiry: float
-    gex_profile:    List[GEXBar]        # sorted by strike
-    error:          Optional[str] = None
+    gex_profile: list[GEXBar]  # sorted by strike
+    error: str | None = None
 
     def to_dict(self) -> dict:
         return {
-            "ticker":         self.ticker,
-            "expiry":         self.expiry,
-            "spot":           round(self.spot, 4),
-            "max_pain":       round(self.max_pain, 4),
-            "call_wall":      round(self.call_wall, 4),
-            "put_wall":       round(self.put_wall, 4),
-            "gamma_flip":     round(self.gamma_flip, 4),
-            "net_gex":        round(self.net_gex, 2),
-            "gex_positive":   self.gex_positive,
+            "ticker": self.ticker,
+            "expiry": self.expiry,
+            "spot": round(self.spot, 4),
+            "max_pain": round(self.max_pain, 4),
+            "call_wall": round(self.call_wall, 4),
+            "put_wall": round(self.put_wall, 4),
+            "gamma_flip": round(self.gamma_flip, 4),
+            "net_gex": round(self.net_gex, 2),
+            "gex_positive": self.gex_positive,
             "days_to_expiry": round(self.days_to_expiry, 1),
-            "error":          self.error,
+            "error": self.error,
             "gex_profile": [
                 {
-                    "strike":   round(b.strike, 4),
-                    "gex":      round(b.gex, 2),
-                    "call_oi":  b.call_oi,
-                    "put_oi":   b.put_oi,
+                    "strike": round(b.strike, 4),
+                    "gex": round(b.gex, 2),
+                    "call_oi": b.call_oi,
+                    "put_oi": b.put_oi,
                 }
                 for b in self.gex_profile
             ],
@@ -118,6 +116,7 @@ class OptionsFlow:
 
 
 # ─── Black-Scholes helpers ────────────────────────────────────────────────────
+
 
 def _norm_pdf(x: float) -> float:
     return math.exp(-0.5 * x * x) / math.sqrt(2 * math.pi)
@@ -131,13 +130,14 @@ def _bs_gamma(S: float, K: float, T: float, sigma: float, r: float = 0.05) -> fl
     try:
         if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
             return 0.0
-        d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
+        d1 = (math.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * math.sqrt(T))
         return _norm_pdf(d1) / (S * sigma * math.sqrt(T))
     except (ValueError, ZeroDivisionError):
         return 0.0
 
 
 # ─── Max Pain ─────────────────────────────────────────────────────────────────
+
 
 def _compute_max_pain(calls_df, puts_df) -> float:
     """
@@ -148,15 +148,12 @@ def _compute_max_pain(calls_df, puts_df) -> float:
 
     We evaluate over all strikes in the chain.
     """
-    all_strikes = sorted(set(list(calls_df["strike"].values) +
-                              list(puts_df["strike"].values)))
+    all_strikes = sorted(set(list(calls_df["strike"].values) + list(puts_df["strike"].values)))
     if not all_strikes:
         return 0.0
 
-    call_oi = {float(r["strike"]): int(r["openInterest"] or 0)
-               for _, r in calls_df.iterrows()}
-    put_oi  = {float(r["strike"]): int(r["openInterest"] or 0)
-               for _, r in puts_df.iterrows()}
+    call_oi = {float(r["strike"]): int(r["openInterest"] or 0) for _, r in calls_df.iterrows()}
+    put_oi = {float(r["strike"]): int(r["openInterest"] or 0) for _, r in puts_df.iterrows()}
 
     min_pain = float("inf")
     max_pain_strike = all_strikes[len(all_strikes) // 2]
@@ -165,7 +162,7 @@ def _compute_max_pain(calls_df, puts_df) -> float:
         total = 0.0
         for K in all_strikes:
             total += call_oi.get(K, 0) * max(P - K, 0.0)
-            total += put_oi.get(K,  0) * max(K - P, 0.0)
+            total += put_oi.get(K, 0) * max(K - P, 0.0)
         if total < min_pain:
             min_pain = total
             max_pain_strike = P
@@ -175,11 +172,15 @@ def _compute_max_pain(calls_df, puts_df) -> float:
 
 # ─── GEX profile ─────────────────────────────────────────────────────────────
 
+
 def _compute_gex_profile(
-    calls_df, puts_df, spot: float, T: float,
+    calls_df,
+    puts_df,
+    spot: float,
+    T: float,
     risk_free: float = 0.05,
     max_bars: int = 50,
-) -> List[GEXBar]:
+) -> list[GEXBar]:
     """
     For each strike compute net GEX:
       GEX_net(K) = (OI_call(K) - OI_put(K)) · Γ(S, K, T, σ) · S² · 100
@@ -194,31 +195,28 @@ def _compute_gex_profile(
 
     # Merge calls + puts on strike
     cols = ["strike", "openInterest", "impliedVolatility"]
-    c = calls_df[cols].copy().rename(columns={
-        "openInterest": "call_oi", "impliedVolatility": "call_iv"})
-    p = puts_df[cols].copy().rename(columns={
-        "openInterest": "put_oi", "impliedVolatility": "put_iv"})
+    c = calls_df[cols].copy().rename(columns={"openInterest": "call_oi", "impliedVolatility": "call_iv"})
+    p = puts_df[cols].copy().rename(columns={"openInterest": "put_oi", "impliedVolatility": "put_iv"})
 
     merged = pd.merge(c, p, on="strike", how="outer").fillna(0)
-    merged["call_oi"]  = merged["call_oi"].astype(int)
-    merged["put_oi"]   = merged["put_oi"].astype(int)
-    merged["call_iv"]  = merged["call_iv"].astype(float)
-    merged["put_iv"]   = merged["put_iv"].astype(float)
+    merged["call_oi"] = merged["call_oi"].astype(int)
+    merged["put_oi"] = merged["put_oi"].astype(int)
+    merged["call_iv"] = merged["call_iv"].astype(float)
+    merged["put_iv"] = merged["put_iv"].astype(float)
 
     # Fallback average IV
-    avg_iv = float(merged[["call_iv", "put_iv"]].replace(0, float("nan"))
-                   .stack().mean()) or 0.3
+    avg_iv = float(merged[["call_iv", "put_iv"]].replace(0, float("nan")).stack().mean()) or 0.3
 
-    bars: List[GEXBar] = []
+    bars: list[GEXBar] = []
     for _, row in merged.iterrows():
-        K      = float(row["strike"])
-        c_iv   = float(row["call_iv"]) or avg_iv
-        p_iv   = float(row["put_iv"])  or avg_iv
-        c_oi   = int(row["call_oi"])
-        p_oi   = int(row["put_oi"])
+        K = float(row["strike"])
+        c_iv = float(row["call_iv"]) or avg_iv
+        p_iv = float(row["put_iv"]) or avg_iv
+        c_oi = int(row["call_oi"])
+        p_oi = int(row["put_oi"])
 
         g_call = _bs_gamma(spot, K, T, c_iv, risk_free)
-        g_put  = _bs_gamma(spot, K, T, p_iv, risk_free)
+        g_put = _bs_gamma(spot, K, T, p_iv, risk_free)
 
         # Dealers who sold calls are long delta → they are short gamma (negative GEX from calls)
         # Convention: call GEX positive (dealers short vol), put GEX negative
@@ -244,7 +242,7 @@ def _compute_gex_profile(
     return bars
 
 
-def _find_gamma_flip(bars: List[GEXBar], spot: float) -> float:
+def _find_gamma_flip(bars: list[GEXBar], spot: float) -> float:
     """
     Find the strike closest to where cumulative net GEX crosses zero
     (scanning from spot downward).
@@ -255,7 +253,7 @@ def _find_gamma_flip(bars: List[GEXBar], spot: float) -> float:
         return spot
 
     # Cumulative GEX from spot downward
-    below.sort(key=lambda x: -x[0])   # high to low
+    below.sort(key=lambda x: -x[0])  # high to low
     cum = 0.0
     prev_strike = spot
     for strike, gex in below:
@@ -266,12 +264,13 @@ def _find_gamma_flip(bars: List[GEXBar], spot: float) -> float:
             frac = abs(prev_cum) / (abs(prev_cum) + abs(cum) + 1e-12)
             return prev_strike - frac * (prev_strike - strike)
         prev_strike = strike
-    return below[-1][0]   # no flip found — return lowest strike
+    return below[-1][0]  # no flip found — return lowest strike
 
 
 # ─── Public entry point ───────────────────────────────────────────────────────
 
-def fetch_options_flow(ticker: str, spot: Optional[float] = None) -> OptionsFlow:
+
+def fetch_options_flow(ticker: str, spot: float | None = None) -> OptionsFlow:
     """
     Fetch options chain and compute GEX + Max Pain.
     Returns an OptionsFlow with error set if anything fails.
@@ -287,16 +286,25 @@ def fetch_options_flow(ticker: str, spot: Optional[float] = None) -> OptionsFlow
     return result
 
 
-def _fetch(ticker: str, spot_override: Optional[float]) -> OptionsFlow:
+def _fetch(ticker: str, spot_override: float | None) -> OptionsFlow:
     _empty = OptionsFlow(
-        ticker=ticker, expiry="", spot=spot_override or 0.0,
-        max_pain=0.0, call_wall=0.0, put_wall=0.0, gamma_flip=0.0,
-        net_gex=0.0, gex_positive=True, days_to_expiry=0.0,
-        gex_profile=[], error="not_fetched",
+        ticker=ticker,
+        expiry="",
+        spot=spot_override or 0.0,
+        max_pain=0.0,
+        call_wall=0.0,
+        put_wall=0.0,
+        gamma_flip=0.0,
+        net_gex=0.0,
+        gex_positive=True,
+        days_to_expiry=0.0,
+        gex_profile=[],
+        error="not_fetched",
     )
     try:
-        import yfinance as yf
         from datetime import datetime, timezone
+
+        import yfinance as yf
 
         t = yf.Ticker(ticker)
 
@@ -305,11 +313,7 @@ def _fetch(ticker: str, spot_override: Optional[float]) -> OptionsFlow:
             spot = float(spot_override)
         else:
             info = t.fast_info
-            spot = (
-                getattr(info, "last_price", None)
-                or getattr(info, "regular_market_price", None)
-                or 0.0
-            )
+            spot = getattr(info, "last_price", None) or getattr(info, "regular_market_price", None) or 0.0
             if spot <= 0:
                 hist = t.history(period="1d", interval="1m")
                 spot = float(hist["Close"].iloc[-1]) if not hist.empty else 0.0
@@ -339,7 +343,7 @@ def _fetch(ticker: str, spot_override: Optional[float]) -> OptionsFlow:
 
         chain = t.option_chain(chosen_exp)
         calls = chain.calls.copy()
-        puts  = chain.puts.copy()
+        puts = chain.puts.copy()
 
         if calls.empty or puts.empty:
             _empty.error = "empty_chain"
@@ -348,7 +352,7 @@ def _fetch(ticker: str, spot_override: Optional[float]) -> OptionsFlow:
         # Focus on strikes within ±20% of spot (filter out deep OTM noise)
         lo, hi = spot * 0.80, spot * 1.20
         calls = calls[(calls["strike"] >= lo) & (calls["strike"] <= hi)]
-        puts  = puts [(puts["strike"]  >= lo) & (puts["strike"]  <= hi)]
+        puts = puts[(puts["strike"] >= lo) & (puts["strike"] <= hi)]
 
         if calls.empty or puts.empty:
             _empty.error = "no_near_strikes"
@@ -361,12 +365,12 @@ def _fetch(ticker: str, spot_override: Optional[float]) -> OptionsFlow:
         c_oi_max_idx = calls["openInterest"].fillna(0).astype(int).idxmax()
         p_oi_max_idx = puts["openInterest"].fillna(0).astype(int).idxmax()
         call_wall = float(calls.loc[c_oi_max_idx, "strike"])
-        put_wall  = float(puts.loc[p_oi_max_idx, "strike"])
+        put_wall = float(puts.loc[p_oi_max_idx, "strike"])
 
         # ── GEX profile ───────────────────────────────────────────────────
         gex_profile = _compute_gex_profile(calls, puts, spot, T)
-        net_gex     = sum(b.gex for b in gex_profile)
-        gamma_flip  = _find_gamma_flip(gex_profile, spot)
+        net_gex = sum(b.gex for b in gex_profile)
+        gamma_flip = _find_gamma_flip(gex_profile, spot)
 
         result = OptionsFlow(
             ticker=ticker,
@@ -385,7 +389,14 @@ def _fetch(ticker: str, spot_override: Optional[float]) -> OptionsFlow:
         logger.info(
             "[OptionsFlow] %s  spot=%.2f  max_pain=%.2f  call_wall=%.2f  "
             "put_wall=%.2f  gamma_flip=%.2f  net_gex=%.0f  exp=%s",
-            ticker, spot, max_pain, call_wall, put_wall, gamma_flip, net_gex, chosen_exp,
+            ticker,
+            spot,
+            max_pain,
+            call_wall,
+            put_wall,
+            gamma_flip,
+            net_gex,
+            chosen_exp,
         )
         return result
 

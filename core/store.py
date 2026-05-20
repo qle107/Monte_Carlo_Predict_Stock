@@ -6,9 +6,8 @@ import json
 import logging
 import sqlite3
 import threading
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -65,10 +64,8 @@ class SignalStore:
         with self._lock, self._connect() as conn:
             conn.executescript(_SCHEMA)
             for stmt in _MIGRATIONS:
-                try:
+                with suppress(sqlite3.OperationalError):  # column already exists
                     conn.execute(stmt)
-                except sqlite3.OperationalError:
-                    pass  # column already exists
 
     @contextmanager
     def _cur(self):
@@ -84,17 +81,17 @@ class SignalStore:
         if not isinstance(result, dict) or "signal" not in result or "mc" not in result:
             return
         sig = result.get("signal", {})
-        mc  = result.get("mc",     {})
+        mc = result.get("mc", {})
         reg = result.get("regime", {}) or {}
         row = (
             result.get("updated_at", ""),
-            result.get("ticker",   ""),
+            result.get("ticker", ""),
             result.get("interval", ""),
             float(result.get("current_price", 0.0)),
             sig.get("label", ""),
-            float(sig.get("confidence",  0.0)),
-            float(sig.get("drift_bias",  0.0)),
-            float(mc.get("prob_up",   0.0)),
+            float(sig.get("confidence", 0.0)),
+            float(sig.get("drift_bias", 0.0)),
+            float(mc.get("prob_up", 0.0)),
             float(mc.get("prob_flat", 0.0)),
             float(mc.get("prob_down", 0.0)),
             float(mc.get("median_price", 0.0)),
@@ -102,13 +99,17 @@ class SignalStore:
             float(mc.get("cvar_5", 0.0)),
             result.get("mc_model", "gaussian"),
             reg.get("regime", ""),
-            float(reg.get("potential_up",   0.0)),
+            float(reg.get("potential_up", 0.0)),
             float(reg.get("potential_down", 0.0)),
             float(reg.get("potential_flat", 0.0)),
-            json.dumps({"sub_scores": sig.get("sub_scores", {}),
-                        "regime":     reg,
-                        "indicators": result.get("indicators", {})},
-                       default=str),
+            json.dumps(
+                {
+                    "sub_scores": sig.get("sub_scores", {}),
+                    "regime": reg,
+                    "indicators": result.get("indicators", {}),
+                },
+                default=str,
+            ),
         )
         try:
             with self._cur() as conn:
@@ -124,7 +125,7 @@ class SignalStore:
         except sqlite3.Error as e:
             logger.warning("SignalStore.record failed: %s", e)
 
-    def recent(self, ticker: Optional[str] = None, limit: int = 100) -> List[dict]:
+    def recent(self, ticker: str | None = None, limit: int = 100) -> list[dict]:
         sql = """SELECT ts, ticker, interval, price, label, confidence,
                         drift_bias, prob_up, prob_flat, prob_down,
                         median_price, expected_ret, cvar_5, mc_model,
@@ -140,7 +141,7 @@ class SignalStore:
             rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
-    def metrics(self, ticker: Optional[str] = None) -> dict:
+    def metrics(self, ticker: str | None = None) -> dict:
         """Lightweight aggregate metrics."""
         where = ""
         params: tuple = ()
@@ -167,21 +168,19 @@ class SignalStore:
         labels = {r["label"]: r["c"] for r in label_rows}
         n = int(row["n"] or 0)
         return {
-            "ticker":      ticker,
-            "signals":     n,
+            "ticker": ticker,
+            "signals": n,
             "avg_prob_up": round(float(row["avg_prob_up"] or 0), 2),
-            "avg_conf":    round(float(row["avg_conf"]    or 0), 3),
-            "avg_drift":   round(float(row["avg_drift"]   or 0), 6),
-            "first_ts":    row["first_ts"],
-            "last_ts":     row["last_ts"],
+            "avg_conf": round(float(row["avg_conf"] or 0), 3),
+            "avg_drift": round(float(row["avg_drift"] or 0), 6),
+            "first_ts": row["first_ts"],
+            "last_ts": row["last_ts"],
             "label_counts": labels,
         }
 
     def prune(self, days: int = 30) -> int:
         """Delete rows older than `days` days. Returns count deleted."""
-        cutoff = (
-            datetime.now(timezone.utc) - timedelta(days=days)
-        ).strftime("%Y-%m-%dT%H:%M:%S")
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
         try:
             with self._cur() as conn:
                 cur = conn.execute("DELETE FROM signals WHERE ts < ?", (cutoff,))
@@ -194,29 +193,28 @@ class SignalStore:
             logger.warning("SignalStore.prune failed: %s", e)
             return 0
 
-    def accuracy_window(self, ticker: Optional[str] = None, limit: int = 200) -> dict:
+    def accuracy_window(self, ticker: str | None = None, limit: int = 200) -> dict:
         """
         Directional accuracy for the most recent Buy/Sell signals.
         Uses the next recorded price as the realised outcome.
         """
         rows = self.recent(ticker=ticker, limit=limit + 1)
         if len(rows) < 2:
-            return {"n_calls": 0, "hit_rate": None,
-                    "avg_prob_up_on_buys": None, "avg_prob_up_on_sells": None}
+            return {"n_calls": 0, "hit_rate": None, "avg_prob_up_on_buys": None, "avg_prob_up_on_sells": None}
 
         rows = list(reversed(rows))  # chronological order
 
         correct = 0
-        total   = 0
-        buy_probs:  List[float] = []
-        sell_probs: List[float] = []
+        total = 0
+        buy_probs: list[float] = []
+        sell_probs: list[float] = []
 
         for i in range(len(rows) - 1):
-            row      = rows[i]
+            row = rows[i]
             next_row = rows[i + 1]
-            label    = row.get("label", "")
-            price    = float(row.get("price", 0.0) or 0.0)
-            next_p   = float(next_row.get("price", 0.0) or 0.0)
+            label = row.get("label", "")
+            price = float(row.get("price", 0.0) or 0.0)
+            next_p = float(next_row.get("price", 0.0) or 0.0)
 
             if not ("Buy" in label or "Sell" in label):
                 continue
@@ -237,9 +235,9 @@ class SignalStore:
             total += 1
 
         return {
-            "n_calls":              total,
-            "hit_rate":             round(correct / total * 100, 2) if total else None,
-            "avg_prob_up_on_buys":  round(sum(buy_probs)  / len(buy_probs),  2) if buy_probs  else None,
+            "n_calls": total,
+            "hit_rate": round(correct / total * 100, 2) if total else None,
+            "avg_prob_up_on_buys": round(sum(buy_probs) / len(buy_probs), 2) if buy_probs else None,
             "avg_prob_up_on_sells": round(sum(sell_probs) / len(sell_probs), 2) if sell_probs else None,
         }
 

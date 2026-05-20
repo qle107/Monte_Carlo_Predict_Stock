@@ -27,9 +27,8 @@ import logging
 import re
 import threading
 import time
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
 
 import httpx
 import yfinance as yf
@@ -43,10 +42,10 @@ logger = logging.getLogger(__name__)
 
 _SENTIMENT_TTL  = 300.0          # 5 minutes
 _sentiment_lock = threading.Lock()
-_sentiment_cache: Dict[str, tuple] = {}   # ticker → (result_dict, expire_time)
+_sentiment_cache: dict[str, tuple] = {}   # ticker → (result_dict, expire_time)
 
 
-def _sentiment_cache_get(ticker: str) -> Optional[dict]:
+def _sentiment_cache_get(ticker: str) -> dict | None:
     with _sentiment_lock:
         entry = _sentiment_cache.get(ticker.upper())
         if entry is None:
@@ -66,7 +65,7 @@ def _sentiment_cache_put(ticker: str, result: dict) -> None:
 # Sentiment scoring
 # ─────────────────────────────────────────────────────────────────────────────
 
-_BULL_WORDS: List[str] = [
+_BULL_WORDS: list[str] = [
     "bullish", "moon", "mooning", "calls", "long", "buy", "buying",
     "breakout", "squeeze", "yolo", "hodl", "undervalued", "accumulate",
     "strong", "support", "bounce", "rocket", "gains", "green", "ripping",
@@ -74,7 +73,7 @@ _BULL_WORDS: List[str] = [
     "🚀", "💎", "🙌", "📈",
 ]
 
-_BEAR_WORDS: List[str] = [
+_BEAR_WORDS: list[str] = [
     "bearish", "puts", "short", "sell", "selling", "breakdown", "dump",
     "dumping", "crash", "crashing", "overvalued", "weak", "resistance",
     "fall", "falling", "drop", "dropping", "red", "miss", "downgrade",
@@ -92,7 +91,7 @@ def _score_text(text: str) -> float:
     return 0.0 if total == 0 else (bull - bear) / total
 
 
-def _detect_option_bias(text: str) -> Tuple[int, int]:
+def _detect_option_bias(text: str) -> tuple[int, int]:
     """Return (call_mentions, put_mentions)."""
     t = text.lower()
     calls = len(re.findall(r'\bcalls?\b', t))
@@ -104,7 +103,7 @@ def _detect_option_bias(text: str) -> Tuple[int, int]:
 # Sentiment type classification  (stock vs options vs mixed)
 # ─────────────────────────────────────────────────────────────────────────────
 
-_OPTIONS_SIGNALS: List[str] = [
+_OPTIONS_SIGNALS: list[str] = [
     "call", "calls", "put", "puts", "option", "options", "strike",
     "expir", "expiry", "theta", "delta", "gamma", "vega", "iv",
     "implied volatility", "otm", "itm", "atm", "leaps", "contract",
@@ -113,7 +112,7 @@ _OPTIONS_SIGNALS: List[str] = [
     "strangle", "debit", "credit", "butterfly", "condor",
 ]
 
-_STOCK_SIGNALS: List[str] = [
+_STOCK_SIGNALS: list[str] = [
     "share", "shares", "stock", "stonk", "stonks", "holding", "held",
     "dividend", "earnings", "eps", "revenue", "guidance", "buyback",
     "pe ratio", "market cap", "float", "short interest", "catalyst",
@@ -145,7 +144,7 @@ def _classify_sentiment_type(text: str) -> str:
 
 # Each entry: (compiled regex, option_type or None, group_index_for_price)
 # option_type: 'call' | 'put' | 'stock'
-_PRICE_REGEXES: List[Tuple[re.Pattern, str, int]] = [
+_PRICE_REGEXES: list[tuple[re.Pattern, str, int]] = [
     # ── Options — highest specificity first ──────────────────────────────────
     # "$150c", "$200p", "$150C", "$200P"
     (re.compile(r'\$(\d{1,5}(?:\.\d{1,2})?)\s*([Cc])\b'),       'call',  1),
@@ -178,7 +177,7 @@ _PRICE_MIN = 0.5    # filter out sub-cent
 _PRICE_MAX = 25_000 # filter out obviously wrong numbers
 
 
-def _extract_price_mentions(text: str) -> List[Dict]:
+def _extract_price_mentions(text: str) -> list[dict]:
     """
     Extract all price / strike level mentions from `text`.
 
@@ -187,7 +186,7 @@ def _extract_price_mentions(text: str) -> List[Dict]:
     ordered from most-specific to least-specific.
     """
     seen: set = set()
-    results: List[Dict] = []
+    results: list[dict] = []
 
     for pattern, ptype, grp in _PRICE_REGEXES:
         for m in pattern.finditer(text):
@@ -225,16 +224,17 @@ def _extract_price_mentions(text: str) -> List[Dict]:
 # so subsequent restarts don't need to log in again.
 # ─────────────────────────────────────────────────────────────────────────────
 
-import os as _os
+import os as _os  # noqa: E402
+
 _TWIKIT_COOKIES = _os.path.abspath(
     _os.path.join(_os.path.dirname(__file__), '..', 'x_cookies.json')
 )
 
-_twikit_client:    Optional[object]       = None
-_twikit_lock:      Optional[asyncio.Lock] = None   # created lazily inside async ctx
+_twikit_client:    object | None       = None
+_twikit_lock:      asyncio.Lock | None = None   # created lazily inside async ctx
 
 
-async def _get_twikit_client() -> Optional[object]:
+async def _get_twikit_client() -> object | None:
     """
     Return a logged-in twikit.Client singleton.
 
@@ -337,7 +337,7 @@ _REDDIT_SUBREDDITS = ["wallstreetbets", "options", "stocks", "investing"]
 
 async def _reddit_fetch_subreddit(
     client: httpx.AsyncClient, ticker: str, subreddit: str
-) -> List[Dict]:
+) -> list[dict]:
     """Used by the Global Market Pulse feed — NOT the per-ticker sentiment."""
     url = (
         f"https://www.reddit.com/r/{subreddit}/search.json"
@@ -395,7 +395,8 @@ async def fetch_x_sentiment(ticker: str) -> dict:
                                  sentiment_type, price_mentions}],
     }
     """
-    import os, random
+    import os
+    import random
 
     has_creds = bool(
         os.getenv('X_USERNAME', '').strip().lstrip('@') and
@@ -429,9 +430,9 @@ async def fetch_x_sentiment(ticker: str) -> dict:
         return {**_failed, "error": "Login failed — check X_USERNAME / X_PASSWORD in .env"}
 
     try:
-        from twikit.errors import TooManyRequests, BadRequest  # type: ignore
+        from twikit.errors import TooManyRequests  # type: ignore
     except ImportError:
-        TooManyRequests = BadRequest = Exception
+        TooManyRequests = Exception
 
     query = f"${ticker} -filter:retweets lang:en"
 
@@ -456,9 +457,9 @@ async def fetch_x_sentiment(ticker: str) -> dict:
 
     tweets = list(results) if results else []
     if not tweets:
-        return {**_empty, "available": True, "needs_setup": False, "post_count": 0}
+        return {**_failed, "available": True, "needs_setup": False, "post_count": 0}
 
-    posts:         List[Dict] = []
+    posts:         list[dict] = []
     total_weight   = 0.0
     weighted_score = 0.0
     call_total = put_total = 0
@@ -537,7 +538,7 @@ async def fetch_x_sentiment(ticker: str) -> dict:
 # Cramer stance keyword lists  (ordered from strongest signal → weakest)
 # ─────────────────────────────────────────────────────────────────────────────
 
-_CRAMER_BULLISH_KW: List[str] = [
+_CRAMER_BULLISH_KW: list[str] = [
     # Superlatives / iconic Cramer phrases
     "buy buy buy", "screaming buy", "strong buy", "must own",
     "back up the truck", "buying opportunity", "buy the dip",
@@ -559,7 +560,7 @@ _CRAMER_BULLISH_KW: List[str] = [
     "great stock", "solid", "winner",
 ]
 
-_CRAMER_BEARISH_KW: List[str] = [
+_CRAMER_BEARISH_KW: list[str] = [
     # Superlatives / iconic Cramer phrases
     "sell sell sell", "avoid at all costs", "run from", "get out now",
     "terrible stock", "avoid like the plague",
@@ -581,7 +582,7 @@ _CRAMER_BEARISH_KW: List[str] = [
     "danger", "warning", "negative on",
 ]
 
-_CRAMER_NEUTRAL_KW: List[str] = [
+_CRAMER_NEUTRAL_KW: list[str] = [
     "watch", "watching", "wait", "waiting", "monitor", "monitoring",
     "keep an eye", "uncertain", "mixed", "neutral",
     "on the fence", "not sure", "could go either",
@@ -607,7 +608,7 @@ _ARTICLE_TICKER_BL: set = {
 }
 
 
-def _score_cramer_text(text: str) -> Tuple[int, int]:
+def _score_cramer_text(text: str) -> tuple[int, int]:
     """Return (buy_signals, sell_signals) — kept for backward-compat with global fn."""
     t = text.lower()
     buys  = sum(1 for w in _CRAMER_BULLISH_KW  if w in t)
@@ -615,7 +616,7 @@ def _score_cramer_text(text: str) -> Tuple[int, int]:
     return buys, sells
 
 
-def _classify_stance_from_window(window: str) -> Tuple[str, str]:
+def _classify_stance_from_window(window: str) -> tuple[str, str]:
     """
     Classify Cramer's stance on a stock from the text window around its mention.
 
@@ -641,7 +642,7 @@ def _classify_stance_from_window(window: str) -> Tuple[str, str]:
     return "neutral", evidence
 
 
-def _extract_cramer_picks(full_text: str) -> List[Dict]:
+def _extract_cramer_picks(full_text: str) -> list[dict]:
     """
     Scan article text for ticker symbols and classify Cramer's stance on each.
 
@@ -655,7 +656,7 @@ def _extract_cramer_picks(full_text: str) -> List[Dict]:
     Returns list of {ticker, stance, evidence} dicts.
     """
     strength = {"bullish": 3, "bearish": 3, "neutral": 2, "unknown": 1}
-    picks: Dict[str, Dict] = {}
+    picks: dict[str, dict] = {}
 
     for match in _ARTICLE_TICKER_RE.finditer(full_text):
         ticker = (match.group(1) or match.group(2) or "").upper().strip()
@@ -749,7 +750,7 @@ async def fetch_cramer_sentiment(ticker: str) -> dict:
         f'https://news.google.com/rss/search?q=%22Mad+Money%22+{ticker}&hl=en-US&gl=US&ceid=US:en',
     ]
 
-    raw_items: List[Dict] = []   # items from RSS before article fetch
+    raw_items: list[dict] = []   # items from RSS before article fetch
 
     async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
 
@@ -780,8 +781,8 @@ async def fetch_cramer_sentiment(ticker: str) -> dict:
                 logger.debug("Cramer RSS %s: %s", rss_url, exc)
 
         # ── Step 2: Fetch full article body for top 5 items ─────────────────
-        articles:    List[Dict] = []
-        all_picks_map: Dict[str, Dict] = {}   # ticker → best pick across all articles
+        articles:    list[dict] = []
+        all_picks_map: dict[str, dict] = {}   # ticker → best pick across all articles
         total_buy = total_sell = 0
         type_counts: Counter = Counter()
         strength_order = {"bullish": 3, "bearish": 3, "neutral": 2, "unknown": 1}
@@ -792,7 +793,7 @@ async def fetch_cramer_sentiment(ticker: str) -> dict:
         ]
         bodies = await asyncio.gather(*fetch_tasks, return_exceptions=True)
 
-        for it, body in zip(raw_items[:5], bodies):
+        for it, body in zip(raw_items[:5], bodies, strict=False):
             body_text = body if isinstance(body, str) else ""
             # Combine RSS snippet + full body for maximum coverage
             combined  = f"{it['title']} {it['desc']} {body_text}"
@@ -935,9 +936,9 @@ async def _fetch_stocktwits_sentiment(ticker: str) -> dict:
         messages = data.get("messages", [])
         bull = bear = neutral = 0
         call_total = put_total = 0
-        scored: List[float] = []
+        scored: list[float] = []
         type_counts: Counter = Counter()
-        st_price_mentions: List[Dict] = []
+        st_price_mentions: list[dict] = []
 
         for msg in messages:
             body           = msg.get("body", "")
@@ -953,11 +954,14 @@ async def _fetch_stocktwits_sentiment(ticker: str) -> dict:
 
             label = ((msg.get("entities") or {}).get("sentiment") or {}).get("basic", "")
             if label == "Bullish":
-                bull += 1; effective = max(0.05, text_score)
+                bull += 1
+                effective = max(0.05, text_score)
             elif label == "Bearish":
-                bear += 1; effective = min(-0.05, text_score)
+                bear += 1
+                effective = min(-0.05, text_score)
             else:
-                neutral += 1; effective = text_score
+                neutral += 1
+                effective = text_score
 
             scored.append(effective)
 
@@ -1019,7 +1023,7 @@ def _scan_unusual_activity(
     today,
     min_vol: int = 500,
     vol_oi_mult: float = 1.5,
-) -> List[Dict]:
+) -> list[dict]:
     """
     Identify contracts where volume > open_interest × vol_oi_mult AND volume > min_vol.
 
@@ -1033,7 +1037,7 @@ def _scan_unusual_activity(
     yfinance does not expose aggressor-side, so the row carries no sentiment
     label here; the frontend renders a "Flow direction unavailable" disclaimer.
     """
-    out: List[Dict] = []
+    out: list[dict] = []
     try:
         exp_dt = datetime.strptime(exp_str, "%Y-%m-%d").date()
         dte = max((exp_dt - today).days, 0)
@@ -1099,9 +1103,9 @@ def _options_flow_sync(ticker: str) -> dict:
         total_call_vol       = total_put_vol = 0
         total_call_oi        = total_put_oi  = 0
         chains_summary       = []
-        hot_calls: List[Dict] = []
-        hot_puts:  List[Dict] = []
-        unusual_activity: List[Dict] = []
+        hot_calls: list[dict] = []
+        hot_puts:  list[dict] = []
+        unusual_activity: list[dict] = []
         scanned_for_unusual: set = set()
 
         for exp in expirations[:n_exp]:
@@ -1253,7 +1257,7 @@ def _options_flow_sync(ticker: str) -> dict:
 
 _GLOBAL_CACHE_TTL = 600.0   # 10 min (market-wide data changes slower)
 _global_cache_lock = threading.Lock()
-_global_cache: Dict[str, tuple] = {}   # 'GLOBAL' → (result, expire)
+_global_cache: dict[str, tuple] = {}   # 'GLOBAL' → (result, expire)
 
 # Hot market themes to detect in posts
 _MARKET_THEMES = {
@@ -1275,7 +1279,7 @@ _TICKER_RE = re.compile(r'\$([A-Z]{1,5})\b')
 _TICKER_BLACKLIST = {
     "I", "A", "AT", "BE", "DO", "GO", "IN", "IS", "IT", "ME", "MY",
     "NO", "OF", "ON", "OR", "SO", "TO", "UP", "US", "WE", "HE", "AN",
-    "AI", "DD", "OP", "IV", "OI", "IV", "PE", "EV", "OK", "YO", "IF",
+    "AI", "DD", "OP", "IV", "OI", "PE", "EV", "OK", "YO", "IF",
     "PM", "AM", "FY", "QQ", "QE", "MM", "YTD", "YOY", "ATH", "HODL",
     "YOLO", "FOMO", "TLDR", "IIRC", "AFAIK", "IMO", "IMHO",
 }
@@ -1302,7 +1306,6 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
     }
     """
     import xml.etree.ElementTree as ET
-    from email.utils import parsedate_to_datetime
 
     # Cache check
     if not force_refresh:
@@ -1331,7 +1334,7 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
         ("StockMarket",    "hot"),
     ]
 
-    all_posts: List[Dict] = []
+    all_posts: list[dict] = []
     ticker_counter: Counter = Counter()
     theme_counter:  Counter = Counter()
     total_bull = total_bear = 0
@@ -1360,8 +1363,10 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
 
                     call_total += calls
                     put_total  += puts
-                    if score > 0.1: total_bull += 1
-                    elif score < -0.1: total_bear += 1
+                    if score > 0.1:
+                        total_bull += 1
+                    elif score < -0.1:
+                        total_bear += 1
 
                     # Trending tickers ($AAPL, $NVDA etc.)
                     for m in _TICKER_RE.findall(text.upper()):
@@ -1412,8 +1417,10 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
                     calls, puts = _detect_option_bias(text)
                     call_total += calls
                     put_total  += puts
-                    if score > 0.1: total_bull += 1
-                    elif score < -0.1: total_bear += 1
+                    if score > 0.1:
+                        total_bull += 1
+                    elif score < -0.1:
+                        total_bear += 1
 
                     tl = text.lower()
                     for theme, kws in _MARKET_THEMES.items():
@@ -1461,8 +1468,10 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
                         sent_type = _classify_sentiment_type(text)
                         call_total += calls
                         put_total  += puts
-                        if score > 0.1:  total_bull += 1
-                        elif score < -0.1: total_bear += 1
+                        if score > 0.1:
+                            total_bull += 1
+                        elif score < -0.1:
+                            total_bear += 1
 
                         for m in _TICKER_RE.findall(text.upper()):
                             if m not in _TICKER_BLACKLIST and 2 <= len(m) <= 5:
@@ -1507,7 +1516,7 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
         from email.utils import parsedate_to_datetime as p2dt
 
         cramer_buy = cramer_sell = 0
-        cramer_raw_items: List[Dict] = []
+        cramer_raw_items: list[dict] = []
         mkt_urls = [
             "https://news.google.com/rss/search?q=%22Jim+Cramer%22+stock&hl=en-US&gl=US&ceid=US:en",
             "https://news.google.com/rss/search?q=%22Mad+Money%22+CNBC+stock&hl=en-US&gl=US&ceid=US:en",
@@ -1518,7 +1527,8 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
             for u in mkt_urls:
                 try:
                     r = await c2.get(u, headers=headers_rss)
-                    if r.status_code != 200: continue
+                    if r.status_code != 200:
+                        continue
                     root2 = ET2.fromstring(r.text)
                     for item in root2.findall(".//item")[:20]:
                         title = item.findtext("title",       "") or ""
@@ -1528,11 +1538,14 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
                         tl    = f"{title} {desc}".lower()
                         if "cramer" not in tl and "mad money" not in tl:
                             continue
-                        try:    pub_str = p2dt(pub).strftime("%Y-%m-%d")
-                        except: pub_str = pub[:10] if pub else ""
+                        try:
+                            pub_str = p2dt(pub).strftime("%Y-%m-%d")
+                        except Exception:
+                            pub_str = pub[:10] if pub else ""
                         cramer_raw_items.append({"title": title, "url": link,
                                                  "date": pub_str, "desc": desc})
-                    if cramer_raw_items: break
+                    if cramer_raw_items:
+                        break
                 except Exception as exc:
                     logger.debug("Global Cramer RSS: %s", exc)
 
@@ -1542,15 +1555,16 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
             g_bodies = await asyncio.gather(*g_fetch_tasks, return_exceptions=True)
 
         # Process items — score + extract picks
-        global_picks_map: Dict[str, Dict] = {}
-        cramer_arts: List[Dict] = []
+        global_picks_map: dict[str, dict] = {}
+        cramer_arts: list[dict] = []
         g_strength = {"bullish": 3, "bearish": 3, "neutral": 2, "unknown": 1}
 
-        for it, body in zip(cramer_raw_items[:5], g_bodies):
+        for it, body in zip(cramer_raw_items[:5], g_bodies, strict=False):
             body_text = body if isinstance(body, str) else ""
             combined  = f"{it['title']} {it['desc']} {body_text}"
             b, s = _score_cramer_text(combined)
-            cramer_buy  += b; cramer_sell += s
+            cramer_buy  += b
+            cramer_sell += s
             bias = "bullish" if b > s else "bearish" if s > b else "neutral"
             art_picks = _extract_cramer_picks(combined)
             for pk in art_picks:
@@ -1566,7 +1580,8 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
         for it in cramer_raw_items[5:]:
             combined = f"{it['title']} {it['desc']}"
             b, s = _score_cramer_text(combined)
-            cramer_buy += b; cramer_sell += s
+            cramer_buy += b
+            cramer_sell += s
             bias = "bullish" if b > s else "bearish" if s > b else "neutral"
             art_picks = _extract_cramer_picks(combined)
             for pk in art_picks:
@@ -1581,9 +1596,12 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
 
         nc = len(cramer_arts)
         if nc > 0:
-            if cramer_buy > cramer_sell * 1.4:   sig = "bullish"
-            elif cramer_sell > cramer_buy * 1.4: sig = "bearish"
-            else:                                 sig = "mixed"
+            if cramer_buy > cramer_sell * 1.4:
+                sig = "bullish"
+            elif cramer_sell > cramer_buy * 1.4:
+                sig = "bearish"
+            else:
+                sig = "mixed"
             inv  = "SELL" if sig == "bullish" else "BUY" if sig == "bearish" else "WAIT"
             sstr = abs(cramer_buy - cramer_sell) / max(cramer_buy + cramer_sell, 1)
             conf = ("high"   if nc >= 5 and sstr >= 0.5  else
@@ -1656,7 +1674,7 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
 # Options-activity sentiment scorer
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _score_options_activity(options_data: dict) -> Tuple[float, str, dict]:
+def _score_options_activity(options_data: dict) -> tuple[float, str, dict]:
     """
     Derive a directional sentiment score from live options-flow data.
 
@@ -1768,20 +1786,31 @@ def _score_options_activity(options_data: dict) -> Tuple[float, str, dict]:
 
     # 5. Overall PCR — up to ±0.15
     if pcr is not None:
-        if   pcr < 0.35:  score += 0.15    # extremely call-heavy
-        elif pcr < 0.60:  score += 0.10
-        elif pcr < 0.80:  score += 0.05
-        elif pcr > 1.80:  score -= 0.15    # extremely put-heavy
-        elif pcr > 1.20:  score -= 0.10
-        elif pcr > 1.00:  score -= 0.05
+        if pcr < 0.35:
+            score += 0.15    # extremely call-heavy
+        elif pcr < 0.60:
+            score += 0.10
+        elif pcr < 0.80:
+            score += 0.05
+        elif pcr > 1.80:
+            score -= 0.15    # extremely put-heavy
+        elif pcr > 1.20:
+            score -= 0.10
+        elif pcr > 1.00:
+            score -= 0.05
 
     score = round(max(-1.0, min(1.0, score)), 3)
 
-    if   score >  0.35: label = "strongly_bullish"
-    elif score >  0.12: label = "bullish"
-    elif score < -0.35: label = "strongly_bearish"
-    elif score < -0.12: label = "bearish"
-    else:               label = "neutral"
+    if score > 0.35:
+        label = "strongly_bullish"
+    elif score > 0.12:
+        label = "bullish"
+    elif score < -0.35:
+        label = "strongly_bearish"
+    elif score < -0.12:
+        label = "bearish"
+    else:
+        label = "neutral"
 
     details = {
         "spot":                round(spot, 2),
@@ -1863,19 +1892,22 @@ async def get_sentiment(ticker: str, force_refresh: bool = False) -> dict:
     scores, weights = [], []
 
     if x_data.get("available") and x_data.get("post_count", 0) > 0:
-        scores.append(x_data["sentiment_score"]); weights.append(1.0)
+        scores.append(x_data["sentiment_score"])
+        weights.append(1.0)
 
     if cramer.get("available") and cramer.get("inverse_score", 0.0) != 0.0:
         # Cramer score is ALREADY inverted — positive = crowd should BUY.
-        scores.append(cramer["inverse_score"]); weights.append(1.5)
+        scores.append(cramer["inverse_score"])
+        weights.append(1.5)
 
     # Options activity: derived from ATM/OTM volume, call ladder, expiry urgency
     opt_score, opt_label, opt_details = _score_options_activity(options or {})
     if opt_score != 0.0:
-        scores.append(opt_score); weights.append(2.0)
+        scores.append(opt_score)
+        weights.append(2.0)
 
     agg_score = (
-        sum(s * w for s, w in zip(scores, weights)) / sum(weights)
+        sum(s * w for s, w in zip(scores, weights, strict=False)) / sum(weights)
         if scores else 0.0
     )
     agg_score = round(max(-1.0, min(1.0, agg_score)), 4)
@@ -1923,7 +1955,7 @@ async def get_sentiment(ticker: str, force_refresh: bool = False) -> dict:
 # available but slow and unreliable; this table covers the most-traded names.
 # Sectors deliberately match the bucket names used in _SECTOR_KEYWORDS above.
 
-_TICKER_SECTOR_MAP: Dict[str, str] = {
+_TICKER_SECTOR_MAP: dict[str, str] = {
     # Technology
     "AAPL": "tech", "MSFT": "tech", "GOOG": "tech", "GOOGL": "tech",
     "META": "tech", "AMZN": "tech", "TSLA": "tech", "NVDA": "tech",
@@ -1956,7 +1988,7 @@ _TICKER_SECTOR_MAP: Dict[str, str] = {
 }
 
 # Sector → representative tickers to search Cramer coverage for
-_SECTOR_PEER_TICKERS: Dict[str, List[str]] = {
+_SECTOR_PEER_TICKERS: dict[str, list[str]] = {
     "tech":       ["AAPL", "MSFT", "NVDA", "GOOG", "META", "AMZN", "TSLA"],
     "energy":     ["XOM",  "CVX",  "COP",  "OXY",  "SLB"],
     "financials": ["JPM",  "BAC",  "GS",   "MS",   "V",   "MA"],
@@ -1985,7 +2017,7 @@ async def _cramer_for_sector(sector: str) -> dict:
             "source_label": "Sector Cramer Signal",
         }
 
-    collected_articles: List[Dict] = []
+    collected_articles: list[dict] = []
     total_buy = total_sell = 0
 
     for peer in peers:
@@ -2020,11 +2052,14 @@ async def _cramer_for_sector(sector: str) -> dict:
             cramer_signal = "mixed"
 
         if cramer_signal == "bullish":
-            inverse_signal = "SELL"; inverse_score = -0.45
+            inverse_signal = "SELL"
+            inverse_score = -0.45
         elif cramer_signal == "bearish":
-            inverse_signal = "BUY";  inverse_score = +0.45
+            inverse_signal = "BUY"
+            inverse_score = +0.45
         else:
-            inverse_signal = "WAIT"; inverse_score = 0.0
+            inverse_signal = "WAIT"
+            inverse_score = 0.0
 
         strength = abs(total_buy - total_sell) / max(total_buy + total_sell, 1)
         confidence = "high" if n >= 5 and strength >= 0.5 else (
@@ -2047,6 +2082,6 @@ async def _cramer_for_sector(sector: str) -> dict:
     }
 
 
-def get_ticker_sector(ticker: str) -> Optional[str]:
+def get_ticker_sector(ticker: str) -> str | None:
     """Return the sector for a ticker, or None if unknown."""
     return _TICKER_SECTOR_MAP.get(ticker.upper())

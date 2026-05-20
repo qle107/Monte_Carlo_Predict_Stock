@@ -31,8 +31,7 @@ Theory
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from typing import List, Optional
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
@@ -41,51 +40,52 @@ logger = logging.getLogger(__name__)
 
 # ─── Config ──────────────────────────────────────────────────────────────────
 
-_N_BINS        = 100          # number of price-level buckets
-_VALUE_AREA    = 0.70         # fraction of volume that defines the Value Area
-_HVN_PERCENTILE = 70          # bins above this percentile = HVN
-_LVN_PERCENTILE = 30          # bins below this percentile = LVN
-_SMOOTH_WINDOW  = 3           # Gaussian smooth the histogram before peak-finding
+_N_BINS = 100  # number of price-level buckets
+_VALUE_AREA = 0.70  # fraction of volume that defines the Value Area
+_HVN_PERCENTILE = 70  # bins above this percentile = HVN
+_LVN_PERCENTILE = 30  # bins below this percentile = LVN
+_SMOOTH_WINDOW = 3  # Gaussian smooth the histogram before peak-finding
 
 
 # ─── Dataclasses ─────────────────────────────────────────────────────────────
 
+
 @dataclass
 class VPBin:
-    price:  float          # centre of the price bucket
-    volume: float          # total volume traded in this bucket
-    pct:    float          # fraction of total volume (0–1)
-    type:   str            # "hvn" | "lvn" | "poc" | "normal"
+    price: float  # centre of the price bucket
+    volume: float  # total volume traded in this bucket
+    pct: float  # fraction of total volume (0–1)
+    type: str  # "hvn" | "lvn" | "poc" | "normal"
 
 
 @dataclass
 class VolumeProfile:
-    poc:              float
-    value_area_high:  float
-    value_area_low:   float
-    hvn:              List[float]        # price levels
-    lvn:              List[float]        # price levels
-    bins:             List[VPBin]
-    current_zone:     str                # "above_va" | "in_va" | "below_va" | "unknown"
-    poc_distance_pct: float              # (price - poc) / poc * 100
-    current_price:    float
+    poc: float
+    value_area_high: float
+    value_area_low: float
+    hvn: list[float]  # price levels
+    lvn: list[float]  # price levels
+    bins: list[VPBin]
+    current_zone: str  # "above_va" | "in_va" | "below_va" | "unknown"
+    poc_distance_pct: float  # (price - poc) / poc * 100
+    current_price: float
 
     def to_dict(self) -> dict:
         return {
-            "poc":              round(self.poc, 4),
-            "value_area_high":  round(self.value_area_high, 4),
-            "value_area_low":   round(self.value_area_low, 4),
-            "hvn":              [round(v, 4) for v in self.hvn],
-            "lvn":              [round(v, 4) for v in self.lvn],
-            "current_zone":     self.current_zone,
+            "poc": round(self.poc, 4),
+            "value_area_high": round(self.value_area_high, 4),
+            "value_area_low": round(self.value_area_low, 4),
+            "hvn": [round(v, 4) for v in self.hvn],
+            "lvn": [round(v, 4) for v in self.lvn],
+            "current_zone": self.current_zone,
             "poc_distance_pct": round(self.poc_distance_pct, 3),
-            "current_price":    round(self.current_price, 4),
+            "current_price": round(self.current_price, 4),
             "bins": [
                 {
-                    "price":  round(b.price, 4),
+                    "price": round(b.price, 4),
                     "volume": round(b.volume, 0),
-                    "pct":    round(b.pct, 5),
-                    "type":   b.type,
+                    "pct": round(b.pct, 5),
+                    "type": b.type,
                 }
                 for b in self.bins
             ],
@@ -94,10 +94,11 @@ class VolumeProfile:
 
 # ─── Core computation ─────────────────────────────────────────────────────────
 
+
 def compute_volume_profile(
     df: pd.DataFrame,
     n_bins: int = _N_BINS,
-) -> Optional[VolumeProfile]:
+) -> VolumeProfile | None:
     """
     Compute Volume Profile from OHLCV DataFrame.
 
@@ -117,9 +118,9 @@ def _compute(df: pd.DataFrame, n_bins: int) -> VolumeProfile:
     if df is None or len(df) < 10:
         raise ValueError("Too few bars")
 
-    closes  = df["close"].values.astype(float)
-    highs   = df["high"].values.astype(float)
-    lows    = df["low"].values.astype(float)
+    closes = df["close"].values.astype(float)
+    highs = df["high"].values.astype(float)
+    lows = df["low"].values.astype(float)
     volumes = df["volume"].values.astype(float)
 
     price_lo = float(np.nanmin(lows))
@@ -128,17 +129,17 @@ def _compute(df: pd.DataFrame, n_bins: int) -> VolumeProfile:
         raise ValueError("Zero price range")
 
     # Build bin edges and centres
-    edges  = np.linspace(price_lo, price_hi, n_bins + 1)
+    edges = np.linspace(price_lo, price_hi, n_bins + 1)
     centres = (edges[:-1] + edges[1:]) / 2.0
-    bucket  = np.zeros(n_bins, dtype=float)
-    bin_w   = edges[1] - edges[0]
+    bucket = np.zeros(n_bins, dtype=float)
+    bin_w = edges[1] - edges[0]
 
     # Distribute each candle's volume across the price bins it covers
-    for h, lo, vol in zip(highs, lows, volumes):
+    for h, lo, vol in zip(highs, lows, volumes, strict=False):
         if not np.isfinite(vol) or vol <= 0:
             continue
         lo_c = max(lo, price_lo)
-        hi_c = min(h,  price_hi)
+        hi_c = min(h, price_hi)
         if hi_c < lo_c:
             continue
         candle_range = hi_c - lo_c
@@ -159,14 +160,14 @@ def _compute(df: pd.DataFrame, n_bins: int) -> VolumeProfile:
 
     # ── Point of Control ──────────────────────────────────────────────────
     poc_idx = int(np.argmax(bucket))
-    poc     = float(centres[poc_idx])
+    poc = float(centres[poc_idx])
 
     # ── Value Area (70% of volume, expanding from POC) ────────────────────
-    va_vol    = _VALUE_AREA * total_vol
-    va_set    = {poc_idx}
-    va_accum  = bucket[poc_idx]
-    lo_ptr    = poc_idx - 1
-    hi_ptr    = poc_idx + 1
+    va_vol = _VALUE_AREA * total_vol
+    va_set = {poc_idx}
+    va_accum = bucket[poc_idx]
+    lo_ptr = poc_idx - 1
+    hi_ptr = poc_idx + 1
 
     while va_accum < va_vol:
         lo_add = bucket[lo_ptr] if lo_ptr >= 0 else 0.0
@@ -175,13 +176,17 @@ def _compute(df: pd.DataFrame, n_bins: int) -> VolumeProfile:
             break
         if hi_add >= lo_add:
             if hi_ptr < n_bins:
-                va_set.add(hi_ptr); va_accum += hi_add; hi_ptr += 1
+                va_set.add(hi_ptr)
+                va_accum += hi_add
+                hi_ptr += 1
         else:
             if lo_ptr >= 0:
-                va_set.add(lo_ptr); va_accum += lo_add; lo_ptr -= 1
+                va_set.add(lo_ptr)
+                va_accum += lo_add
+                lo_ptr -= 1
 
-    va_indices      = sorted(va_set)
-    value_area_low  = float(centres[va_indices[0]])
+    va_indices = sorted(va_set)
+    value_area_low = float(centres[va_indices[0]])
     value_area_high = float(centres[va_indices[-1]])
 
     # ── HVN / LVN classification ──────────────────────────────────────────
@@ -197,8 +202,8 @@ def _compute(df: pd.DataFrame, n_bins: int) -> VolumeProfile:
             lvn_prices.append(float(centres[i]))
 
     # ── Build bin list ────────────────────────────────────────────────────
-    bins: List[VPBin] = []
-    for i, (c, vol) in enumerate(zip(centres, bucket)):
+    bins: list[VPBin] = []
+    for i, (c, vol) in enumerate(zip(centres, bucket, strict=False)):
         if i == poc_idx:
             btype = "poc"
         elif c in hvn_prices:
@@ -207,8 +212,7 @@ def _compute(df: pd.DataFrame, n_bins: int) -> VolumeProfile:
             btype = "lvn"
         else:
             btype = "normal"
-        bins.append(VPBin(price=float(c), volume=float(vol),
-                          pct=float(vol / total_vol), type=btype))
+        bins.append(VPBin(price=float(c), volume=float(vol), pct=float(vol / total_vol), type=btype))
 
     # ── Current price context ─────────────────────────────────────────────
     current_price = float(closes[-1])
@@ -236,8 +240,10 @@ def _compute(df: pd.DataFrame, n_bins: int) -> VolumeProfile:
 
 # ─── Zone proximity helpers ───────────────────────────────────────────────────
 
-def nearest_node(price: float, vp: VolumeProfile, node_type: str = "hvn",
-                 max_pct: float = 3.0) -> Optional[float]:
+
+def nearest_node(
+    price: float, vp: VolumeProfile, node_type: str = "hvn", max_pct: float = 3.0
+) -> float | None:
     """
     Return the nearest HVN or LVN within `max_pct` % of price, or None.
     """

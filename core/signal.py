@@ -40,45 +40,54 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from typing import Dict, Optional
 
 import numpy as np
 
+from config import cfg
+
 from .indicators import Indicators, _safe
 from .regime import Regime
-from config import cfg
 
 logger = logging.getLogger(__name__)
 
 
 # ─── Dataclass ──────────────────────────────────────────────────────────────
 
+
 @dataclass
 class Signal:
-    composite:   float
-    confidence:  float
-    drift_bias:  float
-    base_drift:  float
-    signal_adj:  float
-    vol_adj:     float
-    label:       str
-    reasoning:   str
+    composite: float
+    confidence: float
+    drift_bias: float
+    base_drift: float
+    signal_adj: float
+    vol_adj: float
+    label: str
+    reasoning: str
     gap_warning: str
-    sub_scores:  Dict[str, float] = field(default_factory=dict)
-    weights:     Dict[str, float] = field(default_factory=dict)
+    sub_scores: dict[str, float] = field(default_factory=dict)
+    weights: dict[str, float] = field(default_factory=dict)
 
 
 # ─── Sub-signal scorers ─────────────────────────────────────────────────────
 
+
 def _score_rsi(rsi: float) -> float:
     """Mean-reversion read on RSI. Capped ±0.6."""
-    if   rsi < 20: return  0.60
-    elif rsi < 30: return  0.40
-    elif rsi < 40: return  0.15
-    elif rsi < 60: return  0.00
-    elif rsi < 70: return -0.15
-    elif rsi < 80: return -0.40
-    else:          return -0.60
+    if rsi < 20:
+        return 0.60
+    elif rsi < 30:
+        return 0.40
+    elif rsi < 40:
+        return 0.15
+    elif rsi < 60:
+        return 0.00
+    elif rsi < 70:
+        return -0.15
+    elif rsi < 80:
+        return -0.40
+    else:
+        return -0.60
 
 
 def _score_slope(slope_pct: float) -> float:
@@ -146,64 +155,101 @@ def _score_ema200_dist(dist_pct: float) -> float:
 # lean on RSI/Bollinger; breakout regimes lean on momentum + ADX.
 # v3: rsi_div and ema200 added as small but useful signals.
 _BASE_WEIGHTS = {
-    "rsi":        0.09,
-    "slope":      0.15,
-    "momentum":   0.11,
-    "ema":        0.09,
-    "macd":       0.11,
-    "bollinger":  0.07,
-    "adx":        0.07,
-    "obv":        0.07,
-    "vwap":       0.05,
-    "skew":       0.04,
+    "rsi": 0.09,
+    "slope": 0.15,
+    "momentum": 0.11,
+    "ema": 0.09,
+    "macd": 0.11,
+    "bollinger": 0.07,
+    "adx": 0.07,
+    "obv": 0.07,
+    "vwap": 0.05,
+    "skew": 0.04,
     "trend_bias": 0.06,
-    "rsi_div":    0.05,   # RSI divergence — mean reversion
-    "ema200":     0.04,   # long-term trend anchor
+    "rsi_div": 0.05,  # RSI divergence — mean reversion
+    "ema200": 0.04,  # long-term trend anchor
 }
 
 # Strong trend weights are identical for up and down — direction is encoded in
 # the sub-scores themselves, not in the weights.
-_WEIGHTS_STRONG_TREND: Dict[str, float] = {
-    "rsi": 0.03, "slope": 0.20, "momentum": 0.15, "ema": 0.13,
-    "macd": 0.15, "bollinger": 0.02, "adx": 0.11, "obv": 0.07,
-    "vwap": 0.03, "skew": 0.01, "trend_bias": 0.02,
-    "rsi_div": 0.04, "ema200": 0.04,
+_WEIGHTS_STRONG_TREND: dict[str, float] = {
+    "rsi": 0.03,
+    "slope": 0.20,
+    "momentum": 0.15,
+    "ema": 0.13,
+    "macd": 0.15,
+    "bollinger": 0.02,
+    "adx": 0.11,
+    "obv": 0.07,
+    "vwap": 0.03,
+    "skew": 0.01,
+    "trend_bias": 0.02,
+    "rsi_div": 0.04,
+    "ema200": 0.04,
 }
-_WEIGHTS_WEAK_TREND: Dict[str, float] = {
-    "rsi": 0.05, "slope": 0.18, "momentum": 0.13, "ema": 0.11,
-    "macd": 0.13, "bollinger": 0.04, "adx": 0.09, "obv": 0.09,
-    "vwap": 0.05, "skew": 0.02, "trend_bias": 0.03,
-    "rsi_div": 0.05, "ema200": 0.03,
+_WEIGHTS_WEAK_TREND: dict[str, float] = {
+    "rsi": 0.05,
+    "slope": 0.18,
+    "momentum": 0.13,
+    "ema": 0.11,
+    "macd": 0.13,
+    "bollinger": 0.04,
+    "adx": 0.09,
+    "obv": 0.09,
+    "vwap": 0.05,
+    "skew": 0.02,
+    "trend_bias": 0.03,
+    "rsi_div": 0.05,
+    "ema200": 0.03,
 }
-_WEIGHTS_BREAKOUT: Dict[str, float] = {
-    "rsi": 0.02, "slope": 0.19, "momentum": 0.19, "ema": 0.09,
-    "macd": 0.17, "bollinger": 0.02, "adx": 0.15, "obv": 0.08,
-    "vwap": 0.02, "skew": 0.01, "trend_bias": 0.01,
-    "rsi_div": 0.03, "ema200": 0.02,
+_WEIGHTS_BREAKOUT: dict[str, float] = {
+    "rsi": 0.02,
+    "slope": 0.19,
+    "momentum": 0.19,
+    "ema": 0.09,
+    "macd": 0.17,
+    "bollinger": 0.02,
+    "adx": 0.15,
+    "obv": 0.08,
+    "vwap": 0.02,
+    "skew": 0.01,
+    "trend_bias": 0.01,
+    "rsi_div": 0.03,
+    "ema200": 0.02,
 }
 
 _REGIME_WEIGHTS = {
-    "strong_uptrend":   _WEIGHTS_STRONG_TREND,
+    "strong_uptrend": _WEIGHTS_STRONG_TREND,
     "strong_downtrend": _WEIGHTS_STRONG_TREND,
-    "weak_uptrend":     _WEIGHTS_WEAK_TREND,
-    "weak_downtrend":   _WEIGHTS_WEAK_TREND,
-    "breakout_up":      _WEIGHTS_BREAKOUT,
-    "breakout_down":    _WEIGHTS_BREAKOUT,
+    "weak_uptrend": _WEIGHTS_WEAK_TREND,
+    "weak_downtrend": _WEIGHTS_WEAK_TREND,
+    "breakout_up": _WEIGHTS_BREAKOUT,
+    "breakout_down": _WEIGHTS_BREAKOUT,
     "range_bound": {
-        "rsi": 0.20, "slope": 0.03, "momentum": 0.03, "ema": 0.02,
-        "macd": 0.05, "bollinger": 0.27, "adx": 0.02, "obv": 0.05,
-        "vwap": 0.09, "skew": 0.05, "trend_bias": 0.07,
-        "rsi_div": 0.08, "ema200": 0.04,  # divergence is very useful in range
+        "rsi": 0.20,
+        "slope": 0.03,
+        "momentum": 0.03,
+        "ema": 0.02,
+        "macd": 0.05,
+        "bollinger": 0.27,
+        "adx": 0.02,
+        "obv": 0.05,
+        "vwap": 0.09,
+        "skew": 0.05,
+        "trend_bias": 0.07,
+        "rsi_div": 0.08,
+        "ema200": 0.04,  # divergence is very useful in range
     },
     "choppy": _BASE_WEIGHTS,
 }
 
 
 # Module-level cache: re-parsed only when the raw config string changes.
-_weights_cache_key:    str                    = ""
-_weights_cache_value:  Optional[Dict[str, float]] = None
+_weights_cache_key: str = ""
+_weights_cache_value: dict[str, float] | None = None
 
-def _load_custom_base_weights() -> Optional[Dict[str, float]]:
+
+def _load_custom_base_weights() -> dict[str, float] | None:
     """
     Load custom base weights from cfg.signal_base_weights if set.
     Format: comma-separated floats in the fixed order:
@@ -216,7 +262,7 @@ def _load_custom_base_weights() -> Optional[Dict[str, float]]:
     global _weights_cache_key, _weights_cache_value
 
     raw = (cfg.signal_base_weights or "").strip()
-    if raw == _weights_cache_key:          # fast path — nothing changed
+    if raw == _weights_cache_key:  # fast path — nothing changed
         return _weights_cache_value
 
     _weights_cache_key = raw
@@ -224,14 +270,28 @@ def _load_custom_base_weights() -> Optional[Dict[str, float]]:
         _weights_cache_value = None
         return None
 
-    keys = ["rsi", "slope", "momentum", "ema", "macd", "bollinger",
-            "adx", "obv", "vwap", "skew", "trend_bias", "rsi_div", "ema200"]
+    keys = [
+        "rsi",
+        "slope",
+        "momentum",
+        "ema",
+        "macd",
+        "bollinger",
+        "adx",
+        "obv",
+        "vwap",
+        "skew",
+        "trend_bias",
+        "rsi_div",
+        "ema200",
+    ]
     try:
         vals = [float(v.strip()) for v in raw.split(",")]
         if len(vals) != len(keys):
             logger.warning(
                 "signal: SIGNAL_BASE_WEIGHTS has %d values, expected %d — using defaults",
-                len(vals), len(keys),
+                len(vals),
+                len(keys),
             )
             _weights_cache_value = None
             return None
@@ -242,17 +302,15 @@ def _load_custom_base_weights() -> Optional[Dict[str, float]]:
                 total,
             )
             vals = [v / total for v in vals]
-        _weights_cache_value = dict(zip(keys, vals))
+        _weights_cache_value = dict(zip(keys, vals, strict=False))
         return _weights_cache_value
     except Exception:
-        logger.warning(
-            "signal: failed to parse SIGNAL_BASE_WEIGHTS=%r — using defaults", raw
-        )
+        logger.warning("signal: failed to parse SIGNAL_BASE_WEIGHTS=%r — using defaults", raw)
         _weights_cache_value = None
         return None
 
 
-def _weights_for(regime: Optional[Regime]) -> Dict[str, float]:
+def _weights_for(regime: Regime | None) -> dict[str, float]:
     # Allow runtime override of base weights via config
     custom_base = _load_custom_base_weights()
     base = custom_base if custom_base is not None else _BASE_WEIGHTS
@@ -266,7 +324,8 @@ def _weights_for(regime: Optional[Regime]) -> Dict[str, float]:
 
 # ─── Confidence (entropy-aware + regime amplifier) ──────────────────────────
 
-def _confidence(scores: Dict[str, float], regime: Optional[Regime]) -> float:
+
+def _confidence(scores: dict[str, float], regime: Regime | None) -> float:
     if not scores:
         return 0.0
 
@@ -277,12 +336,12 @@ def _confidence(scores: Dict[str, float], regime: Optional[Regime]) -> float:
 
     pos = sum(1 for v in active if v > 0)
     neg = sum(1 for v in active if v < 0)
-    n   = len(active)
+    n = len(active)
 
     agreement = max(pos, neg) / n
 
     total = len(vals)
-    zero  = total - n
+    zero = total - n
     p = np.array([pos, neg, zero], dtype=float) / total
     p = p[p > 0]
     H = float(-(p * np.log(p)).sum())
@@ -297,8 +356,7 @@ def _confidence(scores: Dict[str, float], regime: Optional[Regime]) -> float:
 
     # Regime amplifier: clean regimes add confidence, choppy subtracts.
     if regime is not None:
-        if regime.regime in ("strong_uptrend", "strong_downtrend",
-                             "breakout_up", "breakout_down"):
+        if regime.regime in ("strong_uptrend", "strong_downtrend", "breakout_up", "breakout_down"):
             raw *= 1.20
         elif regime.regime in ("weak_uptrend", "weak_downtrend"):
             raw *= 1.05
@@ -311,42 +369,40 @@ def _confidence(scores: Dict[str, float], regime: Optional[Regime]) -> float:
 
 # ─── Main ───────────────────────────────────────────────────────────────────
 
-def compute_signal(ind: Indicators, regime: Optional[Regime] = None) -> Signal:
+
+def compute_signal(ind: Indicators, regime: Regime | None = None) -> Signal:
     # 1. Sub-scores ──────────────────────────────────────────────────────────
-    sub_scores: Dict[str, float] = {
-        "rsi":        _score_rsi(ind.rsi),
-        "slope":      _score_slope(ind.slope),
-        "momentum":   _score_momentum(ind.momentum),
-        "ema":        _score_ema(ind.ema_cross),
-        "macd":       _score_macd(ind.macd_hist),
-        "bollinger":  _score_bollinger(ind.bb_position),
-        "adx":        _score_adx(ind.adx, ind.slope),
-        "obv":        _score_obv(ind.obv_slope),
-        "vwap":       _score_vwap(ind.vwap_dist),
-        "skew":       _score_skewness(ind.skewness),
+    sub_scores: dict[str, float] = {
+        "rsi": _score_rsi(ind.rsi),
+        "slope": _score_slope(ind.slope),
+        "momentum": _score_momentum(ind.momentum),
+        "ema": _score_ema(ind.ema_cross),
+        "macd": _score_macd(ind.macd_hist),
+        "bollinger": _score_bollinger(ind.bb_position),
+        "adx": _score_adx(ind.adx, ind.slope),
+        "obv": _score_obv(ind.obv_slope),
+        "vwap": _score_vwap(ind.vwap_dist),
+        "skew": _score_skewness(ind.skewness),
         "trend_bias": _score_trend_bias(ind.trend_bias),
         # v3
-        "rsi_div":    _score_rsi_divergence(ind.rsi_divergence),
-        "ema200":     _score_ema200_dist(ind.ema200_dist),
+        "rsi_div": _score_rsi_divergence(ind.rsi_divergence),
+        "ema200": _score_ema200_dist(ind.ema200_dist),
     }
 
     weights = _weights_for(regime)
 
-    composite = float(np.clip(
-        sum(sub_scores[k] * weights[k] for k in weights), -1.0, 1.0
-    ))
+    composite = float(np.clip(sum(sub_scores[k] * weights[k] for k in weights), -1.0, 1.0))
 
     # If we have a regime view, blend the regime's directional read into the
     # composite. This is the key change: the regime is the dominant voice.
     if regime is not None:
         # regime.trend_score is signed in [-1, 1]
-        composite = float(np.clip(0.55 * regime.trend_score + 0.45 * composite,
-                                  -1.0, 1.0))
+        composite = float(np.clip(0.55 * regime.trend_score + 0.45 * composite, -1.0, 1.0))
 
     confidence = _confidence(sub_scores, regime)
 
     # 2. Drift bias from stock's own history ────────────────────────────────
-    std_dec  = ind.std_return / 100.0
+    std_dec = ind.std_return / 100.0
     mean_dec = ind.mean_return / 100.0
 
     base_drift = mean_dec
@@ -354,9 +410,9 @@ def compute_signal(ind: Indicators, regime: Optional[Regime] = None) -> Signal:
     drift_bias = float(np.clip(base_drift + signal_adj, -2.0 * std_dec, 2.0 * std_dec))
 
     # 3. Simulation volatility ──────────────────────────────────────────────
-    base_vol  = ind.atr_pct / 100.0
+    base_vol = ind.atr_pct / 100.0
     vol_scale = {"low": 0.75, "normal": 1.0, "high": 1.40}.get(ind.vol_regime, 1.0)
-    vol_adj   = float(np.clip(base_vol * vol_scale, 0.003, 0.06))
+    vol_adj = float(np.clip(base_vol * vol_scale, 0.003, 0.06))
 
     # In range-bound regimes: tighten vol (less directional movement expected)
     # In breakout regimes: widen vol (volatility expansion is the whole point)
@@ -379,36 +435,51 @@ def compute_signal(ind: Indicators, regime: Optional[Regime] = None) -> Signal:
             f"Drift bias zeroed (historical drift unreliable post-gap). "
             f"MC volatility inflated to reflect elevated uncertainty."
         )
-        drift_bias = 0.0   # zero drift — gap day mean reversion is unpredictable
+        drift_bias = 0.0  # zero drift — gap day mean reversion is unpredictable
         signal_adj = 0.0
-        vol_adj    = float(np.clip(vol_adj * 1.6, 0.003, 0.06))
+        vol_adj = float(np.clip(vol_adj * 1.6, 0.003, 0.06))
 
     # 5. Label — regime-aware ──────────────────────────────────────────────
     eff = composite * confidence
     if regime is not None and regime.regime in ("breakout_up", "breakout_down"):
         # Breakouts: lower bar to call it
-        if   eff >  0.25: label = "Strong buy"
-        elif eff >  0.10: label = "Buy"
-        elif eff < -0.25: label = "Strong sell"
-        elif eff < -0.10: label = "Sell"
-        else:             label = "Neutral"
+        if eff > 0.25:
+            label = "Strong buy"
+        elif eff > 0.10:
+            label = "Buy"
+        elif eff < -0.25:
+            label = "Strong sell"
+        elif eff < -0.10:
+            label = "Sell"
+        else:
+            label = "Neutral"
     elif regime is not None and regime.regime == "range_bound":
         # In a range we want bigger conviction before calling a side
-        if   eff >  0.30: label = "Buy"
-        elif eff < -0.30: label = "Sell"
-        else:             label = "Neutral"
+        if eff > 0.30:
+            label = "Buy"
+        elif eff < -0.30:
+            label = "Sell"
+        else:
+            label = "Neutral"
     else:
-        if   eff >  0.40: label = "Strong buy"
-        elif eff >  0.15: label = "Buy"
-        elif eff < -0.40: label = "Strong sell"
-        elif eff < -0.15: label = "Sell"
-        else:             label = "Neutral"
+        if eff > 0.40:
+            label = "Strong buy"
+        elif eff > 0.15:
+            label = "Buy"
+        elif eff < -0.40:
+            label = "Strong sell"
+        elif eff < -0.15:
+            label = "Sell"
+        else:
+            label = "Neutral"
 
     # 6. Reasoning string ───────────────────────────────────────────────────
     rsi_desc = (
-        f"RSI {ind.rsi:.0f} oversold"   if ind.rsi < 35 else
-        f"RSI {ind.rsi:.0f} overbought" if ind.rsi > 65 else
-        f"RSI {ind.rsi:.0f} neutral"
+        f"RSI {ind.rsi:.0f} oversold"
+        if ind.rsi < 35
+        else f"RSI {ind.rsi:.0f} overbought"
+        if ind.rsi > 65
+        else f"RSI {ind.rsi:.0f} neutral"
     )
     macd_dir = "↑" if ind.macd_hist > 0 else "↓" if ind.macd_hist < 0 else "·"
     drift_pct = drift_bias * 100
@@ -423,22 +494,22 @@ def compute_signal(ind: Indicators, regime: Optional[Regime] = None) -> Signal:
 
     # NaN guards
     drift_bias = _safe(drift_bias, 0.0)
-    vol_adj    = _safe(vol_adj,    0.01)
+    vol_adj = _safe(vol_adj, 0.01)
     base_drift = _safe(base_drift, 0.0)
     signal_adj = _safe(signal_adj, 0.0)
-    composite  = _safe(composite,  0.0)
+    composite = _safe(composite, 0.0)
     confidence = _safe(confidence, 0.0)
 
     return Signal(
-        composite   = round(composite, 4),
-        confidence  = round(confidence, 3),
-        drift_bias  = round(drift_bias, 6),
-        base_drift  = round(base_drift, 6),
-        signal_adj  = round(signal_adj, 6),
-        vol_adj     = round(vol_adj, 6),
-        label       = label,
-        reasoning   = reasoning,
-        gap_warning = gap_warning,
-        sub_scores  = {k: round(float(v), 3) for k, v in sub_scores.items()},
-        weights     = {k: round(float(v), 3) for k, v in weights.items()},
+        composite=round(composite, 4),
+        confidence=round(confidence, 3),
+        drift_bias=round(drift_bias, 6),
+        base_drift=round(base_drift, 6),
+        signal_adj=round(signal_adj, 6),
+        vol_adj=round(vol_adj, 6),
+        label=label,
+        reasoning=reasoning,
+        gap_warning=gap_warning,
+        sub_scores={k: round(float(v), 3) for k, v in sub_scores.items()},
+        weights={k: round(float(v), 3) for k, v in weights.items()},
     )

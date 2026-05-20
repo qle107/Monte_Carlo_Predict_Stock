@@ -10,10 +10,27 @@ from core.indicators import compute_indicators
 def test_indicators_basic_shape(synth_df):
     ind = compute_indicators(synth_df)
     # All numeric fields finite
-    for f in ("rsi", "slope", "momentum", "ema_fast", "ema_slow", "atr_pct",
-              "gap_pct", "mean_return", "std_return", "skewness", "trend_bias",
-              "macd", "macd_signal", "macd_hist", "bb_position", "adx",
-              "obv_slope", "vwap_dist", "kurtosis"):
+    for f in (
+        "rsi",
+        "slope",
+        "momentum",
+        "ema_fast",
+        "ema_slow",
+        "atr_pct",
+        "gap_pct",
+        "mean_return",
+        "std_return",
+        "skewness",
+        "trend_bias",
+        "macd",
+        "macd_signal",
+        "macd_hist",
+        "bb_position",
+        "adx",
+        "obv_slope",
+        "vwap_dist",
+        "kurtosis",
+    ):
         v = getattr(ind, f)
         assert isinstance(v, (int, float)), f
         assert math.isfinite(v), f"{f} not finite: {v}"

@@ -40,6 +40,6 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=cfg.port,
         reload=False,
-        log_level="warning",   # suppresses uvicorn's own startup banner lines
-        access_log=False,      # disables the "GET /... 200 OK" access log entirely
+        log_level="warning",  # suppresses uvicorn's own startup banner lines
+        access_log=False,  # disables the "GET /... 200 OK" access log entirely
     )
