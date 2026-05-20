@@ -1,17 +1,28 @@
+# ----------------------------
 # Python
+# ----------------------------
+# Byte-compiled / optimized / DLL files
 __pycache__/
+**/__pycache__/
 *.py[cod]
-*.so
-*.egg-info/
-dist/
-build/
+*.pyc
+*.pyo
+*.pyd
 
-# Virtualenv
+# C extensions
+*.so
+
+# ----------------------------
+# Virtual environments
+# ----------------------------
 .venv/
 venv/
+ENV/
 env/
 
-# Env & secrets
+# ----------------------------
+# Environment & secrets
+# ----------------------------
 .env
 .env.*
 config.local.py
@@ -22,24 +33,33 @@ secrets.json
 x_cookies.json
 *cookies*.json
 
-# Database
+# ----------------------------
+# Databases (optional)
+# ----------------------------
+# ignore local DB files by default; remove if you want DBs tracked in repo
 *.db
 *.db-shm
 *.db-wal
 *.sqlite
 *.sqlite3
 
+# ----------------------------
 # Test & lint caches
+# ----------------------------
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
 .coverage
 htmlcov/
 
+# ----------------------------
 # Jupyter
+# ----------------------------
 .ipynb_checkpoints/
 
+# ----------------------------
 # OS / editor
+# ----------------------------
 .DS_Store
 Thumbs.db
 .vscode/
@@ -47,10 +67,23 @@ Thumbs.db
 *.swp
 *.swo
 
+# ----------------------------
 # Logs
+# ----------------------------
 *.log
 logs/
 
+# ----------------------------
+# Packaging / build
+# ----------------------------
+dist/
+build/
+*.egg-info/
+
+# ----------------------------
 # Temp
+# ----------------------------
 *.tmp
 *.temp
+
+
