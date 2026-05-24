@@ -15,6 +15,9 @@ license = {file = "LICENSE"}
 authors = [{name="qle107"}]
 dynamic = ["dependencies"]
 
+[tool.setuptools.packages.find]
+include = ["api*", "core*"]
+
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
 
