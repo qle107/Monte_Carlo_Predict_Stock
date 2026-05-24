@@ -8,13 +8,11 @@
 
 <!-- 📸 IMAGE SUGGESTION #1 — Hero screenshot
      Place a full-width dashboard overview here (the main dashboard.html view).
-     Use: resource_image/img.png (already exists)
+     Use: resource_image/dash_board.png (already exists)
      Example:
-     ![Dashboard overview](resource_image/img.png)
+     ![Dashboard overview](resource_image/dash_board.png)
 -->
-![Dashboard overview](resource_image/img.png)
-
----
+![img.png](resource_image/dashboard.png)
 
 ## Table of Contents
 
