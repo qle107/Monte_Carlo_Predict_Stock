@@ -72,10 +72,9 @@ python main.py
 # Dashboard available at http://localhost:8000
 ```
 
-Verify everything is healthy:
+Verify the code is lint-clean:
 
 ```bash
-pytest -q          # 58 tests, all green
 ruff check .       # 0 errors
 ```
 
