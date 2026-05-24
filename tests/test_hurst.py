@@ -16,7 +16,6 @@ to a clearly wrong regime (e.g. white noise estimated as 0.9).
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from core.hurst import dfa
 
@@ -169,6 +168,6 @@ def test_dfa_min_box_larger_than_default():
 
 def test_dfa_custom_max_box():
     """Custom max_box restricts the box-size grid and still returns valid α."""
-    alpha, se = dfa(_white_noise(500), min_box=4, max_box=64)
+    alpha, _se = dfa(_white_noise(500), min_box=4, max_box=64)
     assert np.isfinite(alpha)
     assert 0.0 <= alpha <= 2.0

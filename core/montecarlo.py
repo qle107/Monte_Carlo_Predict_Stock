@@ -797,9 +797,9 @@ def _compute_regime_state(
         H = float(np.clip(H, 0.0, 1.0))
     else:
         H = 0.5
-    if H > p.hurst_trend:
+    if p.hurst_trend < H:
         return "trending", H, p.reg_trend_drift, p.reg_trend_gravity, p.reg_trend_sigma
-    if H < p.hurst_mean_rev:
+    if p.hurst_mean_rev > H:
         return "mean-reverting", H, p.reg_mr_drift, p.reg_mr_gravity, p.reg_mr_sigma
     return "neutral", H, p.reg_neut_drift, p.reg_neut_gravity, p.reg_neut_sigma
 

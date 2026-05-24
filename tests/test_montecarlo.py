@@ -219,7 +219,7 @@ def test_microstructure_perf_n_sim_2000(synth_df):
 # No fixture dependency; uses a minimal _FakeSignal stub.
 # ════════════════════════════════════════════════════════════════════════════
 
-from dataclasses import dataclass  # noqa: E402  (after integration imports)
+from dataclasses import dataclass
 
 
 @dataclass

@@ -173,7 +173,7 @@ _SECTOR_MAP: dict[str, str] = {
     "BTBT": "Crypto",  "CIFR": "Crypto",
     # Meme / Speculative
     "GME":  "Meme",    "AMC":  "Meme",    "SPCE": "Meme",    "NKLA": "Meme",
-    "WKHS": "Meme",    "CLOV": "Health",
+    "WKHS": "Meme",
     # Cannabis
     "TLRY": "Cannabis","CGC":  "Cannabis","ACB":  "Cannabis","SNDL": "Cannabis",
     # Space / Emerging

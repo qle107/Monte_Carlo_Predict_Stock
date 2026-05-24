@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 
 from config import cfg
+
 from .hurst import dfa
 
 
