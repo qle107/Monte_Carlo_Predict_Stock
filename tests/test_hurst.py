@@ -16,7 +16,6 @@ to a clearly wrong regime (e.g. white noise estimated as 0.9).
 from __future__ import annotations
 
 import numpy as np
-
 from core.hurst import dfa
 
 
