@@ -1,4 +1,4 @@
-# CHANGELOG
+ CHANGELOG
 
 ## Phase 8 — Final Checks
 

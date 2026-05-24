@@ -1,9 +1,26 @@
-# pyproject.toml - Python tooling config.
-# Added Phase 2; extended Phase 8.
+# pyproject.toml
+# Project metadata + Python tooling config.
 #
-# Run ruff with:
-#   ruff check .
-#   ruff format .
+# Install:  pip install -e .
+# Run ruff: ruff check .
+# Run fmt:  ruff format .
+
+[project]
+name = "mc-trader"
+version = "0.1.0"
+description = "Self-hosted Monte Carlo stock analysis dashboard"
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+license = {file = "LICENSE"}
+authors = [{name="qle107"}]
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [tool.ruff]
 target-version = "py310"
@@ -68,7 +85,15 @@ docstring-code-format = true
 [tool.pytest.ini_options]
 minversion     = "9.0"
 testpaths      = ["tests"]
+addopts        = "--cov=core --cov=api --cov=config --cov-report=term-missing"
 filterwarnings = [
     "ignore::DeprecationWarning:yfinance.*",
     "ignore::DeprecationWarning:pkg_resources.*",
+    "ignore::DeprecationWarning:hmmlearn.*",
 ]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = false
+ignore_missing_imports = true
+exclude = ["\\.venv", "build", "dist"]

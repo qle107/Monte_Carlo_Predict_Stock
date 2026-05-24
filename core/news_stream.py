@@ -351,7 +351,44 @@ class NewsStream:
         loop = asyncio.get_running_loop()
         raw: list[dict] = []
 
-        # 1. yfinance news (quick, blocking, offloaded to thread pool)
+        # 1. Yahoo Finance RSS (primary — no API key, always free)
+        # SOURCE: Yahoo Finance RSS, https://feeds.finance.yahoo.com/rss/2.0/headline, Free
+        try:
+            yahoo_rss = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={ticker}&region=US&lang=en-US"
+            async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+                resp = await client.get(yahoo_rss, headers={"User-Agent": "Mozilla/5.0"})
+            if resp.status_code == 200:
+                root = ET.fromstring(resp.text)
+                cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+                for item in root.find("channel") or []:
+                    if item.tag != "item":
+                        continue
+                    title = (item.findtext("title") or "").strip()
+                    url = (item.findtext("link") or "").strip()
+                    pub_str = (item.findtext("pubDate") or "").strip()
+                    source = (item.findtext("source") or "Yahoo Finance").strip()
+                    if not title or not url:
+                        continue
+                    try:
+                        dt = parsedate_to_datetime(pub_str).astimezone(timezone.utc) if pub_str else None
+                    except Exception:
+                        dt = None
+                    if dt and dt < cutoff:
+                        continue
+                    raw.append({
+                        "ticker": ticker,
+                        "title": title,
+                        "url": url,
+                        "source": source,
+                        "published_iso": dt.isoformat() if dt else "",
+                        "sentiment": _score_sentiment(title),
+                        "category": _classify_category(title, ticker),
+                    })
+        except Exception as exc:
+            logger.debug("[news_stream] Yahoo RSS error for %s: %s", ticker, exc)
+
+        # 1b. yfinance news — handles both old (≤0.2.39) and new (≥0.2.40) API shapes
+        # SOURCE: yfinance (Yahoo Finance), t.news, Free
         try:
 
             def _yf():
@@ -361,24 +398,41 @@ class NewsStream:
             yf_items = await loop.run_in_executor(None, _yf)
             cutoff = datetime.now(timezone.utc) - timedelta(days=7)
             for item in yf_items[:12]:
-                pub_ts = item.get("providerPublishTime") or item.get("publish_time")
-                dt: datetime | None = None
-                if pub_ts:
-                    try:
-                        dt = datetime.fromtimestamp(int(pub_ts), tz=timezone.utc)
-                    except Exception:
-                        dt = None
+                # New shape (yfinance ≥ 0.2.40): nested under 'content'
+                if "content" in item and isinstance(item.get("content"), dict):
+                    content = item["content"]
+                    title = (content.get("title") or "").strip()
+                    url = (content.get("canonicalUrl") or {}).get("url", "")
+                    source = (content.get("provider") or {}).get("displayName", "Yahoo Finance")
+                    pub_str = content.get("pubDate", "")
+                    dt: datetime | None = None
+                    if pub_str:
+                        try:
+                            dt = datetime.fromisoformat(pub_str.replace("Z", "+00:00"))
+                        except Exception:
+                            dt = None
+                else:
+                    # Old shape (yfinance < 0.2.40)
+                    title = (item.get("title") or "").strip()
+                    url = item.get("link") or item.get("url", "")
+                    source = item.get("publisher", "Yahoo Finance")
+                    pub_ts = item.get("providerPublishTime") or item.get("publish_time")
+                    dt = None
+                    if pub_ts:
+                        try:
+                            dt = datetime.fromtimestamp(int(pub_ts), tz=timezone.utc)
+                        except Exception:
+                            dt = None
                 if dt and dt < cutoff:
                     continue
-                title = (item.get("title") or "").strip()
                 if not title:
                     continue
                 raw.append(
                     {
                         "ticker": ticker,
                         "title": title,
-                        "url": item.get("link") or item.get("url", ""),
-                        "source": item.get("publisher", "Yahoo Finance"),
+                        "url": url,
+                        "source": source,
                         "published_iso": dt.isoformat() if dt else "",
                         "sentiment": _score_sentiment(title),
                         "category": _classify_category(title, ticker),

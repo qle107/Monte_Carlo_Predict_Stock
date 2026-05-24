@@ -1,8 +1,17 @@
 """core/regime.py — Market regime detector.
 
-Components: Hurst R/S, multi-window linear R², Donchian breakout, HH/HL pattern, ADX, OBV slope.
+Components: DFA exponent (replaces R/S Hurst), multi-window linear R²,
+Donchian breakout, HH/HL pattern, ADX, OBV slope.
 Outputs a Regime with: label, verdict, potential_up/down/flat (0–100),
-trend_score (−1…+1), range_score (0…1), breakout flags, Hurst, R², Donchian, HH/HL counts.
+trend_score (−1…+1), range_score (0…1), breakout flags, DFA/Hurst α, R²,
+Donchian, HH/HL counts.
+
+DFA replaces the legacy variance-of-lag-differences R/S estimator because:
+  • R/S is biased and unreliable on short series (< 200 bars).
+  • DFA-1 is robust to non-stationarity, making it valid on both log-price
+    levels and log-return series.
+  • DFA standard errors are returned alongside the exponent, enabling
+    confidence-weighted regime decisions (future work).
 """
 
 from __future__ import annotations
@@ -13,6 +22,7 @@ import numpy as np
 import pandas as pd
 
 from config import cfg
+from .hurst import dfa
 
 
 @dataclass
@@ -49,30 +59,29 @@ class Regime:
 
 
 def _hurst(series: np.ndarray, max_lag: int = 20) -> float:
-    """Rescaled-range Hurst exponent. H≈0.5 random walk, >0.6 trending, <0.4 mean-rev."""
+    """
+    DFA-1 exponent for price-level or log-return series.
+
+    Replaces the legacy variance-of-lag-differences R/S estimator.
+    ``max_lag`` is converted to a DFA ``max_box`` (same order of magnitude)
+    so existing callers continue to control the estimation window without
+    API changes.
+
+    Returns α in [0, 1]:
+      α < 0.45  anti-persistent (mean-reverting)
+      α ≈ 0.50  near-random-walk
+      α > 0.55  trending / persistent
+    """
     s = np.asarray(series, dtype=float)
     s = s[np.isfinite(s)]
-    if len(s) < max_lag + 5:
+    if len(s) < 2 * max(4, max_lag):
         return 0.5
-    try:
-        lags = range(2, max_lag)
-        tau = []
-        for lag in lags:
-            diffs = s[lag:] - s[:-lag]
-            std = np.std(diffs)
-            if std <= 0 or not np.isfinite(std):
-                continue
-            tau.append(std)
-        if len(tau) < 5:
-            return 0.5
-        log_lags = np.log(np.arange(2, 2 + len(tau)))
-        log_tau = np.log(tau)
-        slope, _ = np.polyfit(log_lags, log_tau, 1)
-        if not np.isfinite(slope):
-            return 0.5
-        return float(np.clip(slope, 0.0, 1.0))
-    except Exception:
-        return 0.5
+    # Map the R/S max_lag to a DFA max_box of similar scale.
+    # DFA box sizes are powers of 2 up to N//4; passing max_box=max_lag*4
+    # spans roughly the same number of decades as the old lag range [2, max_lag].
+    max_box = min(max_lag * 4, len(s) // 4)
+    alpha, _ = dfa(s, max_box=max(8, max_box))
+    return float(np.clip(alpha, 0.0, 1.0))
 
 
 def _r2_and_slope(closes: np.ndarray, n: int) -> tuple[float, float]:

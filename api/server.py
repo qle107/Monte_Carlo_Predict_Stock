@@ -9,6 +9,7 @@ import csv
 import hashlib
 import io
 import logging
+import os
 import xml.etree.ElementTree as ET
 from contextlib import asynccontextmanager, suppress
 from datetime import date as _date
@@ -19,9 +20,13 @@ from pathlib import Path
 import httpx
 import pandas as pd
 import yfinance as yf
-from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from config import VALID_INTERVALS, VALID_MC_MODELS, cfg
 from core import _df_to_candles, analyse
@@ -32,7 +37,7 @@ from core.hmm_regime import analyse_hmm, blend_zone_probability
 from core.indicators import compute_indicators
 from core.macro import fetch_macro_indicators  # ← NEW: macroeconomic indicators
 from core.news_stream import news_stream
-from core.options_flow import fetch_options_flow
+from core.options_flow import fetch_options_flow, scan_unusual_options
 from core.regime import detect_regime
 from core.scanner import WATCHLISTS, get_watchlist, scan_tickers
 from core.sentiment import _cramer_for_sector, fetch_global_market_sentiment, get_sentiment, get_ticker_sector
@@ -283,6 +288,10 @@ def _classify_category(title: str, ticker: str = "") -> str:
 
 logger = logging.getLogger(__name__)
 
+# ── Rate limiter (slowapi — free, MIT) ────────────────────────────────────────
+# Per-IP defaults; see decorator on each route for per-endpoint limits.
+limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+
 # ─── State ──────────────────────────────────────────────────────────────────
 clients: set[WebSocket] = set()
 _last_result: dict = {}
@@ -316,10 +325,37 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="MC Trader", lifespan=lifespan)
 
+# ── CORS middleware ────────────────────────────────────────────────────────────
+# Read allowed origins from CORS_ORIGINS env var (comma-separated).
+# Default: empty = same-origin only (no CORS headers added).
+_raw_cors = os.getenv("CORS_ORIGINS", "")
+_cors_origins = [o.strip() for o in _raw_cors.split(",") if o.strip()]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+# ── Rate limiting ──────────────────────────────────────────────────────────────
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # Static (created lazily — empty by default, fine)
 STATIC_DIR = Path(__file__).parent.parent / "static"
 STATIC_DIR.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+# ── API key guard ─────────────────────────────────────────────────────────────
+
+
+def _require_api_key(api_key: str | None) -> None:
+    """Raise 401 if API_KEY env is set and the header doesn't match."""
+    if cfg.api_key and (not api_key or api_key != cfg.api_key):
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
 # ─── HTML ────────────────────────────────────────────────────────────────────
@@ -335,7 +371,8 @@ async def root():
 
 
 @app.get("/api/signal")
-async def get_signal():
+@limiter.limit("30/minute")
+async def get_signal(request: Request):
     """Trigger fresh analysis with current config and return result."""
     result = await _run_analysis()
     if "error" not in result:
@@ -353,10 +390,10 @@ async def get_config():
 
 
 @app.post("/api/config")
-async def update_config(update: ConfigUpdate, api_key: str | None = Header(None)):
+@limiter.limit("10/minute")
+async def update_config(request: Request, update: ConfigUpdate, api_key: str | None = Header(None)):
     """Apply config changes; restart poll loop; return fresh analysis."""
-    if cfg.api_key and (not api_key or api_key != cfg.api_key):
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    _require_api_key(api_key)
 
     global _poll_task
 
@@ -412,7 +449,9 @@ async def health():
 
 
 @app.post("/api/backtest")
-async def api_backtest(req: BacktestRequest):
+@limiter.limit("10/minute")
+async def api_backtest(request: Request, req: BacktestRequest, api_key: str | None = Header(None)):
+    _require_api_key(api_key)
     """Walk-forward backtest. Reports hit-rate, Brier score, calibration."""
     ticker = (req.ticker or cfg.ticker).upper().strip()
     interval = req.interval or cfg.interval
@@ -481,7 +520,9 @@ async def api_accuracy(ticker: str | None = None, limit: int = 200):
 
 
 @app.post("/api/store/prune")
-async def api_prune(days: int = 30):
+@limiter.limit("10/minute")
+async def api_prune(request: Request, days: int = 30, api_key: str | None = Header(None)):
+    _require_api_key(api_key)
     """
     Delete signal records older than `days` days (default 30).
     Returns the number of rows deleted.
@@ -626,7 +667,8 @@ async def portfolio_price_live(ticker: str):
 
 
 @app.get("/api/market-structure")
-async def api_market_structure(ticker: str | None = None):
+@limiter.limit("10/minute")
+async def api_market_structure(request: Request, ticker: str | None = None):
     """
     Run all four structural analysis models and return a unified result.
 
@@ -893,6 +935,130 @@ async def _api_market_structure_impl(symbol: str, loop):
         raise
 
 
+# ─── REST: unusual options scanner ──────────────────────────────────────────
+
+
+@app.get("/api/options/unusual")
+@limiter.limit("5/minute")
+async def api_unusual_options(
+    request: Request,
+    tickers: str | None = None,
+    watchlist: str | None = None,
+    min_volume: int = 100,
+    min_oi: int = 50,
+    vol_oi_threshold: float = 3.0,
+    iv_spike_z: float = 1.5,
+    otm_pct: float = 0.05,
+    max_dte: int = 60,
+    top_n: int = 50,
+    min_premium: float = 200000.0,
+    new_positions_only: bool = False,
+):
+    """
+    Scan one or more tickers for unusual options activity.
+
+    Query parameters
+    ----------------
+    tickers         : comma-separated list of symbols, e.g. "AAPL,TSLA,NVDA"
+                      If omitted, falls back to the `watchlist` parameter.
+    watchlist       : named watchlist key (see /api/scan/watchlists).
+                      If both are omitted, scans the full "all_optionable"
+                      universe (~500 major US stocks + ETFs with active options).
+    min_volume      : minimum contract volume to consider (default 100)
+    min_oi          : minimum open interest to consider (default 50)
+    vol_oi_threshold: Vol/OI ratio to flag as unusual (default 3×)
+    iv_spike_z      : IV z-score above chain mean to flag (default 1.5σ)
+    otm_pct         : fraction OTM to flag as directional sweep (default 5%)
+    max_dte         : maximum calendar days to expiry to scan (default 60)
+    top_n           : maximum results to return across all tickers (default 50)
+
+    Response
+    --------
+    {
+      "hits": [
+        {
+          "ticker", "expiry", "strike", "option_type",  // "call" | "put"
+          "volume", "open_interest", "vol_oi_ratio",
+          "implied_vol",         // % (e.g. 85.2 = 85.2% IV)
+          "avg_chain_iv",        // chain-average IV for context
+          "in_the_money",
+          "premium_per_contract", "total_premium",  // USD notional
+          "unusual_score",       // 0–1 composite
+          "flags",               // ["high_vol_oi", "iv_spike", "otm_sweep", ...]
+          "sentiment",           // "bullish" | "bearish" | "mixed"
+          "spot", "days_to_expiry"
+        }, ...
+      ],
+      "summary": {
+        "tickers_scanned", "tickers_with_hits", "total_hits",
+        "bullish_count", "bearish_count", "mixed_count"
+      },
+      "scanned_at": "<ISO-8601>"
+    }
+
+    Flags legend
+    ------------
+    high_vol_oi    — Volume / OI exceeds threshold: new money opening positions today
+    iv_spike       — Contract IV is >1.5σ above chain mean: elevated conviction / fear
+    otm_sweep      — OTM contract with outsized volume: speculative directional bet
+    large_premium  — Notional premium in top-30% of chain: institutional size
+    cp_divergence  — Call/Put volume ratio far from neutral: directional skew across chain
+    """
+    # Resolve ticker list
+    # Default (no tickers, no watchlist) → full all_optionable universe
+    if tickers:
+        ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+    elif watchlist:
+        ticker_list = get_watchlist(watchlist)
+    else:
+        ticker_list = get_watchlist("all_optionable")
+
+    # Deduplicate while preserving order
+    seen: set[str] = set()
+    ticker_list = [t for t in ticker_list if not (t in seen or seen.add(t))]  # type: ignore[func-returns-value]
+
+    if not ticker_list:
+        raise HTTPException(status_code=400, detail="No tickers resolved")
+    # No hard cap — the all_optionable universe is ~500 tickers
+    if len(ticker_list) > 600:
+        raise HTTPException(status_code=400, detail="Max 600 tickers per scan")
+
+    top_n = max(1, min(top_n, 200))
+    # Scale concurrency with universe size.
+    # Note: options_flow._yf_semaphore caps concurrent yfinance connections at 4
+    # regardless of thread count, so raising workers beyond ~8 only adds thread
+    # overhead without increasing throughput — keep it modest.
+    auto_concurrent = 4 if len(ticker_list) < 20 else (6 if len(ticker_list) < 100 else 8)
+
+    logger.info(
+        "Unusual options scan: %d tickers, max_dte=%d, vol_oi=%.1f×, workers=%d",
+        len(ticker_list), max_dte, vol_oi_threshold, auto_concurrent,
+    )
+
+    try:
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: scan_unusual_options(
+                tickers=ticker_list,
+                min_volume=min_volume,
+                min_oi=min_oi,
+                vol_oi_threshold=vol_oi_threshold,
+                iv_spike_z=iv_spike_z,
+                otm_pct=otm_pct,
+                max_dte=max_dte,
+                max_concurrent=auto_concurrent,
+                top_n=top_n,
+                min_premium=min_premium,
+                new_positions_only=new_positions_only,
+            ),
+        )
+        return result
+    except Exception as e:
+        logger.exception("Unusual options scan failed")
+        raise HTTPException(status_code=500, detail=f"unusual options scan failed: {e}")  # noqa: B904
+
+
 # ─── REST: sentiment ─────────────────────────────────────────────────────────
 
 
@@ -941,7 +1107,43 @@ async def api_news(ticker: str | None = None, limit: int = 20):
     loop = asyncio.get_running_loop()
     symbol = (ticker or "").upper().strip()
 
-    # ── 1. Yahoo Finance news via yfinance ──────────────────────────────────
+    # ── 1. Yahoo Finance RSS (primary — no API key, always free)
+    # SOURCE: Yahoo Finance RSS, feeds.finance.yahoo.com, Free
+    if symbol:
+        try:
+            yahoo_rss = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={symbol}&region=US&lang=en-US"
+            async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+                resp = await client.get(yahoo_rss, headers={"User-Agent": "Mozilla/5.0"})
+            if resp.status_code == 200:
+                root = ET.fromstring(resp.text)
+                cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+                for item in root.find("channel") or []:
+                    if item.tag != "item":
+                        continue
+                    title = (item.findtext("title") or "").strip()
+                    url = (item.findtext("link") or "").strip()
+                    pub_str = (item.findtext("pubDate") or "").strip()
+                    source = (item.findtext("source") or "Yahoo Finance").strip()
+                    if not title or not url:
+                        continue
+                    try:
+                        dt = parsedate_to_datetime(pub_str).astimezone(timezone.utc) if pub_str else None
+                    except Exception:
+                        dt = None
+                    if dt and dt < cutoff:
+                        continue
+                    articles.append({
+                        "title": title,
+                        "url": url,
+                        "source": source,
+                        "published": dt.isoformat() if dt else "",
+                        "img": "",
+                    })
+        except Exception as exc:
+            logger.warning("Yahoo Finance RSS failed: %s", exc)
+
+    # ── 1b. yfinance news — handles both old (≤0.2.39) and new (≥0.2.40) shapes
+    # SOURCE: yfinance (Yahoo Finance), t.news, Free
     try:
 
         def _yf_news():
@@ -951,25 +1153,49 @@ async def api_news(ticker: str | None = None, limit: int = 20):
         yf_items = await loop.run_in_executor(None, _yf_news)
         cutoff = datetime.now(timezone.utc) - timedelta(days=30)
         for item in yf_items[:15]:
-            pub = item.get("providerPublishTime") or item.get("publish_time")
-            if pub:
-                try:
-                    dt = datetime.fromtimestamp(int(pub), tz=timezone.utc)
-                except Exception:
-                    dt = None
-            else:
+            # New shape (yfinance ≥ 0.2.40): nested under 'content'
+            if "content" in item and isinstance(item.get("content"), dict):
+                content = item["content"]
+                title = (content.get("title") or "").strip()
+                url = (content.get("canonicalUrl") or {}).get("url", "")
+                source = (content.get("provider") or {}).get("displayName", "Yahoo Finance")
+                pub_str = content.get("pubDate", "")
                 dt = None
+                if pub_str:
+                    try:
+                        dt = datetime.fromisoformat(pub_str.replace("Z", "+00:00"))
+                    except Exception:
+                        dt = None
+                # thumbnail from new shape
+                thumb = ""
+                thumbnail = content.get("thumbnail")
+                if thumbnail and isinstance(thumbnail, dict):
+                    resolutions = thumbnail.get("resolutions") or []
+                    thumb = resolutions[0].get("url", "") if resolutions else ""
+            else:
+                # Old shape (yfinance < 0.2.40)
+                title = (item.get("title") or "").strip()
+                url = item.get("link") or item.get("url", "")
+                source = item.get("publisher", "Yahoo Finance")
+                pub = item.get("providerPublishTime") or item.get("publish_time")
+                dt = None
+                if pub:
+                    try:
+                        dt = datetime.fromtimestamp(int(pub), tz=timezone.utc)
+                    except Exception:
+                        dt = None
+                thumb = (item.get("thumbnail") or {}).get("resolutions", [{}])[0].get("url", "") if item.get("thumbnail") else ""
+            if not title:
+                continue
             if dt and dt < cutoff:
                 continue
             articles.append(
                 {
-                    "title": item.get("title", ""),
-                    "url": item.get("link") or item.get("url", ""),
-                    "source": item.get("publisher", "Yahoo Finance"),
+                    "title": title,
+                    "url": url,
+                    "source": source,
                     "published": dt.isoformat() if dt else "",
-                    "img": (item.get("thumbnail") or {}).get("resolutions", [{}])[0].get("url", "")
-                    if item.get("thumbnail")
-                    else "",
+                    "img": thumb,
                 }
             )
     except Exception as exc:
@@ -1177,7 +1403,9 @@ async def api_scan_watchlists():
 
 
 @app.post("/api/scan")
-async def api_scan(req: ScanRequest):
+@limiter.limit("5/minute")
+async def api_scan(request: Request, req: ScanRequest, api_key: str | None = Header(None)):
+    _require_api_key(api_key)
     """
     Scan a list of tickers (or a named watchlist) for breakouts / breakdowns.
     Returns ranked results grouped into breakouts / breakdowns / neutral.
@@ -1230,7 +1458,9 @@ async def api_scan(req: ScanRequest):
 
 
 @app.post("/api/zone-scan")
-async def api_zone_scan(req: ScanRequest):
+@limiter.limit("5/minute")
+async def api_zone_scan(request: Request, req: ScanRequest, api_key: str | None = Header(None)):
+    _require_api_key(api_key)
     """
     Scan for Demand/Supply Zone + EMA 20/50/200 strategy setups.
     Uses zone detection + EMA alignment + MC-estimated trade setup.
@@ -1366,6 +1596,82 @@ async def api_sector_cramer(ticker: str | None = None, sector: str | None = None
     result = await _cramer_for_sector(resolved_sector)
     result["sector"] = resolved_sector
     return result
+
+
+# ─── REST: insider / Congress activity (SEC EDGAR Form 4) ───────────────────
+
+
+@app.get("/api/insider-activity")
+async def api_insider_activity(ticker: str | None = None, days: int = 30):
+    """
+    Return recent insider transactions (Form 4 filings) for `ticker`.
+    # SOURCE: SEC EDGAR EFTS, efts.sec.gov/LATEST/search-index, Official, Free
+
+    Returns the last 5 filings: filer name, transaction type (Buy/Sell),
+    shares, price, and date.  Never returns 'No Data' — shows a clear
+    'No insider activity in N days' message when the period is quiet.
+    """
+    symbol = (ticker or cfg.ticker).upper().strip()
+    today = datetime.now(timezone.utc).date()
+    start = (today - timedelta(days=max(1, min(days, 365)))).isoformat()
+    end = today.isoformat()
+
+    # SOURCE: SEC EDGAR full-text search API, efts.sec.gov, Free, No key required
+    url = (
+        f"https://efts.sec.gov/LATEST/search-index?q=%22{symbol}%22"
+        f"&dateRange=custom&startdt={start}&enddt={end}&forms=4"
+    )
+
+    filings: list[dict] = []
+    try:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            resp = await client.get(
+                url,
+                headers={"User-Agent": "MCTrader/1.0 (contact@example.com)", "Accept": "application/json"},
+            )
+        if resp.status_code == 200:
+            data = resp.json()
+            hits = (data.get("hits") or {}).get("hits") or []
+            for hit in hits[:10]:
+                src = hit.get("_source") or {}
+                period = src.get("period_of_report") or src.get("file_date") or ""
+                entity = src.get("entity_name") or src.get("display_names") or symbol
+                if isinstance(entity, list):
+                    entity = ", ".join(entity)
+                # Form 4 XML is large; we surface what EDGAR's index provides
+                filings.append({
+                    "date": period,
+                    "filer": str(entity)[:60],
+                    "form": src.get("form_type", "4"),
+                    "url": f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company={symbol}&type=4&dateb=&owner=include&count=10",
+                })
+    except Exception as exc:
+        logger.warning("SEC EDGAR insider fetch failed for %s: %s", symbol, exc)
+
+    # De-duplicate by date+filer
+    seen_keys: set[str] = set()
+    unique: list[dict] = []
+    for f in filings:
+        key = f"{f['date']}|{f['filer'][:20]}"
+        if key not in seen_keys:
+            seen_keys.add(key)
+            unique.append(f)
+
+    return {
+        "ticker": symbol,
+        "days": days,
+        "filings": unique[:5],
+        "filing_count": len(unique),
+        "period_start": start,
+        "period_end": end,
+        "source": "SEC EDGAR (official)",
+        "message": (
+            f"No insider activity in {days} days"
+            if not unique else
+            f"{len(unique)} filing(s) in the last {days} days"
+        ),
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 # ─── Multi-timeframe helpers ─────────────────────────────────────────────────

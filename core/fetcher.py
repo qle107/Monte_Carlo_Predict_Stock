@@ -425,8 +425,12 @@ def fetch_candles(
             is_leader = True
 
     sources = []
-    if os.getenv("ALPACA_API_KEY", "") not in ("", "your_key_here"):
-        sources.append(("Alpaca", _alpaca))
+    # ── Alpaca disabled ───────────────────────────────────────────────────────
+    # Uncomment the block below to re-enable Alpaca (requires a valid key).
+    # When the key is invalid (HTTP 401) _with_retry wastes ~3-4 s per call
+    # retrying a permanent auth failure before falling back to yfinance.
+    # if os.getenv("ALPACA_API_KEY", "") not in ("", "your_key_here"):
+    #     sources.append(("Alpaca", _alpaca))
     if os.getenv("POLYGON_API_KEY", ""):
         sources.append(("Polygon", _polygon))
     sources.append(("yfinance", _yfinance))  # always available as final fallback

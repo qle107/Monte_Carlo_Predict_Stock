@@ -915,13 +915,16 @@ async def fetch_cramer_sentiment(ticker: str) -> dict:
 
 
 async def fetch_stocktwits_sentiment(ticker: str) -> dict:
-    """Kept for backward-compat; StockTwits is now replaced by Cramer in get_sentiment().
-    Returns empty/unavailable skeleton so callers don't crash if directly invoked."""
-    return {
-        "available": False, "message_count": 0, "sentiment_score": 0.0,
-        "call_mentions": 0, "put_mentions": 0,
-        "bull_pct": 0, "bear_pct": 0, "type_breakdown": {},
-    }
+    """
+    Fetch StockTwits stream for ticker. No API key required for public data.
+    # SOURCE: StockTwits API, api.stocktwits.com/api/2/streams/symbol/{TICKER}.json, Free
+    Rate limit: ~200 req/hour unauthenticated — we cache for 5 minutes.
+    """
+    result = await _fetch_stocktwits_sentiment(ticker)
+    # Alias message_count → post_count so the frontend compatibility layer
+    # (data.x.post_count) keeps working without a frontend change.
+    result.setdefault("post_count", result.get("message_count", 0))
+    return result
 
 
 # ── (historical reference kept below for completeness) ──────────────────────
@@ -1855,7 +1858,8 @@ async def get_sentiment(ticker: str, force_refresh: bool = False) -> dict:
 
     loop = asyncio.get_running_loop()
 
-    x_task       = asyncio.create_task(fetch_x_sentiment(ticker))
+    # SOURCE: StockTwits (replaces X/Twitter — no API key required, free)
+    x_task       = asyncio.create_task(fetch_stocktwits_sentiment(ticker))
     cramer_task  = asyncio.create_task(fetch_cramer_sentiment(ticker))
     options_coro = loop.run_in_executor(None, _options_flow_sync, ticker)
 
@@ -1864,11 +1868,12 @@ async def get_sentiment(ticker: str, force_refresh: bool = False) -> dict:
     )
 
     if isinstance(x_data, Exception):
-        logger.warning("X sentiment exception: %s", x_data)
+        logger.warning("StockTwits sentiment exception: %s", x_data)
         x_data = {
             "available": False, "needs_setup": False,
             "sentiment_score": 0.0, "call_mentions": 0,
-            "put_mentions": 0, "post_count": 0,
+            "put_mentions": 0, "post_count": 0, "message_count": 0,
+            "bull_pct": 0, "bear_pct": 0,
             "type_breakdown": {}, "top_posts": [],
         }
     if isinstance(cramer, Exception):

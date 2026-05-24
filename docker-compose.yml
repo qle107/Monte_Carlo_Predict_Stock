@@ -1,0 +1,49 @@
+# docker-compose.yml — mc-trader
+#
+# Quick start:
+#   cp .env.example .env      # fill in your API keys
+#   docker compose up --build
+#   open http://localhost:8000
+#
+# Security:
+#   • Bind 127.0.0.1:8000 (localhost only) to avoid exposing the port to LAN.
+#   • Set API_KEY in .env before adding HOST=0.0.0.0.
+#   • For HTTPS + LAN access, run a reverse proxy (Caddy / nginx) in front.
+
+services:
+  mc-trader:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: app
+    image: mc-trader:latest
+    container_name: mc-trader
+
+    # Bind to localhost only — change to "0.0.0.0:8000:8000" for LAN access
+    ports:
+      - "127.0.0.1:8000:8000"
+
+    env_file:
+      - .env
+
+    environment:
+      # HOST must be 0.0.0.0 inside the container so the port is reachable
+      HOST: "0.0.0.0"
+
+    # Persist the SQLite signal store between container restarts
+    volumes:
+      - mc_signals:/app/data
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  mc_signals:
+    driver: local

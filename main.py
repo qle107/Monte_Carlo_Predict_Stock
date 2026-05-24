@@ -2,10 +2,17 @@
 main.py — Entry point.
 
 Run:  python main.py
-Open: http://localhost:8000
+Open: http://localhost:8000 (or http://<HOST>:<PORT> if HOST/PORT are set)
+
+Host binding:
+  Default HOST=127.0.0.1 (localhost only — safe for local use).
+  Set HOST=0.0.0.0 in .env to allow LAN / Docker access.
+  Never expose 0.0.0.0 to the public internet without a firewall or reverse
+  proxy (nginx/Caddy) in front and API_KEY set.
 """
 
 import logging
+import os
 
 import uvicorn
 
@@ -35,9 +42,17 @@ logging.getLogger("websockets").setLevel(logging.WARNING)
 logging.getLogger("websockets.server").setLevel(logging.WARNING)
 
 if __name__ == "__main__":
+    host = os.getenv("HOST", "127.0.0.1")
+    cors_origins = os.getenv("CORS_ORIGINS", "")
+    if not cors_origins:
+        logging.getLogger(__name__).warning(
+            "CORS_ORIGINS is unset — cross-origin requests will be blocked. "
+            "Set CORS_ORIGINS=http://localhost:%d in .env if needed.",
+            cfg.port,
+        )
     uvicorn.run(
         "api:app",
-        host="0.0.0.0",
+        host=host,
         port=cfg.port,
         reload=False,
         log_level="warning",  # suppresses uvicorn's own startup banner lines

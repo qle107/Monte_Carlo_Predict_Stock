@@ -45,6 +45,112 @@ logger = logging.getLogger(__name__)
 # ─── Predefined watchlists ───────────────────────────────────────────────────
 
 WATCHLISTS: dict[str, list[str]] = {
+    # ── All major optionable US stocks ────────────────────────────────────────
+    # ~500 liquid names: full S&P 500 components + NASDAQ 100 extras +
+    # popular ETFs + high-volume retail/meme favourites.
+    # Used as the default scan universe for /api/options/unusual.
+    "all_optionable": [
+        # ── Mega-cap / S&P 500 core ──
+        "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "GOOG", "META", "TSLA",
+        "BRK-B", "UNH", "LLY", "JPM", "V", "XOM", "MA", "AVGO", "PG",
+        "HD", "COST", "MRK", "ABBV", "CVX", "CRM", "AMD", "PEP", "KO",
+        "ADBE", "TMO", "ACN", "MCD", "BAC", "NFLX", "CSCO", "DHR", "LIN",
+        "ABT", "WMT", "TXN", "INTC", "NEE", "DIS", "QCOM", "PM", "AMGN",
+        "UPS", "INTU", "RTX", "CAT", "AMAT", "BKNG", "GS", "IBM", "MS",
+        "BLK", "SPGI", "AXP", "HON", "DE", "MMC", "MO", "USB", "PNC",
+        "TJX", "SBUX", "MDT", "GILD", "ADI", "REGN", "VRTX", "BSX",
+        "SYK", "ZTS", "CI", "HUM", "CVS", "MCK", "WM", "FDX", "NSC",
+        "SO", "DUK", "AEP", "EXC", "D", "SRE", "PCG", "PEG",
+        "CL", "GIS", "CPB", "HSY", "MKC", "CHD", "CLX", "SJM",
+        "EMR", "ROK", "PH", "ITW", "GWW", "CMI", "ETN", "DOV",
+        "ECL", "APD", "DD", "PPG", "SHW", "NEM", "FCX",
+        "NUE", "X", "CLF", "AA", "CF", "MOS",
+        "AIG", "MET", "PRU", "AFL", "TRV", "CB", "ALL", "HIG",
+        "WFC", "C", "TFC", "STT", "SCHW", "COF", "SYF",
+        # DFS → acquired by Capital One (2024). JNPR → acquired by HPE (2024).
+        "CME", "ICE", "CBOE", "MSCI", "MCO", "FIS", "FISV", "GPN",
+        # ── Technology ──
+        "ORCL", "SAP", "NOW", "SNOW", "PLTR", "CRWD", "PANW", "ZS",
+        "DDOG", "NET", "MDB", "OKTA", "ZM", "DOCU", "TWLO", "HUBS",
+        "SHOP", "PYPL", "COIN", "HOOD", "SOFI", "AFRM",
+        # SQ → still active as BLOCK (ticker SQ). PSTG → still active.
+        "SQ", "PSTG",
+        "MRVL", "KLAC", "LRCX", "ASML", "TSM", "MU", "SMCI", "ARM",
+        "QRVO", "SWKS", "MPWR", "ON", "WOLF", "ACLS", "COHU",
+        "UBER", "LYFT", "ABNB", "DASH", "RBLX", "SNAP", "PINS",
+        "SPOT", "MTCH", "IAC", "YELP", "TRIP",
+        "HPQ", "HPE", "DELL", "WDC", "STX", "NTAP",
+        # JNPR removed (acquired by HPE 2024). IQM/ARQQ removed (no listed options).
+        "FFIV", "ANET", "CIEN", "LITE", "VIAV",
+        # ── Semiconductors / AI / Quantum ──
+        "MSTR", "IONQ", "RGTI", "QUBT",
+        # ── Biotech / Healthcare ──
+        "MRNA", "BNTX", "BIIB", "ALNY", "BMRN", "SRPT", "EXEL",
+        "ACAD", "INCY", "RARE", "BEAM", "NTLA", "CRSP", "EDIT",
+        "RXRX", "SEER", "FATE", "KYMR", "IMVT", "CLOV",
+        "PFE", "JNJ", "AZN", "NVO", "SNY", "GSK",
+        # BAYRY → OTC ADR, skipped; PKI → renamed RVTY
+        "RVTY",
+        "ISRG", "EW", "DXCM", "PODD", "HOLX", "IDXX", "IQV",
+        "A", "BIO", "MTD", "TECH", "NTRA",
+        # LPNT → taken private. Removed.
+        "HCA", "THC", "UHS", "CNC", "MOH", "ELV",
+        # ── Financials ──
+        "BX", "KKR", "APO", "CG", "ARES", "OWL",
+        # BLUE → bluebird bio, now very small/illiquid options. Removed.
+        "VRT", "ENVA", "LC", "UPST", "OPEN",
+        # ── Energy ──
+        "COP", "OXY", "DVN", "FANG", "HAL", "SLB",
+        # PXD → acquired by ExxonMobil (2023). MRO → acquired by COP (2024).
+        # CLR → taken private (2022). HFC → renamed DINO.
+        "DINO", "BKR", "NOV", "HP", "PTEN", "WHD",
+        "LNG", "CQP", "ET", "EPD", "MPLX", "WMB", "OKE", "KMI",
+        "VLO", "MPC", "PSX", "DK",
+        "EOG", "APA", "PR", "SM", "CIVI",
+        # ── Consumer / Retail ──
+        "NKE", "LULU", "RL", "PVH", "HBI", "UAA", "UA",
+        "TGT", "LOW", "BBY", "BBWI", "M", "KSS",
+        # JWN → taken private (2025). Removed.
+        "CMG", "YUM", "QSR", "DRI", "TXRH", "SHAK", "WING",
+        "AMZN", "ETSY", "CHWY", "W",
+        "GM", "F", "RIVN", "LCID", "NIO", "XPEV", "LI",
+        # FSR → Fisker bankrupt (2024). HYLN → renamed/delisted. Removed.
+        # ── Real estate / Industrials ──
+        "AMT", "CCI", "SBAC", "EQIX", "DLR", "PLD", "SPG",
+        "O", "WPC", "NNN", "VICI", "MGM", "LVS", "WYNN", "CZR",
+        "BA", "LMT", "NOC", "GD", "LHX", "HEI", "TDG", "HWM",
+        # L3H → incorrect ticker; correct is LHX (L3Harris).
+        "AAL", "DAL", "UAL", "LUV", "JBLU", "ALK",
+        "CCL", "RCL", "NCLH",
+        # ── Media / Telecom ──
+        "CMCSA", "CHTR", "T", "VZ", "TMUS", "LUMN",
+        "FOXA", "FOX", "WBD", "PARA", "SIRI",
+        # VIAC → renamed to PARA (already present). Removed duplicate.
+        "NYT", "NWS", "NWSA",
+        # ── Commodities / Materials ──
+        "GOLD", "NEM", "AEM", "WPM", "PAAS", "AG",
+        "BHP", "RIO", "VALE", "MT", "STLD",
+        # ── Popular ETFs with liquid options ──
+        "SPY", "QQQ", "IWM", "DIA", "VTI", "VOO", "TQQQ", "SQQQ",
+        "GLD", "GDX", "GDXJ", "SLV", "USO", "UNG",
+        "TLT", "IEF", "SHY", "HYG", "LQD", "JNK",
+        "XLE", "XLF", "XLK", "XLV", "XLI", "XLU", "XLP", "XLB", "XLRE",
+        "EEM", "EFA", "FXI", "EWZ", "EWJ", "KWEB",
+        "ARKK", "ARKG", "ARKW", "ARKF",
+        "VNQ", "REET", "KBWB", "KRE", "XHB", "XRT",
+        "IBB", "XBI", "SMH", "SOXX",
+        "VXX", "UVXY", "SVXY",
+        # ── High-activity retail / meme / crypto ──
+        "GME", "AMC", "CLOV", "WKHS",
+        # BBBY → bankrupt (2023). WISH → delisted. RIDE → bankrupt. Removed.
+        "SPCE", "NKLA", "BLNK", "CHPT", "EVGO",
+        "TLRY", "CGC", "ACB", "SNDL",
+        # CURLF → OTC/CSE, no US-listed options. Removed.
+        "DKNG", "PENN",
+        "MARA", "RIOT", "HUT", "CLSK", "BTBT", "CIFR",
+        "AI", "BBAI", "SOUN", "PRCT", "ASTS", "RKLB",
+        "OPEN", "TPVG", "GLAD", "PSEC",
+    ],
     "sp500_large": [
         "AAPL",
         "MSFT",
