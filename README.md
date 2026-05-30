@@ -47,11 +47,11 @@ If `npm` is missing, the launcher runs the backend only.
 
 ## Frontends
 
-**Next.js (`frontend/`, port 3000)** — `/`, `/chart`, `/flow`, `/gex`,
+**Next.js (`frontend/`, port 3000)** - `/`, `/chart`, `/flow`, `/gex`,
 `/scanner`, `/signal`. Proxies `/api/*` and `/ws/*` to FastAPI
 (`BACKEND_URL` override). See [frontend/README.md](frontend/README.md).
-
-**Legacy dashboard (`templates/dashboard.html`)** — served at
+![img.png](resource_image/options.png)
+**Legacy dashboard (`templates/dashboard.html`)** - served at
 http://localhost:8000/. Standalone flow page at `/flow`.
 
 ## Configuration
@@ -88,6 +88,7 @@ frontend/            Next.js UI
 static/              legacy assets + /flow page
 templates/           legacy dashboard shell
 docs/math.md         model notes
+tests/               pytest
 ```
 
 ## Monte Carlo models
@@ -105,7 +106,7 @@ Set with `MC_MODEL` or `POST /api/config`:
 | `microstructure` | GARCH + volume profile + CVD |
 
 Details in [docs/math.md](docs/math.md).
-
+![img.png](resource_image/monteCarlo.png)
 ## API (summary)
 
 | Method | Path | Purpose |
