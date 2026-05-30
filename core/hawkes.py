@@ -1,40 +1,4 @@
-"""
-core/hawkes.py — Hawkes self-exciting process for zone-touch reaction probability.
-
-A Hawkes process models the clustering of market events: a large move raises
-the probability of another large move in the near future (self-excitation).
-
-  λ(t) = μ + Σ_{t_i < t}  α · exp(−β·(t − t_i))
-
-Parameters
-----------
-  μ  (mu)    Baseline intensity — unconditional rate of "significant" moves.
-  α  (alpha) Excitation — how much each event spikes future intensity.
-  β  (beta)  Decay — how fast the excitement fades.
-  α/β ratio  The branching ratio n = α/β. n < 1 → stable process (required).
-
-Practical mapping to OHLCV data
---------------------------------
-We define an "event" as a candle whose |log-return| exceeds a threshold
-(default: 1.5 × rolling σ).  The sequence of such event times is used to
-fit the Hawkes parameters via maximum-likelihood estimation.
-
-Zone-touch prediction
----------------------
-When price approaches a demand/supply zone we compute the current intensity
-λ(now) and translate it into reaction probabilities:
-
-  High λ (excited market):
-    → Order flow is already active; zone may be overwhelmed → BREAK-THROUGH more likely
-  Low λ (calm market):
-    → Zone arrives in a quiet, undisturbed environment → BOUNCE more likely
-  Medium λ:
-    → CONSOLIDATION likely
-
-The exact mapping uses the historical distribution of λ to set thresholds.
-
-Falls back to return-volatility heuristics if MLE fails.
-"""
+"""Hawkes process zone-touch excitation model."""
 
 from __future__ import annotations
 
@@ -47,26 +11,19 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# ─── Config ──────────────────────────────────────────────────────────────────
-
 _EVENT_THRESH_SIGMA = 1.5  # events = |return| > 1.5 × rolling σ
 _ROLLING_WINDOW = 20  # window for rolling σ
 _MAX_ITER = 200  # MLE iterations
 _MIN_EVENTS = 8  # minimum events needed to fit
-
-
-# ─── Dataclasses ─────────────────────────────────────────────────────────────
-
 
 @dataclass
 class HawkesParams:
     mu: float  # baseline intensity
     alpha: float  # excitation
     beta: float  # decay
-    branching_ratio: float  # α/β — must be < 1 for stability
+    branching_ratio: float  # α/β - must be < 1 for stability
     n_events: int  # number of events used in fitting
     fit_ok: bool  # True if MLE converged
-
 
 @dataclass
 class ZoneReaction:
@@ -78,7 +35,6 @@ class ZoneReaction:
     consolidate_prob: float  # 0-1
     excitement_label: str  # "calm" | "moderate" | "excited"
     explanation: str
-
 
 @dataclass
 class HawkesResult:
@@ -118,10 +74,6 @@ class HawkesResult:
             ],
         }
 
-
-# ─── Event extraction ─────────────────────────────────────────────────────────
-
-
 def _extract_events(returns: np.ndarray) -> np.ndarray:
     """
     Return the *indices* of candles whose |return| exceeds _EVENT_THRESH_SIGMA
@@ -139,10 +91,6 @@ def _extract_events(returns: np.ndarray) -> np.ndarray:
             events.append(float(i))  # use bar index as "time"
 
     return np.array(events, dtype=float)
-
-
-# ─── Hawkes MLE ───────────────────────────────────────────────────────────────
-
 
 def _hawkes_loglik(params: np.ndarray, times: np.ndarray) -> float:
     """
@@ -175,7 +123,6 @@ def _hawkes_loglik(params: np.ndarray, times: np.ndarray) -> float:
     integral = mu * T + (alpha / beta) * sum(1.0 - math.exp(-beta * (times[-1] - t)) for t in times)
 
     return -(ll - integral)
-
 
 def _fit_hawkes(event_times: np.ndarray) -> HawkesParams:
     """
@@ -234,7 +181,6 @@ def _fit_hawkes(event_times: np.ndarray) -> HawkesParams:
         logger.debug("[Hawkes] MLE failed (%s), using heuristics", exc)
         return _heuristic_params(t_norm, n)
 
-
 def _heuristic_params(t_norm: np.ndarray, n_events: int) -> HawkesParams:
     """Simple moment-matching fallback when scipy/MLE is unavailable."""
     T = float(t_norm[-1]) if len(t_norm) > 1 else float(n_events)
@@ -250,10 +196,6 @@ def _heuristic_params(t_norm: np.ndarray, n_events: int) -> HawkesParams:
         fit_ok=False,
     )
 
-
-# ─── Intensity computation ────────────────────────────────────────────────────
-
-
 def _compute_lambda(params: HawkesParams, event_times: np.ndarray, query_time: float) -> float:
     """
     Evaluate λ(query_time) given the Hawkes parameters and observed event times.
@@ -263,7 +205,6 @@ def _compute_lambda(params: HawkesParams, event_times: np.ndarray, query_time: f
     excitation = sum(alpha * math.exp(-beta * (query_time - t)) for t in past_events)
     return float(mu + excitation)
 
-
 def _historical_lambda_dist(params: HawkesParams, event_times: np.ndarray, n_points: int = 200) -> np.ndarray:
     """Compute λ at N evenly-spaced times to build a reference distribution."""
     if len(event_times) < 2:
@@ -271,10 +212,6 @@ def _historical_lambda_dist(params: HawkesParams, event_times: np.ndarray, n_poi
     T = event_times[-1]
     times = np.linspace(0, T, n_points)
     return np.array([_compute_lambda(params, event_times, t) for t in times])
-
-
-# ─── Zone reaction probabilities ─────────────────────────────────────────────
-
 
 def _zone_probs(
     lam: float, lam_lo: float, lam_hi: float, zone_type: str
@@ -295,32 +232,28 @@ def _zone_probs(
         label = "calm"
         if zone_type == "demand":
             bounce, brk, cons = 0.65, 0.12, 0.23
-            expl = "Low activity — demand zone likely to hold; clean bounce expected."
+            expl = "Low activity - demand zone likely to hold; clean bounce expected."
         else:
             bounce, brk, cons = 0.62, 0.14, 0.24
-            expl = "Low activity — supply zone likely to reject; clean sell-off expected."
+            expl = "Low activity - supply zone likely to reject; clean sell-off expected."
     elif pct < 0.67:
         label = "moderate"
         if zone_type == "demand":
             bounce, brk, cons = 0.38, 0.22, 0.40
-            expl = "Moderate activity — likely consolidation; watch for volume confirmation."
+            expl = "Moderate activity - likely consolidation; watch for volume confirmation."
         else:
             bounce, brk, cons = 0.36, 0.24, 0.40
-            expl = "Moderate activity — possible consolidation under supply; unclear direction."
+            expl = "Moderate activity - possible consolidation under supply; unclear direction."
     else:
         label = "excited"
         if zone_type == "demand":
             bounce, brk, cons = 0.22, 0.58, 0.20
-            expl = "High excitation — market is active; demand zone at risk of breaking."
+            expl = "High excitation - market is active; demand zone at risk of breaking."
         else:
             bounce, brk, cons = 0.20, 0.60, 0.20
-            expl = "High excitation — strong directional pressure; supply may not hold."
+            expl = "High excitation - strong directional pressure; supply may not hold."
 
     return bounce, brk, cons, label, expl
-
-
-# ─── Public entry point ───────────────────────────────────────────────────────
-
 
 def analyse_hawkes(
     returns: Sequence[float],
@@ -367,7 +300,6 @@ def analyse_hawkes(
         else:
             exc_label = "excited"
 
-        # ── Zone reactions ────────────────────────────────────────────────
         zone_reactions: list[ZoneReaction] = []
         for z in zones or []:
             lv = float(z.get("level", 0))
@@ -399,7 +331,6 @@ def analyse_hawkes(
         logger.warning("[Hawkes] analyse failed: %s", exc)
         return _fallback_result(zones, error=str(exc)[:120])
 
-
 def _fallback_result(zones, error: str = "insufficient_data") -> HawkesResult:
     """Return a neutral result when fitting fails."""
     zone_reactions = []
@@ -415,7 +346,7 @@ def _fallback_result(zones, error: str = "insufficient_data") -> HawkesResult:
                 break_prob=0.30,
                 consolidate_prob=0.25,
                 excitement_label="unknown",
-                explanation="Insufficient data for Hawkes fit — showing neutral priors.",
+                explanation="Insufficient data for Hawkes fit - showing neutral priors.",
             )
         )
     return HawkesResult(
@@ -426,4 +357,3 @@ def _fallback_result(zones, error: str = "insufficient_data") -> HawkesResult:
         zone_reactions=zone_reactions,
         error=error,
     )
-

@@ -1,28 +1,4 @@
-"""
-core/news_stream.py — Live news streaming: background RSS poll + WebSocket broadcast.
-
-Architecture
-------------
-* A single asyncio task (run_loop) polls Yahoo Finance + Google News RSS every 20 s.
-* Each item is deduplicated by md5(title[:60].lower()) — the same scheme used in
-  /api/news so the two feeds won't diverge on dedup logic.
-* Per-ticker ring buffers (max 50 items) keep a recent-headline window.
-* WebSocket clients register via subscribe(ws, ticker).  When the background loop
-  finds a new item it fans out only to subscribers watching that ticker.
-* Sentiment + category classification uses lightweight keyword helpers defined here
-  (extracted from api/server.py so both paths share identical logic).
-
-Item shape (every item emitted over the wire):
-    {
-        "ticker":        str,
-        "title":         str,
-        "url":           str,
-        "source":        str,
-        "published_iso": str,   # ISO-8601 UTC or ""
-        "sentiment":     "Positive" | "Negative" | "Neutral",
-        "category":      "Company" | "Macro" | "Sector" | "General",
-    }
-"""
+"""Live news RSS polling and WebSocket broadcast."""
 
 from __future__ import annotations
 
@@ -39,7 +15,6 @@ import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
-# ── Sentiment + category keyword sets ─────────────────────────────────────────
 # Kept in sync with the originals in api/server.py.
 
 _SENTIMENT_POSITIVE: set[str] = {
@@ -239,7 +214,6 @@ _BUFFER_MAX = 50
 _POLL_INTERVAL = 20  # seconds between poll cycles per ticker
 _MIN_TICKER_CYCLE = 5  # seconds between polling individual tickers in a cycle
 
-
 def _score_sentiment(title: str, summary: str = "") -> str:
     """Keyword-based sentiment classifier.  Returns 'Positive', 'Negative', or 'Neutral'."""
     text = (title + " " + summary).lower()
@@ -250,7 +224,6 @@ def _score_sentiment(title: str, summary: str = "") -> str:
     if neg > pos:
         return "Negative"
     return "Neutral"
-
 
 def _classify_category(title: str, ticker: str = "") -> str:
     """Classify article into: 'Company', 'Macro', 'Sector', or 'General'."""
@@ -264,14 +237,9 @@ def _classify_category(title: str, ticker: str = "") -> str:
             return "Sector"
     return "General"
 
-
 def _dedup_key(title: str) -> str:
-    """md5 of first 60 chars of lowercased title — same as /api/news."""
+    """md5 of first 60 chars of lowercased title - same as /api/news."""
     return hashlib.md5(title[:60].lower().encode()).hexdigest()
-
-
-# ── NewsStream ─────────────────────────────────────────────────────────────────
-
 
 class NewsStream:
     """
@@ -287,8 +255,6 @@ class NewsStream:
         # WS client → subscribed ticker
         self._subscribers: dict[object, str] = {}  # WebSocket → ticker
         self._lock = asyncio.Lock()
-
-    # ── Public API ─────────────────────────────────────────────────────────────
 
     def recent(self, ticker: str) -> list[dict]:
         """Return current buffer for ticker (newest first, up to 50 items)."""
@@ -312,8 +278,6 @@ class NewsStream:
         """Set of tickers currently watched by at least one WS client."""
         return set(self._subscribers.values())
 
-    # ── Background loop ────────────────────────────────────────────────────────
-
     async def run_loop(self) -> None:
         """
         Asyncio task: poll news for every subscribed ticker every POLL_INTERVAL seconds.
@@ -334,14 +298,12 @@ class NewsStream:
                         # Brief pause between individual ticker polls
                         await asyncio.sleep(_MIN_TICKER_CYCLE)
             except asyncio.CancelledError:
-                logger.info("[news_stream] poll loop cancelled — shutting down")
+                logger.info("[news_stream] poll loop cancelled - shutting down")
                 raise
             except Exception as exc:
                 logger.warning("[news_stream] unexpected loop error: %s", exc)
 
             await asyncio.sleep(_POLL_INTERVAL)
-
-    # ── Internal helpers ───────────────────────────────────────────────────────
 
     async def _poll_ticker(self, ticker: str) -> list[dict]:
         """
@@ -351,7 +313,6 @@ class NewsStream:
         loop = asyncio.get_running_loop()
         raw: list[dict] = []
 
-        # 1. Yahoo Finance RSS (primary — no API key, always free)
         # SOURCE: Yahoo Finance RSS, https://feeds.finance.yahoo.com/rss/2.0/headline, Free
         try:
             yahoo_rss = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={ticker}&region=US&lang=en-US"
@@ -387,7 +348,6 @@ class NewsStream:
         except Exception as exc:
             logger.debug("[news_stream] Yahoo RSS error for %s: %s", ticker, exc)
 
-        # 1b. yfinance news — handles both old (≤0.2.39) and new (≥0.2.40) API shapes
         # SOURCE: yfinance (Yahoo Finance), t.news, Free
         try:
 
@@ -441,7 +401,6 @@ class NewsStream:
         except Exception as exc:
             logger.debug("[news_stream] yfinance error for %s: %s", ticker, exc)
 
-        # 2. Google News RSS
         try:
             query = f"{ticker} stock"
             rss_url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
@@ -481,7 +440,6 @@ class NewsStream:
         except Exception as exc:
             logger.debug("[news_stream] Google News RSS error for %s: %s", ticker, exc)
 
-        # 3. Dedup against seen set and update buffer
         new_items: list[dict] = []
         async with self._lock:
             seen = self._seen[ticker]
@@ -526,6 +484,5 @@ class NewsStream:
                 for ws in dead:
                     self._subscribers.pop(ws, None)
 
-
-# Module-level singleton — imported by api/server.py
+# Module-level singleton - imported by api/server.py
 news_stream = NewsStream()

@@ -1,6 +1,4 @@
-"""
-api/server.py — FastAPI application: routes, WebSocket, poll loop.
-"""
+"""FastAPI routes, WebSocket, and poll loop."""
 
 from __future__ import annotations
 
@@ -28,16 +26,16 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from config import VALID_INTERVALS, VALID_MC_MODELS, cfg
+from config import VALID_INTERVALS, VALID_MC_MODELS, cfg, _lock_cfg
 from core import _df_to_candles, analyse
 from core.backtest import walk_forward
 from core.fetcher import fetch_candles
 from core.hawkes import analyse_hawkes
 from core.hmm_regime import analyse_hmm, blend_zone_probability
 from core.indicators import compute_indicators
-from core.macro import fetch_macro_indicators  # ← NEW: macroeconomic indicators
+from core.macro import fetch_macro_indicators  # macroeconomic indicators
 from core.news_stream import news_stream
-from core.options_flow import fetch_options_flow, scan_unusual_options
+from core.options_flow import fetch_options_flow, scan_unusual_options, scan_volume_spikes
 from core.regime import detect_regime
 from core.scanner import WATCHLISTS, get_watchlist, scan_tickers
 from core.sentiment import _cramer_for_sector, fetch_global_market_sentiment, get_sentiment, get_ticker_sector
@@ -50,10 +48,7 @@ from core.zones import detect_zones
 
 from .models import BacktestRequest, ConfigUpdate, ScanRequest
 
-# ── News sentiment & category helpers ─────────────────────────────────────────
-# Lightweight keyword-based approach — no NLP library required.
-# Sentiment: score each headline by counting positive vs negative finance terms.
-# Category: classify by dominant topic keywords.
+# Headline sentiment/category from keyword counts.
 
 _SENTIMENT_POSITIVE = {
     "beat",
@@ -249,7 +244,6 @@ _SECTOR_KEYWORDS = {
     "macro": _MACRO_KEYWORDS,
 }
 
-
 def _score_sentiment(title: str, summary: str = "") -> str:
     """
     Keyword-based sentiment classifier.
@@ -264,20 +258,16 @@ def _score_sentiment(title: str, summary: str = "") -> str:
         return "Negative"
     return "Neutral"
 
-
 def _classify_category(title: str, ticker: str = "") -> str:
     """
     Classify article into: "Company", "Macro", "Sector", or "General".
     Company match is based on whether the ticker appears in the headline.
     """
     text = title.lower()
-    # 1. Company — headline mentions the current ticker symbol
     if ticker and ticker.lower() in text:
         return "Company"
-    # 2. Macro — macro/economic policy keywords
     if any(kw in text for kw in _MACRO_KEYWORDS):
         return "Macro"
-    # 3. Sector — broad sector keywords
     for sector, keywords in _SECTOR_KEYWORDS.items():
         if sector == "macro":
             continue
@@ -285,23 +275,21 @@ def _classify_category(title: str, ticker: str = "") -> str:
             return "Sector"
     return "General"
 
-
 logger = logging.getLogger(__name__)
 
-# ── Rate limiter (slowapi — free, MIT) ────────────────────────────────────────
+# Rate limiter (slowapi - free, MIT)
 # Per-IP defaults; see decorator on each route for per-endpoint limits.
 limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
 
-# ─── State ──────────────────────────────────────────────────────────────────
+# State
 clients: set[WebSocket] = set()
 _last_result: dict = {}
 _poll_task: asyncio.Task | None = None
 _news_stream_task: asyncio.Task | None = None
 _store: SignalStore | None = None
-_analysis_lock: asyncio.Lock | None = None  # guards _run_analysis — set in lifespan
+_analysis_lock: asyncio.Lock | None = None  # guards _run_analysis - set in lifespan
 
-
-# ─── Lifespan (replaces deprecated @app.on_event) ───────────────────────────
+# Lifespan (replaces deprecated @app.on_event)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _poll_task, _news_stream_task, _store, _analysis_lock
@@ -322,10 +310,9 @@ async def lifespan(app: FastAPI):
             _store.close()
         logger.info("Lifespan shutdown complete")
 
-
 app = FastAPI(title="MC Trader", lifespan=lifespan)
 
-# ── CORS middleware ────────────────────────────────────────────────────────────
+# CORS middleware
 # Read allowed origins from CORS_ORIGINS env var (comma-separated).
 # Default: empty = same-origin only (no CORS headers added).
 _raw_cors = os.getenv("CORS_ORIGINS", "")
@@ -339,36 +326,30 @@ if _cors_origins:
         allow_headers=["*"],
     )
 
-# ── Rate limiting ──────────────────────────────────────────────────────────────
+# Rate limiting
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Static (created lazily — empty by default, fine)
+# Static (created lazily - empty by default, fine)
 STATIC_DIR = Path(__file__).parent.parent / "static"
 STATIC_DIR.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-
-# ── API key guard ─────────────────────────────────────────────────────────────
-
+# API key guard
 
 def _require_api_key(api_key: str | None) -> None:
     """Raise 401 if API_KEY env is set and the header doesn't match."""
     if cfg.api_key and (not api_key or api_key != cfg.api_key):
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
-
-# ─── HTML ────────────────────────────────────────────────────────────────────
-
+# HTML
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
     html = Path(__file__).parent.parent / "templates" / "dashboard.html"
     return HTMLResponse(html.read_text(encoding="utf-8"))
 
-
-# ─── REST: signal/config/health ──────────────────────────────────────────────
-
+# REST: signal/config/health
 
 @app.get("/api/signal")
 @limiter.limit("30/minute")
@@ -379,7 +360,6 @@ async def get_signal(request: Request):
         await _broadcast(result)
     return result
 
-
 @app.get("/api/config")
 async def get_config():
     return {
@@ -387,7 +367,6 @@ async def get_config():
         "valid_intervals": VALID_INTERVALS,
         "valid_mc_models": VALID_MC_MODELS,
     }
-
 
 @app.post("/api/config")
 @limiter.limit("10/minute")
@@ -399,10 +378,11 @@ async def update_config(request: Request, update: ConfigUpdate, api_key: str | N
 
     changed: list[str] = []
     payload = update.model_dump(exclude_none=True)
-    for key, value in payload.items():
-        if hasattr(cfg, key):
-            setattr(cfg, key, value)
-            changed.append(f"{key}={value}")
+    with _lock_cfg():
+        for key, value in payload.items():
+            if hasattr(cfg, key):
+                setattr(cfg, key, value)
+                changed.append(f"{key}={value}")
 
     if not changed:
         return {"status": "noop", "changed": [], "config": await get_config()}
@@ -415,7 +395,7 @@ async def update_config(request: Request, update: ConfigUpdate, api_key: str | N
         with suppress(asyncio.CancelledError, Exception):
             await _poll_task
 
-    # Immediate fresh analysis — include full result in response so the
+    # Immediate fresh analysis - include full result in response so the
     # frontend can update the chart instantly without waiting for WS broadcast.
     # We run this BEFORE restarting the poll loop so the loop's first pass hits
     # the fetcher's TTL cache instead of launching a duplicate network request.
@@ -433,7 +413,6 @@ async def update_config(request: Request, update: ConfigUpdate, api_key: str | N
         "result": result if "error" not in result else None,
     }
 
-
 @app.get("/api/health")
 async def health():
     return {
@@ -444,9 +423,7 @@ async def health():
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
-
-# ─── REST: backtest / history / metrics / export ────────────────────────────
-
+# REST: backtest / history / metrics / export
 
 @app.post("/api/backtest")
 @limiter.limit("10/minute")
@@ -486,24 +463,23 @@ async def api_backtest(request: Request, req: BacktestRequest, api_key: str | No
         **report,
     }
 
-
 @app.get("/api/history")
 async def api_history(ticker: str | None = None, limit: int = 100):
     """Recent persisted signals (newest first)."""
     if _store is None:
         return {"items": []}
     limit = max(1, min(limit, 1000))
-    rows = _store.recent(ticker=ticker, limit=limit)
+    loop = asyncio.get_running_loop()
+    rows = await loop.run_in_executor(None, lambda: _store.recent(ticker=ticker, limit=limit))
     return {"items": rows}
-
 
 @app.get("/api/metrics")
 async def api_metrics(ticker: str | None = None):
     """Aggregate accuracy stats from persisted history."""
     if _store is None:
         return {"signals": 0}
-    return _store.metrics(ticker=ticker)
-
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: _store.metrics(ticker=ticker))
 
 @app.get("/api/metrics/accuracy")
 async def api_accuracy(ticker: str | None = None, limit: int = 200):
@@ -516,8 +492,8 @@ async def api_accuracy(ticker: str | None = None, limit: int = 200):
     """
     if _store is None:
         return {"n_calls": 0, "hit_rate": None, "avg_prob_up_on_buys": None, "avg_prob_up_on_sells": None}
-    return _store.accuracy_window(ticker=ticker, limit=max(10, min(limit, 5000)))
-
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: _store.accuracy_window(ticker=ticker, limit=max(10, min(limit, 5000))))
 
 @app.post("/api/store/prune")
 @limiter.limit("10/minute")
@@ -530,9 +506,9 @@ async def api_prune(request: Request, days: int = 30, api_key: str | None = Head
     if _store is None:
         return {"deleted": 0}
     days = max(1, min(days, 3650))
-    deleted = _store.prune(days=days)
+    loop = asyncio.get_running_loop()
+    deleted = await loop.run_in_executor(None, lambda: _store.prune(days=days))
     return {"deleted": deleted, "days": days}
-
 
 @app.get("/api/export.csv")
 async def api_export_csv(ticker: str | None = None, limit: int = 1000):
@@ -540,7 +516,8 @@ async def api_export_csv(ticker: str | None = None, limit: int = 1000):
     if _store is None:
         rows = []
     else:
-        rows = _store.recent(ticker=ticker, limit=max(1, min(limit, 10000)))
+        loop = asyncio.get_running_loop()
+        rows = await loop.run_in_executor(None, lambda: _store.recent(ticker=ticker, limit=max(1, min(limit, 10000))))
 
     def _gen():
         buf = io.StringIO()
@@ -600,9 +577,7 @@ async def api_export_csv(ticker: str | None = None, limit: int = 1000):
         headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
 
-
-# ─── REST: portfolio price proxy ─────────────────────────────────────────────
-
+# REST: portfolio price proxy
 
 @app.get("/api/portfolio/price/historical")
 async def portfolio_price_historical(ticker: str, date: str):
@@ -635,7 +610,6 @@ async def portfolio_price_historical(ticker: str, date: str):
         logger.warning("portfolio historical price failed for %s on %s: %s", ticker, date, e)
         raise HTTPException(status_code=500, detail=str(e))  # noqa: B904
 
-
 @app.get("/api/portfolio/price/live")
 async def portfolio_price_live(ticker: str):
     """
@@ -662,9 +636,7 @@ async def portfolio_price_live(ticker: str):
         logger.warning("portfolio live price failed for %s: %s", ticker, e)
         raise HTTPException(status_code=500, detail=str(e))  # noqa: B904
 
-
-# ─── REST: market structure ──────────────────────────────────────────────────
-
+# REST: market structure
 
 @app.get("/api/market-structure")
 @limiter.limit("10/minute")
@@ -673,10 +645,10 @@ async def api_market_structure(request: Request, ticker: str | None = None):
     Run all four structural analysis models and return a unified result.
 
     Models:
-      1. Volume Profile  — POC, HVN, LVN, Value Area from OHLCV
-      2. Options Flow    — Max Pain, GEX, Call/Put Wall, Gamma Flip (yfinance)
-      3. Hawkes Process  — Zone-touch excitation probabilities
-      4. HMM Regime      — Probabilistic hidden market state
+      1. Volume Profile  - POC, HVN, LVN, Value Area from OHLCV
+      2. Options Flow    - Max Pain, GEX, Call/Put Wall, Gamma Flip (yfinance)
+      3. Hawkes Process  - Zone-touch excitation probabilities
+      4. HMM Regime      - Probabilistic hidden market state
 
     Also returns blended zone-reaction probabilities that combine
     HMM regime priors + Hawkes excitation + zone strength.
@@ -701,30 +673,15 @@ async def api_market_structure(request: Request, ticker: str | None = None):
         logger.exception("market-structure failed for %s", symbol)
         raise HTTPException(status_code=500, detail=f"market structure failed: {exc}")  # noqa: B904
 
-
 async def _api_market_structure_impl(symbol: str, loop):
     """
     Market structure analysis with parallelised sub-tasks.
 
-    Phase 4 refactor (May 2026) — diagnostic improvements:
-    ─────────────────────────────────────────────────────
-    • HMM and Hawkes are now ALWAYS run here, regardless of cfg.hmm_enabled /
-      cfg.hawkes_enabled. Those flags exist to gate the live poll loop (whose
-      latency budget is tight); the dedicated /api/market-structure endpoint
-      has its own loading spinner and the user explicitly clicks "Analyse",
-      so we always do the heavy work here. Previously a False flag silently
-      returned `{"disabled": true}` and the UI rendered an empty card.
-    • Each sub-result carries `state ∈ {"ok", "error", "insufficient_data",
-      "no_zones"}` plus `error_reason` / `min_bars_required` where relevant,
-      so the frontend can render a meaningful error/empty state with retry
-      instead of blank cards.
-    • Pipeline-step logs emitted at `data-fetch → preprocess → model-fit →
-      classify → render` boundaries (logger.debug, only visible at DEBUG).
+    Always runs HMM + Hawkes (poll-loop flags do not apply here).
     """
     HMM_MIN_BARS = 40  # matches core.hmm_regime.MIN_BARS
     HAWKES_MIN_BARS = 20  # matches core.hawkes.analyse_hawkes
     try:
-        # ── 1. data-fetch ────────────────────────────────────────────────
         logger.debug("[ms] data-fetch start  symbol=%s interval=%s", symbol, cfg.interval)
         df = await loop.run_in_executor(
             None,
@@ -738,14 +695,10 @@ async def _api_market_structure_impl(symbol: str, loop):
         spot = float(df["close"].iloc[-1]) if not df.empty else None
         logger.debug("[ms] data-fetch done   bars=%d spot=%s", n_bars, spot)
 
-        # ── 2. preprocess ────────────────────────────────────────────────
         log_returns = df["close"].pct_change().dropna().values.tolist()
         n_returns = len(log_returns)
         logger.debug("[ms] preprocess        n_returns=%d", n_returns)
 
-        # ── 3. model-fit: volume-profile, zones, options-flow, HMM in parallel ─
-        # HMM and Hawkes are always run here (see docstring). Each helper still
-        # falls back gracefully on its own short-input branch.
         _ms_tasks = [
             loop.run_in_executor(None, compute_volume_profile, df),
             loop.run_in_executor(None, detect_zones, df),
@@ -764,7 +717,6 @@ async def _api_market_structure_impl(symbol: str, loop):
             type(hmm_raw).__name__,
         )
 
-        # ── 4a. classify: unpack volume profile ──────────────────────────
         if isinstance(vp_raw, BaseException):
             vp_dict = {"state": "error", "error": str(vp_raw)[:120]}
         elif vp_raw is None:
@@ -773,7 +725,6 @@ async def _api_market_structure_impl(symbol: str, loop):
             vp_dict = vp_raw.to_dict()
             vp_dict.setdefault("state", "ok")
 
-        # ── 4b. classify: unpack zones ───────────────────────────────────
         if isinstance(zone_raw, BaseException):
             logger.warning("[ms] zone detect: %s", zone_raw)
             zones_data = {
@@ -801,14 +752,12 @@ async def _api_market_structure_impl(symbol: str, loop):
             else:
                 zones_data.setdefault("state", "ok")
 
-        # ── 4c. classify: unpack options flow ────────────────────────────
         if isinstance(of_raw, BaseException):
             of_dict = {"state": "error", "error": str(of_raw)[:120]}
         else:
             of_dict = of_raw.to_dict()
             of_dict.setdefault("state", "error" if of_dict.get("error") else "ok")
 
-        # ── 4d. classify: unpack HMM ─────────────────────────────────────
         if isinstance(hmm_raw, BaseException):
             logger.warning("[ms] HMM raised: %s", hmm_raw)
             hmm_result = None
@@ -829,7 +778,6 @@ async def _api_market_structure_impl(symbol: str, loop):
             else:
                 hmm_dict["state"] = "ok"
 
-        # ── 5. Hawkes (always run, needs zone_list + enough returns) ─────
         if zone_list and n_returns >= HAWKES_MIN_BARS:
             try:
                 hawkes_result = await loop.run_in_executor(
@@ -854,12 +802,11 @@ async def _api_market_structure_impl(symbol: str, loop):
                     f"Hawkes process needs at least {HAWKES_MIN_BARS} return bars; "
                     f"only {n_returns} available."
                     if n_returns < HAWKES_MIN_BARS
-                    else "No demand/supply zones detected — Hawkes excitation requires them."
+                    else "No demand/supply zones detected - Hawkes excitation requires them."
                 ),
             }
 
-        # ── 6. Blended zone-reaction probabilities ───────────────────────
-        # Now also produces rows when HMM is missing — falls back to a 40/30/30
+        # Now also produces rows when HMM is missing - falls back to a 40/30/30
         # base so the table never goes empty just because Baum-Welch under-ran.
         blended_zones = []
         for z in zone_list:
@@ -882,7 +829,7 @@ async def _api_market_structure_impl(symbol: str, loop):
             elif hk_probs is not None:
                 blended = hk_probs
             else:
-                # Neither HMM nor Hawkes — fall back to neutral priors so the
+                # Neither HMM nor Hawkes - fall back to neutral priors so the
                 # zone row at least renders something. Marked so the UI can
                 # caveat the row.
                 blended = {"bounce": 0.40, "break": 0.30, "consolidate": 0.30}
@@ -906,7 +853,6 @@ async def _api_market_structure_impl(symbol: str, loop):
                 }
             )
 
-        # ── 7. render-ready payload ─────────────────────────────────────
         logger.debug(
             "[ms] render-ready     zones=%d hmm_state=%s hawkes_state=%s",
             len(blended_zones),
@@ -934,9 +880,7 @@ async def _api_market_structure_impl(symbol: str, loop):
         logger.exception("_api_market_structure_impl failed for %s", symbol)
         raise
 
-
-# ─── REST: unusual options scanner ──────────────────────────────────────────
-
+# REST: unusual options scanner
 
 @app.get("/api/options/unusual")
 @limiter.limit("5/minute")
@@ -957,55 +901,25 @@ async def api_unusual_options(
     """
     Scan one or more tickers for unusual options activity.
 
-    Query parameters
-    ----------------
-    tickers         : comma-separated list of symbols, e.g. "AAPL,TSLA,NVDA"
-                      If omitted, falls back to the `watchlist` parameter.
-    watchlist       : named watchlist key (see /api/scan/watchlists).
-                      If both are omitted, scans the full "all_optionable"
-                      universe (~500 major US stocks + ETFs with active options).
-    min_volume      : minimum contract volume to consider (default 100)
-    min_oi          : minimum open interest to consider (default 50)
-    vol_oi_threshold: Vol/OI ratio to flag as unusual (default 3×)
-    iv_spike_z      : IV z-score above chain mean to flag (default 1.5σ)
-    otm_pct         : fraction OTM to flag as directional sweep (default 5%)
-    max_dte         : maximum calendar days to expiry to scan (default 60)
-    top_n           : maximum results to return across all tickers (default 50)
+    Pass tickers as a comma-separated list (e.g. "AAPL,TSLA,NVDA"), or use watchlist
+    to name a saved watchlist key. If both are omitted the full all_optionable universe
+    (~500 major US stocks + ETFs) is scanned.
 
-    Response
-    --------
-    {
-      "hits": [
-        {
-          "ticker", "expiry", "strike", "option_type",  // "call" | "put"
-          "volume", "open_interest", "vol_oi_ratio",
-          "implied_vol",         // % (e.g. 85.2 = 85.2% IV)
-          "avg_chain_iv",        // chain-average IV for context
-          "in_the_money",
-          "premium_per_contract", "total_premium",  // USD notional
-          "unusual_score",       // 0–1 composite
-          "flags",               // ["high_vol_oi", "iv_spike", "otm_sweep", ...]
-          "sentiment",           // "bullish" | "bearish" | "mixed"
-          "spot", "days_to_expiry"
-        }, ...
-      ],
-      "summary": {
-        "tickers_scanned", "tickers_with_hits", "total_hits",
-        "bullish_count", "bearish_count", "mixed_count"
-      },
-      "scanned_at": "<ISO-8601>"
-    }
+    Filtering params: min_volume (default 100), min_oi (default 50),
+    vol_oi_threshold (default 3x), iv_spike_z (default 1.5 z-score above chain mean),
+    otm_pct (default 5% OTM), max_dte (default 60 days), top_n (default 50 results).
 
-    Flags legend
-    ------------
-    high_vol_oi    — Volume / OI exceeds threshold: new money opening positions today
-    iv_spike       — Contract IV is >1.5σ above chain mean: elevated conviction / fear
-    otm_sweep      — OTM contract with outsized volume: speculative directional bet
-    large_premium  — Notional premium in top-30% of chain: institutional size
-    cp_divergence  — Call/Put volume ratio far from neutral: directional skew across chain
+    Response shape: hits list with ticker, expiry, strike, option_type, volume,
+    open_interest, vol_oi_ratio, implied_vol, avg_chain_iv, in_the_money,
+    premium_per_contract, total_premium, unusual_score (0-1), flags, sentiment,
+    spot, days_to_expiry. Plus a summary object and scanned_at timestamp.
+
+    Flag meanings: high_vol_oi = new money opening today; iv_spike = contract IV
+    above chain mean; otm_sweep = speculative directional bet; large_premium =
+    institutional size; cp_divergence = directional skew across chain.
     """
     # Resolve ticker list
-    # Default (no tickers, no watchlist) → full all_optionable universe
+    # Default (no tickers, no watchlist) - full all_optionable universe
     if tickers:
         ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
     elif watchlist:
@@ -1019,19 +933,19 @@ async def api_unusual_options(
 
     if not ticker_list:
         raise HTTPException(status_code=400, detail="No tickers resolved")
-    # No hard cap — the all_optionable universe is ~500 tickers
+    # No hard cap - the all_optionable universe is ~500 tickers
     if len(ticker_list) > 600:
         raise HTTPException(status_code=400, detail="Max 600 tickers per scan")
 
     top_n = max(1, min(top_n, 200))
     # Scale concurrency with universe size.
-    # Note: options_flow._yf_semaphore caps concurrent yfinance connections at 4
+    # yfinance connection cap
     # regardless of thread count, so raising workers beyond ~8 only adds thread
-    # overhead without increasing throughput — keep it modest.
+    # overhead without increasing throughput - keep it modest.
     auto_concurrent = 4 if len(ticker_list) < 20 else (6 if len(ticker_list) < 100 else 8)
 
     logger.info(
-        "Unusual options scan: %d tickers, max_dte=%d, vol_oi=%.1f×, workers=%d",
+        "Unusual options scan: %d tickers, max_dte=%d, vol_oi=%.1fx, workers=%d",
         len(ticker_list), max_dte, vol_oi_threshold, auto_concurrent,
     )
 
@@ -1058,9 +972,135 @@ async def api_unusual_options(
         logger.exception("Unusual options scan failed")
         raise HTTPException(status_code=500, detail=f"unusual options scan failed: {e}")  # noqa: B904
 
+# REST: hot options scanner (volume spike -> unusual options)
 
-# ─── REST: sentiment ─────────────────────────────────────────────────────────
+@app.get("/api/options/hot")
+@limiter.limit("3/minute")
+async def api_options_hot(
+    request: Request,
+    min_vol_ratio: float = 2.0,
+    max_dte: int = 60,
+    min_volume: int = 50,
+    min_oi: int = 25,
+    vol_oi_threshold: float = 2.5,
+    iv_spike_z: float = 1.5,
+    otm_pct: float = 0.05,
+    top_n: int = 60,
+    min_premium: float = 50_000.0,
+    max_vol_spikes: int = 40,
+    lookback_days: int = 20,
+):
+    """
+    Hot Scanner - two-stage pipeline.
 
+    Stage 1 (Volume Spike Detection): batch-downloads lookback_days of daily OHLCV
+    for the entire all_optionable universe (~500 stocks). Identifies every ticker
+    where today's volume >= min_vol_ratio x 20-day average and returns the top
+    max_vol_spikes by spike ratio.
+
+    Stage 2 (Unusual Options Scan): runs the full unusual-options scanner on only
+    those hot tickers. Much faster than scanning all 500 names because Stage 1
+    pre-selects stocks already showing unusual market interest.
+
+    Response: hits list (same schema as /api/options/unusual), volume_spikes list
+    (ticker, price, today_volume, avg_volume, vol_ratio, sector), summary object,
+    and scanned_at timestamp.
+
+    Query params: min_vol_ratio (default 2.0), max_vol_spikes (default 40),
+    lookback_days (default 20), max_dte (default 60), min_volume (default 50),
+    min_oi (default 25), vol_oi_threshold (default 2.5), iv_spike_z (default 1.5),
+    otm_pct (default 5%), top_n (default 60), min_premium (default $50,000).
+    """
+    universe = get_watchlist("all_optionable")
+
+    try:
+        loop = asyncio.get_running_loop()
+
+        # Stage 1: volume spike scan
+        logger.info(
+            "[hot_scan] Stage-1 volume scan: %d tickers, min_ratio=%.1fx",
+            len(universe), min_vol_ratio,
+        )
+        vol_spikes: list[dict] = await loop.run_in_executor(
+            None,
+            lambda: scan_volume_spikes(
+                tickers=universe,
+                min_vol_ratio=min_vol_ratio,
+                top_n=max_vol_spikes,
+                lookback_days=lookback_days,
+            ),
+        )
+
+        # Stage 2: unusual options on hot tickers
+        hot_tickers = [s["ticker"] for s in vol_spikes]
+
+        if not hot_tickers:
+            logger.info("[hot_scan] No volume spikes found above %.1fx", min_vol_ratio)
+            return {
+                "hits": [],
+                "volume_spikes": [],
+                "summary": {
+                    "universe_scanned": len(universe),
+                    "vol_spike_found": 0,
+                    "tickers_scanned": 0,
+                    "tickers_with_hits": 0,
+                    "total_hits": 0,
+                    "bullish_count": 0,
+                    "bearish_count": 0,
+                    "mixed_count": 0,
+                },
+                "scanned_at": datetime.now(timezone.utc).isoformat(),
+            }
+
+        logger.info(
+            "[hot_scan] Stage-2 options scan: %d high-volume tickers",
+            len(hot_tickers),
+        )
+        # Use a smaller concurrency cap - the tickers already have unusual
+        # activity, so yfinance calls are fewer and we want to avoid hammering.
+        auto_concurrent = min(6, len(hot_tickers))
+
+        result: dict = await loop.run_in_executor(
+            None,
+            lambda: scan_unusual_options(
+                tickers=hot_tickers,
+                min_volume=min_volume,
+                min_oi=min_oi,
+                vol_oi_threshold=vol_oi_threshold,
+                iv_spike_z=iv_spike_z,
+                otm_pct=otm_pct,
+                max_dte=max_dte,
+                max_concurrent=auto_concurrent,
+                top_n=top_n,
+                min_premium=min_premium,
+            ),
+        )
+
+        # Enrich each options hit with vol-spike metadata
+        vol_spike_map = {s["ticker"]: s for s in vol_spikes}
+        for hit in result.get("hits", []):
+            tkr = hit.get("ticker", "")
+            if tkr in vol_spike_map:
+                hit["vol_spike"] = vol_spike_map[tkr]
+
+        # Merge summary fields
+        summary = result.get("summary", {})
+        summary["universe_scanned"] = len(universe)
+        summary["vol_spike_found"] = len(vol_spikes)
+        result["summary"] = summary
+        result["volume_spikes"] = vol_spikes
+
+        logger.info(
+            "[hot_scan] complete - %d vol spikes -> %d options hits",
+            len(vol_spikes), len(result.get("hits", [])),
+        )
+        return result
+
+    except Exception as exc:
+        logger.exception("[hot_scan] failed")
+        raise HTTPException(status_code=500, detail=f"hot options scan failed: {exc}")  # noqa: B904
+
+# REST: sentiment
 
 @app.get("/api/sentiment")
 async def api_sentiment(ticker: str | None = None, force: int = 0):
@@ -1076,11 +1116,10 @@ async def api_sentiment(ticker: str | None = None, force: int = 0):
         logger.exception("Sentiment fetch failed for %s", symbol)
         raise HTTPException(status_code=500, detail=f"sentiment failed: {e}")  # noqa: B904
 
-
 @app.get("/api/sentiment/global")
 async def api_global_sentiment(force: int = 0):
     """
-    Market-wide social sentiment — no specific ticker.
+    Market-wide social sentiment - no specific ticker.
     Covers Reddit hot posts + Google News market headlines + Cramer market view.
     """
     try:
@@ -1090,9 +1129,7 @@ async def api_global_sentiment(force: int = 0):
         logger.exception("Global sentiment fetch failed")
         raise HTTPException(status_code=500, detail=f"global sentiment failed: {e}")  # noqa: B904
 
-
-# ─── REST: financial news aggregator ────────────────────────────────────────
-
+# REST: financial news aggregator
 
 @app.get("/api/news")
 async def api_news(ticker: str | None = None, limit: int = 20):
@@ -1107,7 +1144,6 @@ async def api_news(ticker: str | None = None, limit: int = 20):
     loop = asyncio.get_running_loop()
     symbol = (ticker or "").upper().strip()
 
-    # ── 1. Yahoo Finance RSS (primary — no API key, always free)
     # SOURCE: Yahoo Finance RSS, feeds.finance.yahoo.com, Free
     if symbol:
         try:
@@ -1142,7 +1178,6 @@ async def api_news(ticker: str | None = None, limit: int = 20):
         except Exception as exc:
             logger.warning("Yahoo Finance RSS failed: %s", exc)
 
-    # ── 1b. yfinance news — handles both old (≤0.2.39) and new (≥0.2.40) shapes
     # SOURCE: yfinance (Yahoo Finance), t.news, Free
     try:
 
@@ -1153,7 +1188,7 @@ async def api_news(ticker: str | None = None, limit: int = 20):
         yf_items = await loop.run_in_executor(None, _yf_news)
         cutoff = datetime.now(timezone.utc) - timedelta(days=30)
         for item in yf_items[:15]:
-            # New shape (yfinance ≥ 0.2.40): nested under 'content'
+            # New shape (yfinance >= 0.2.40): nested under 'content'
             if "content" in item and isinstance(item.get("content"), dict):
                 content = item["content"]
                 title = (content.get("title") or "").strip()
@@ -1201,7 +1236,6 @@ async def api_news(ticker: str | None = None, limit: int = 20):
     except Exception as exc:
         logger.warning("yfinance news failed: %s", exc)
 
-    # ── 2. Google News RSS (market + ticker) ────────────────────────────────
     try:
         query = f"{symbol} stock" if symbol else "stock market"
         rss_url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
@@ -1239,7 +1273,6 @@ async def api_news(ticker: str | None = None, limit: int = 20):
     except Exception as exc:
         logger.warning("Google News RSS failed: %s", exc)
 
-    # ── 3. Deduplicate by title prefix (first 60 chars) ─────────────────────
     seen = set()
     unique = []
     for a in articles:
@@ -1252,13 +1285,11 @@ async def api_news(ticker: str | None = None, limit: int = 20):
     # Sort newest first (empty dates go last)
     unique.sort(key=lambda x: x["published"] or "0000", reverse=True)
 
-    # ── 3b. Attach sentiment + category to each article ──────────────────────
-    # Uses lightweight keyword matching — no external NLP service required.
+    # Uses lightweight keyword matching - no external NLP service required.
     for a in unique:
         a["sentiment"] = _score_sentiment(a["title"])
         a["category"] = _classify_category(a["title"], ticker=symbol)
 
-    # ── 4. Fetch VIX level ───────────────────────────────────────────────────
     vix = None
     try:
 
@@ -1280,15 +1311,13 @@ async def api_news(ticker: str | None = None, limit: int = 20):
         "fetched_at": datetime.now(timezone.utc).isoformat(),
     }
 
-
-# ─── REST: Fear & Greed Index ─────────────────────────────────────────────────
-
+# REST: Fear & Greed Index
 
 @app.get("/api/fear-greed")
 async def api_fear_greed():
     """
     Fetch CNN Fear & Greed Index from their public data endpoint.
-    Returns current score (0–100), label, and previous values.
+    Returns current score (0-100), label, and previous values.
     Falls back to VIX-derived estimate if CNN endpoint is unreachable.
     """
     loop = asyncio.get_running_loop()
@@ -1342,7 +1371,6 @@ async def api_fear_greed():
             "fetched_at": datetime.now(timezone.utc).isoformat(),
         }
 
-
 def _fg_label(score: float) -> str:
     if score >= 75:
         return "Extreme Greed"
@@ -1354,9 +1382,7 @@ def _fg_label(score: float) -> str:
         return "Fear"
     return "Extreme Fear"
 
-
-# ─── REST: macroeconomic indicators ─────────────────────────────────────────
-
+# REST: macroeconomic indicators
 
 @app.get("/api/macro")
 async def api_macro(force: int = 0):
@@ -1375,7 +1401,7 @@ async def api_macro(force: int = 0):
       - ISM Mfg PMI  (Manufacturing survey, 50 = neutral)
 
     Data source priority:
-      1. FRED API if FRED_API_KEY env var is set (recommended — free key at fred.stlouisfed.org)
+      1. FRED API if FRED_API_KEY env var is set (recommended - free key at fred.stlouisfed.org)
       2. BLS public API for CPI / PPI / Unemployment
       3. yfinance ^TNX / ^IRX for yields and rate proxy
       4. World Bank API for GDP
@@ -1392,15 +1418,12 @@ async def api_macro(force: int = 0):
         logger.exception("Macro indicators fetch failed")
         raise HTTPException(status_code=500, detail=f"macro fetch failed: {e}")  # noqa: B904
 
-
-# ─── REST: scanner ───────────────────────────────────────────────────────────
-
+# REST: scanner
 
 @app.get("/api/scan/watchlists")
 async def api_scan_watchlists():
     """Return available watchlist names and their tickers."""
     return dict(WATCHLISTS.items())
-
 
 @app.post("/api/scan")
 @limiter.limit("5/minute")
@@ -1438,7 +1461,7 @@ async def api_scan(request: Request, req: ScanRequest, api_key: str | None = Hea
         logger.exception("Scan failed")
         raise HTTPException(status_code=500, detail=f"scan failed: {e}")  # noqa: B904
 
-    # ── Attach trade setup to every scan result ───────────────────────────
+    # Attach trade setup to every scan result
     def _enrich(items: list) -> list:
         enriched = []
         for r in items:
@@ -1455,7 +1478,6 @@ async def api_scan(request: Request, req: ScanRequest, api_key: str | None = Hea
     report["all"] = _enrich(report.get("all", []))
 
     return report
-
 
 @app.post("/api/zone-scan")
 @limiter.limit("5/minute")
@@ -1497,9 +1519,7 @@ async def api_zone_scan(request: Request, req: ScanRequest, api_key: str | None 
 
     return report
 
-
-# ─── WebSocket ───────────────────────────────────────────────────────────────
-
+# WebSocket
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
@@ -1519,7 +1539,6 @@ async def ws_endpoint(ws: WebSocket):
         clients.discard(ws)
         logger.warning("WS error: %s", e)
 
-
 async def _broadcast(data: dict):
     dead = set()
     for ws in clients:
@@ -1529,21 +1548,19 @@ async def _broadcast(data: dict):
             dead.add(ws)
     clients.difference_update(dead)
 
-
-# ─── WebSocket: live news feed ────────────────────────────────────────────────
-
+# WebSocket: live news feed
 
 @app.websocket("/ws/news")
 async def ws_news(ws: WebSocket):
     """
     Live news WebSocket.
 
-    Protocol (client → server):
-        {"ticker": "AAPL"}   — subscribe / switch ticker
+    Protocol (client -> server):
+        {"ticker": "AAPL"}   - subscribe / switch ticker
 
-    Protocol (server → client):
-        {"type": "init",   "ticker": "AAPL", "items": [...]}  — on subscribe
-        {"type": "update", "ticker": "AAPL", "items": [...]}  — new headlines
+    Protocol (server -> client):
+        {"type": "init",   "ticker": "AAPL", "items": [...]}  - on subscribe
+        {"type": "update", "ticker": "AAPL", "items": [...]}  - new headlines
     """
     await ws.accept()
     logger.debug("[ws/news] client connected")
@@ -1568,9 +1585,7 @@ async def ws_news(ws: WebSocket):
     finally:
         await news_stream.unsubscribe(ws)
 
-
-# ─── REST: sector Cramer fallback ─────────────────────────────────────────────
-
+# REST: sector Cramer fallback
 
 @app.get("/api/sentiment/sector-cramer")
 async def api_sector_cramer(ticker: str | None = None, sector: str | None = None):
@@ -1597,9 +1612,7 @@ async def api_sector_cramer(ticker: str | None = None, sector: str | None = None
     result["sector"] = resolved_sector
     return result
 
-
-# ─── REST: insider / Congress activity (SEC EDGAR Form 4) ───────────────────
-
+# REST: insider / Congress activity (SEC EDGAR Form 4)
 
 @app.get("/api/insider-activity")
 async def api_insider_activity(ticker: str | None = None, days: int = 30):
@@ -1608,7 +1621,7 @@ async def api_insider_activity(ticker: str | None = None, days: int = 30):
     # SOURCE: SEC EDGAR EFTS, efts.sec.gov/LATEST/search-index, Official, Free
 
     Returns the last 5 filings: filer name, transaction type (Buy/Sell),
-    shares, price, and date.  Never returns 'No Data' — shows a clear
+    shares, price, and date.  Never returns 'No Data' - shows a clear
     'No insider activity in N days' message when the period is quiet.
     """
     symbol = (ticker or cfg.ticker).upper().strip()
@@ -1673,8 +1686,7 @@ async def api_insider_activity(ticker: str | None = None, days: int = 30):
         "fetched_at": datetime.now(timezone.utc).isoformat(),
     }
 
-
-# ─── Multi-timeframe helpers ─────────────────────────────────────────────────
+# Multi-timeframe helpers
 
 _HTF_MAP = {
     "1m": "15m",
@@ -1684,9 +1696,8 @@ _HTF_MAP = {
     "30m": "4h",
     "1h": "1d",
     "4h": "1d",
-    "1d": "1d",  # already daily — skip HTF
+    "1d": "1d",  # already daily - skip HTF
 }
-
 
 async def _htf_confirmation(ticker: str, base_interval: str, extended: bool, loop) -> dict:
     """
@@ -1721,24 +1732,22 @@ async def _htf_confirmation(ticker: str, base_interval: str, extended: bool, loo
         logger.debug("HTF confirmation failed (%s %s): %s", ticker, htf, e)
         return {"available": False, "reason": str(e)}
 
-
-# ─── Analysis ────────────────────────────────────────────────────────────────
-
+# Analysis
 
 async def _run_analysis() -> dict:
     global _last_result
 
-    # ── Deduplication guard ───────────────────────────────────────────────────
+    # Deduplication guard
     # If another coroutine is already in the middle of a full analysis, return
     # the cached result immediately rather than launching a redundant fetch.
     # This eliminates the duplicate that arises when update_config runs
     # _run_analysis() and then the newly-restarted poll loop fires within
-    # milliseconds — both would otherwise miss the fetcher TTL cache.
+    # milliseconds - both would otherwise miss the fetcher TTL cache.
     if _analysis_lock is not None and _analysis_lock.locked():
         if _last_result:
-            logger.debug("[server] _run_analysis skipped — already in flight, returning cached result")
+            logger.debug("[server] _run_analysis skipped - already in flight, returning cached result")
             return _last_result
-        # No cached result yet — wait for the in-flight call to finish then return
+        # No cached result yet - wait for the in-flight call to finish then return
         async with _analysis_lock:
             return _last_result
 
@@ -1756,8 +1765,6 @@ async def _run_analysis() -> dict:
             # Slice to the analysis window (lookback candles) for MC + indicators.
             df = df_full.tail(cfg.lookback).copy()
             df.attrs = df_full.attrs
-
-            # ── Phase 1: broadcast candles immediately ────────────────────────
             # Data is already fetched (~2-3 s). Push candles to all clients NOW
             # so the chart renders before the slow MC/zones analysis begins.
             # The frontend handles type="partial" by rendering only the chart
@@ -1778,11 +1785,9 @@ async def _run_analysis() -> dict:
 
             # Pre-compute returns for HMM now (fast, avoids duplicate work in executor)
             _returns_for_hmm = df["close"].pct_change().dropna().values.tolist()
-
-            # ── Phase 2: run MC + zones concurrently ──────────────────────────
-            # analyse() calls compute_volume_profile internally — do NOT add it
+            # analyse() calls compute_volume_profile internally - do NOT add it
             # here again (that was a duplicate costing ~2-3 s every cycle).
-            # HMM is gated by cfg.hmm_enabled (default False) — it adds ~5 s.
+            # HMM is gated by cfg.hmm_enabled (default False) - it adds ~5 s.
             _gather_tasks = [
                 loop.run_in_executor(None, analyse, df, cfg.n_sim, cfg.n_forward, cfg.mc_model),
                 loop.run_in_executor(None, detect_zones, df),
@@ -1800,12 +1805,12 @@ async def _run_analysis() -> dict:
                 result_raw, zone_raw, htf_data = raw
                 hmm_raw = None
 
-            # ── Unpack analyse result (must succeed) ──────────────────────────
+            # Unpack analyse result (must succeed)
             if isinstance(result_raw, BaseException):
                 raise result_raw
             result = result_raw
 
-            # ── Unpack zone result ────────────────────────────────────────────
+            # Unpack zone result
             if isinstance(zone_raw, BaseException):
                 logger.warning("zone detect failed: %s", zone_raw)
                 zones_data = {
@@ -1819,7 +1824,7 @@ async def _run_analysis() -> dict:
             else:
                 zones_data = zone_raw.to_dict()
 
-            # ── Volume profile — reuse what analyse() already computed ─────────
+            # Volume profile - reuse what analyse() already computed
             # analyse() embeds the VP result in its return dict under
             # "volume_profile". Pull it out here; no second call needed.
             _vp_inner = result.get("volume_profile") if isinstance(result, dict) else None
@@ -1832,7 +1837,7 @@ async def _run_analysis() -> dict:
             else:
                 vp_data = None
 
-            # ── Unpack HMM result ─────────────────────────────────────────────
+            # Unpack HMM result
             if hmm_raw is None:
                 hmm_data = None
             elif isinstance(hmm_raw, BaseException):
@@ -1841,16 +1846,16 @@ async def _run_analysis() -> dict:
             else:
                 hmm_data = hmm_raw.to_dict() if hmm_raw else None
 
-            # ── Unpack HTF confirmation ───────────────────────────────────────
+            # Unpack HTF confirmation
             if isinstance(htf_data, BaseException):
                 logger.debug("HTF confirmation failed: %s", htf_data)
                 htf_data = {"available": False, "reason": str(htf_data)}
 
-            # ── Override candles with full display history ────────────────────
+            # Override candles with full display history
             if len(df_full) > len(df):
                 result["candles"] = _df_to_candles(df_full)
 
-            # ── Trade setup (needs analyse result — runs after gather) ────────
+            # Trade setup (runs after gather)
             mc_paths_full = result.pop("_mc_paths_full", None)
             try:
                 trade_setup = trade_setup_from_analysis(
@@ -1864,7 +1869,7 @@ async def _run_analysis() -> dict:
                 logger.warning("trade_setup failed: %s", e)
                 trade_setup = {"valid": False, "side": "none", "reason": str(e)}
 
-            # ── HTF alignment (needs both analyse + HTF results) ──────────────
+            # HTF alignment (needs both analyse + HTF results)
             if htf_data.get("available"):
                 base_comp = float(result.get("signal", {}).get("composite", 0.0))
                 htf_comp = float(htf_data.get("composite", 0.0))
@@ -1905,7 +1910,8 @@ async def _run_analysis() -> dict:
             # Persist
             if _store is not None:
                 try:
-                    _store.record(result)
+                    loop = asyncio.get_running_loop()
+                    await loop.run_in_executor(None, lambda: _store.record(result))
                 except Exception as e:
                     logger.warning("store.record failed: %s", e)
 
@@ -1931,9 +1937,7 @@ async def _run_analysis() -> dict:
             logger.exception("Analysis failed")
             return {"error": str(e)}
 
-
-# ─── Poll loop ──────────────────────────────────────────────────────────────
-
+# Poll loop
 
 async def _poll_loop():
     logger.info("Poll loop started: %s %s every %ds", cfg.ticker, cfg.interval, cfg.poll_seconds)

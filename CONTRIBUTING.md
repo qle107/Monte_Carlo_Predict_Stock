@@ -1,6 +1,6 @@
 # Contributing to mc-trader
 
-Thank you for taking the time to contribute. This project is a self-hosted Monte Carlo stock analysis dashboard. Contributions of all kinds are welcome — bug fixes, math improvements, new models, docs, and tests.
+Thank you for taking the time to contribute. This project is a self-hosted Monte Carlo stock analysis dashboard. Contributions of all kinds are welcome - bug fixes, math improvements, new models, docs, and tests.
 
 ## Quick start
 
@@ -9,7 +9,7 @@ Thank you for taking the time to contribute. This project is a self-hosted Monte
 git clone https://github.com/your-fork/Monte_Carlo_Predict_Stock.git
 cd Monte_Carlo_Predict_Stock
 
-# 2. Create a virtual environment (Python 3.10–3.12)
+# 2. Create a virtual environment (Python 3.10-3.12)
 python -m venv .venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 

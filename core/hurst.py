@@ -1,43 +1,8 @@
-"""
-core/hurst.py
-Detrended Fluctuation Analysis (DFA) exponent estimator.
-
-References
-──────────
-Peng, C.-K. et al. (1994). Mosaic organization of DNA nucleotides.
-  Physical Review E, 49(2), 1685–1689.  doi:10.1103/PhysRevE.49.1685
-
-Politis, D.N. & Romano, J.P. (1994). The stationary bootstrap.
-  Journal of the American Statistical Association, 89(428), 1303–1313.
-
-Algorithm (DFA-1)
-─────────────────
-1. Compute the integrated centred series: Y(i) = Σ_{k≤i} (x_k − x̄)
-2. For each box size n in {4, 8, 16, …, N//4}:
-     a. Split Y into ⌊N/n⌋ non-overlapping windows.
-     b. In each window, fit a linear trend with OLS.
-     c. Compute F(n) = sqrt( mean of squared residuals over all windows ).
-3. Regress log F(n) on log n using OLS → slope α is the DFA exponent.
-4. Return (α, se_α) where se_α is the OLS standard error of the slope.
-
-Interpretation
-──────────────
-  α < 0.45  anti-persistent (mean-reverting)
-  α ≈ 0.50  white noise
-  α > 0.55  long-range correlated (trending)
-  α ≈ 1.00  random walk (1/f noise) – expected for price LEVELS
-  α > 1.0   non-stationary (e.g. Brownian motion)
-
-Usage
-─────
-  Call dfa(np.log(prices))  for the microstructure / regime model.
-  Call dfa(log_returns)     for stationary series analysis.
-"""
+"""Detrended fluctuation analysis (Hurst exponent)."""
 
 from __future__ import annotations
 
 import numpy as np
-
 
 def dfa(
     series: np.ndarray,
@@ -47,7 +12,7 @@ def dfa(
     """Detrended Fluctuation Analysis (DFA-1) exponent.
 
     Parameters
-    ----------
+
     series:
         1-D array of values. For price-level inputs pass ``np.log(prices)``;
         for log-return inputs pass the returns directly.
@@ -57,7 +22,7 @@ def dfa(
         Largest box size (default ``len(series) // 4``).
 
     Returns
-    -------
+
     alpha:
         DFA exponent (float).  Clipped to [0.0, 2.0].
     se_alpha:
@@ -65,14 +30,13 @@ def dfa(
         input (fewer than 3 valid box-sizes).
 
     Notes
-    -----
-    Pure NumPy — no scipy dependency.  Typically runs in < 1 ms for N = 2 000.
+
+    Pure NumPy - no scipy dependency.  Typically runs in < 1 ms for N = 2 000.
     """
     arr = np.asarray(series, dtype=float)
     arr = arr[np.isfinite(arr)]
     n_pts = len(arr)
 
-    # ── Guard: need at least 2*min_box points to form a single box ────────────
     if n_pts < 2 * min_box:
         return 0.5, 0.0
 
@@ -80,11 +44,9 @@ def dfa(
     if max_box is None:
         _max_box = max(min_box + 1, n_pts // 4)
 
-    # ── Step 1: Integrate the centred series ──────────────────────────────────
     centred = arr - float(np.mean(arr))
     Y = np.cumsum(centred)  # shape (N,)
 
-    # ── Step 2: Compute F(n) for each box size ────────────────────────────────
     box_sizes: list[int] = []
     f_values: list[float] = []
 
@@ -118,7 +80,6 @@ def dfa(
 
         n *= 2  # next power of 2
 
-    # ── Step 3: OLS on log-log ────────────────────────────────────────────────
     if len(box_sizes) < 3:
         return 0.5, 0.0
 
@@ -137,7 +98,6 @@ def dfa(
 
     alpha = ss_xy / ss_xx
 
-    # ── Standard error of slope (OLS SE) ─────────────────────────────────────
     y_pred = y_mean + alpha * (log_n - x_mean)
     residuals = log_f - y_pred
     mse = float(np.sum(residuals**2)) / max(1, n_pts_reg - 2)

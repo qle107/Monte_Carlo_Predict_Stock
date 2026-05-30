@@ -1,17 +1,17 @@
-// ──────────────────────────────────────────────────────────────────────────
-// /static/js/tabs/market-structure.js — Phase 4: error boundaries + retry.
+
+
 //
 // The full happy-path renderers (`_renderHMM`, `_renderHawkes`,
 // `_renderBlendedZones`, `_renderVolumeProfile`, `_renderOptionsFlow`,
 // `_renderMarketStructure`, `runMarketStructure`) still live inline in
-// dashboard.html — extracting all 470 lines wholesale would consume the
+// dashboard.html - extracting all 470 lines wholesale would consume the
 // context budget for later phases.
 //
 // What THIS file owns:
 //
 //  • Error-state HTML for the three previously-empty sections (HMM regime,
-//    Hawkes excitation, Blended Zone Reaction Probabilities) — driven by the
-//    new `state` contract on the backend (Phase 4 server.py refactor):
+//    Hawkes excitation, Blended Zone Reaction Probabilities) - driven by the
+
 //        state ∈ {"ok", "error", "insufficient_data", "no_zones"}
 //        error_reason, min_bars_required, bars_available
 //
@@ -23,18 +23,15 @@
 //  • Monkey-patch override of `_renderHMM` / `_renderHawkes` /
 //    `_renderBlendedZones` / `_renderMarketStructure` to wrap them in
 //    try/catch and route the new state contract to the error renderers.
-// ──────────────────────────────────────────────────────────────────────────
 
 (function () {
   'use strict';
 
-  // ── Debug log helper ────────────────────────────────────────────────────
   const _DBG = (label, payload) => {
     try { console.debug(`[ms] ${label}`, payload); } catch (_e) { /* no-op */ }
   };
 
-  // ── Error / empty card renderer ─────────────────────────────────────────
-  // Produces the *inside* of a card body — caller decides which IDs to wipe.
+  // Produces the *inside* of a card body - caller decides which IDs to wipe.
   function _emptyStateHtml(opts) {
     const {
       icon       = '⚠',
@@ -61,7 +58,6 @@
     </div>`;
   }
 
-  // ── State-aware HMM section renderer ────────────────────────────────────
   // Replaces the empty-when-disabled rendering with a clear status message.
   // Falls through to the original inline _renderHMM() for the happy path.
   function _renderHMMSection(hmm) {
@@ -97,28 +93,27 @@
       cardBody.innerHTML = _emptyStateHtml({
         icon: '📊',
         color: 'var(--amber)',
-        title: 'Market Regime — Need more candles',
+        title: 'Market Regime - Need more candles',
         message: hmm.error_reason || `HMM requires at least ${hmm.min_bars_required || 40} bars; ${hmm.bars_available || 0} available. Switch to a longer timeframe.`,
       });
     } else if (state === 'error') {
       cardBody.innerHTML = _emptyStateHtml({
         icon: '⚠',
         color: 'var(--red)',
-        title: 'Market Regime — Error',
+        title: 'Market Regime - Error',
         message: `Baum-Welch fit failed: <code>${(hmm.error || 'unknown')}</code>`,
       });
     } else {
-      // Unknown state — fall back to neutral
+      // Unknown state - fall back to neutral
       cardBody.innerHTML = _emptyStateHtml({
         icon: '❓',
         color: 'var(--muted)',
-        title: 'Market Regime — Unavailable',
+        title: 'Market Regime - Unavailable',
         message: 'No regime data returned from the server.',
       });
     }
   }
 
-  // ── State-aware Hawkes section renderer ─────────────────────────────────
   function _renderHawkesSection(hk) {
     _DBG('render-hawkes', hk);
 
@@ -147,34 +142,33 @@
       cardBody.innerHTML = _emptyStateHtml({
         icon: '🔍',
         color: 'var(--amber)',
-        title: 'Price Activity — No zones',
+        title: 'Price Activity - No zones',
         message: 'Hawkes excitation needs demand/supply zones to score reactions at. None were detected in the current lookback window.',
       });
     } else if (state === 'insufficient_data') {
       cardBody.innerHTML = _emptyStateHtml({
         icon: '📊',
         color: 'var(--amber)',
-        title: 'Price Activity — Need more candles',
+        title: 'Price Activity - Need more candles',
         message: hk.error_reason || `Hawkes process requires at least ${hk.min_bars_required || 20} return bars; ${hk.bars_available || 0} available.`,
       });
     } else if (state === 'error') {
       cardBody.innerHTML = _emptyStateHtml({
         icon: '⚠',
         color: 'var(--red)',
-        title: 'Price Activity — Error',
+        title: 'Price Activity - Error',
         message: `Hawkes fit failed: <code>${(hk.error || 'unknown')}</code>`,
       });
     } else {
       cardBody.innerHTML = _emptyStateHtml({
         icon: '❓',
         color: 'var(--muted)',
-        title: 'Price Activity — Unavailable',
+        title: 'Price Activity - Unavailable',
         message: 'No Hawkes data returned from the server.',
       });
     }
   }
 
-  // ── State-aware Blended Zones renderer ──────────────────────────────────
   // Now also surfaces zone-detection failure modes with min-bars hint.
   function _renderBlendedZonesSection(zones) {
     _DBG('render-zones', { n: (zones || []).length });
@@ -215,7 +209,6 @@
     }
   }
 
-  // ── Wrapped top-level render with try/catch error boundary ──────────────
   function _renderMarketStructureSafe(d) {
     _DBG('response', d);
     // Cache zones meta so _renderBlendedZonesSection can show min-bars info.
@@ -226,11 +219,11 @@
       // in HMM/Hawkes/zones doesn't lose the banner update).
       const bannerTicker = document.getElementById('ms-banner-ticker');
       const bannerMeta   = document.getElementById('ms-banner-meta');
-      if (bannerTicker) bannerTicker.textContent = (d.ticker || '—').toUpperCase();
+      if (bannerTicker) bannerTicker.textContent = (d.ticker || '-').toUpperCase();
       if (bannerMeta)   bannerMeta.textContent   = `${d.interval || ''} · Updated ${new Date(d.updated_at).toLocaleTimeString()}`;
 
-      // Each section runs in its own try/catch — a crash in one cannot
-      // wipe the others. This is the "error boundary" Phase 4 calls for.
+      // Each section runs in its own try/catch - a crash in one cannot
+
       try { _renderHMMSection(d.hmm); }
       catch (e) { console.error('[ms] HMM section crashed:', e); }
 
@@ -257,17 +250,15 @@
     }
   }
 
-  // ── Retry button handler ────────────────────────────────────────────────
   function retryMarketStructure() {
     _DBG('retry', { msAnalysisInProgress: window._msAnalysisInProgress });
     if (typeof window.runMarketStructure === 'function') {
       window.runMarketStructure();
     } else {
-      console.warn('[ms] runMarketStructure not yet defined — cannot retry.');
+      console.warn('[ms] runMarketStructure not yet defined - cannot retry.');
     }
   }
 
-  // ── Install: monkey-patch the inline globals on next tick ───────────────
   // We do this AFTER the inline <script> has run so window._renderHMM etc.
   // exist; the inline module sits below ours in dashboard.html but our
   // installer runs deferred so order doesn't matter.

@@ -1,4 +1,4 @@
-"""core/store.py — SQLite-backed signal history. Thread-safe (per-call connections)."""
+"""SQLite-backed signal history store."""
 
 from __future__ import annotations
 
@@ -46,11 +46,10 @@ _MIGRATIONS = [
     "ALTER TABLE signals ADD COLUMN potential_flat REAL",
 ]
 
-
 class SignalStore:
     def __init__(self, db_path: str):
         self.db_path = db_path
-        self._lock = threading.Lock()
+        self._write_lock = threading.Lock()
         self._init_schema()
 
     def _connect(self) -> sqlite3.Connection:
@@ -61,20 +60,31 @@ class SignalStore:
         return conn
 
     def _init_schema(self):
-        with self._lock, self._connect() as conn:
-            conn.executescript(_SCHEMA)
-            for stmt in _MIGRATIONS:
-                with suppress(sqlite3.OperationalError):  # column already exists
-                    conn.execute(stmt)
+        with self._write_lock:
+            with self._connect() as conn:
+                conn.executescript(_SCHEMA)
+                for stmt in _MIGRATIONS:
+                    with suppress(sqlite3.OperationalError):  # column already exists
+                        conn.execute(stmt)
 
     @contextmanager
-    def _cur(self):
-        with self._lock:
+    def _write_cur(self):
+        """Exclusive write cursor - holds Python lock to serialize writes."""
+        with self._write_lock:
             conn = self._connect()
             try:
                 yield conn
             finally:
                 conn.close()
+
+    @contextmanager
+    def _read_cur(self):
+        """Read-only cursor - no lock needed (SQLite WAL handles concurrent readers)."""
+        conn = self._connect()
+        try:
+            yield conn
+        finally:
+            conn.close()
 
     def record(self, result: dict) -> None:
         """Write one analysis row. Tolerates missing fields."""
@@ -112,7 +122,7 @@ class SignalStore:
             ),
         )
         try:
-            with self._cur() as conn:
+            with self._write_cur() as conn:
                 conn.execute(
                     """INSERT INTO signals
                     (ts, ticker, interval, price, label, confidence, drift_bias,
@@ -137,7 +147,7 @@ class SignalStore:
             params = (ticker.upper().strip(),)
         sql += " ORDER BY ts DESC LIMIT ?"
         params = (*params, int(limit))
-        with self._cur() as conn:
+        with self._read_cur() as conn:
             rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
@@ -149,7 +159,7 @@ class SignalStore:
             where = " WHERE ticker = ?"
             params = (ticker.upper().strip(),)
 
-        with self._cur() as conn:
+        with self._read_cur() as conn:
             row = conn.execute(
                 f"""SELECT COUNT(*) AS n,
                           AVG(prob_up)    AS avg_prob_up,
@@ -182,7 +192,7 @@ class SignalStore:
         """Delete rows older than `days` days. Returns count deleted."""
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
         try:
-            with self._cur() as conn:
+            with self._write_cur() as conn:
                 cur = conn.execute("DELETE FROM signals WHERE ts < ?", (cutoff,))
                 deleted = cur.rowcount
                 conn.execute("PRAGMA wal_checkpoint(PASSIVE);")

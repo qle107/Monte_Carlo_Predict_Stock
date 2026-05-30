@@ -1,18 +1,4 @@
-"""core/regime.py — Market regime detector.
-
-Components: DFA exponent (replaces R/S Hurst), multi-window linear R²,
-Donchian breakout, HH/HL pattern, ADX, OBV slope.
-Outputs a Regime with: label, verdict, potential_up/down/flat (0–100),
-trend_score (−1…+1), range_score (0…1), breakout flags, DFA/Hurst α, R²,
-Donchian, HH/HL counts.
-
-DFA replaces the legacy variance-of-lag-differences R/S estimator because:
-  • R/S is biased and unreliable on short series (< 200 bars).
-  • DFA-1 is robust to non-stationarity, making it valid on both log-price
-    levels and log-return series.
-  • DFA standard errors are returned alongside the exponent, enabling
-    confidence-weighted regime decisions (future work).
-"""
+"""Market regime detection."""
 
 from __future__ import annotations
 
@@ -24,7 +10,6 @@ import pandas as pd
 from config import cfg
 
 from .hurst import dfa
-
 
 @dataclass
 class Regime:
@@ -58,7 +43,6 @@ class Regime:
 
     components: dict[str, float] = field(default_factory=dict)
 
-
 def _hurst(series: np.ndarray, max_lag: int = 20) -> float:
     """
     DFA-1 exponent for price-level or log-return series.
@@ -84,7 +68,6 @@ def _hurst(series: np.ndarray, max_lag: int = 20) -> float:
     alpha, _ = dfa(s, max_box=max(8, max_box))
     return float(np.clip(alpha, 0.0, 1.0))
 
-
 def _r2_and_slope(closes: np.ndarray, n: int) -> tuple[float, float]:
     """Linear regression R² and slope (%/candle) over the last n closes."""
     n = min(n, len(closes))
@@ -105,7 +88,6 @@ def _r2_and_slope(closes: np.ndarray, n: int) -> tuple[float, float]:
         return float(r2), float(slope_pct)
     except Exception:
         return 0.0, 0.0
-
 
 def _donchian(df: pd.DataFrame, n: int = 20) -> tuple[float, float, float, bool, bool]:
     """
@@ -150,7 +132,6 @@ def _donchian(df: pd.DataFrame, n: int = 20) -> tuple[float, float, float, bool,
         c = float(df["close"].iloc[-1]) if len(df) else 0.0
         return 0.0, c, c, False, False
 
-
 def _swing_pivots(highs: np.ndarray, lows: np.ndarray, lookback: int = 3) -> tuple[list[float], list[float]]:
     """Pivot highs/lows: a bar is a pivot if it's max (min) of the ±lookback window."""
     n = len(highs)
@@ -163,7 +144,6 @@ def _swing_pivots(highs: np.ndarray, lows: np.ndarray, lookback: int = 3) -> tup
         if lows[i] == np.min(win_l):
             pivots_l.append(float(lows[i]))
     return pivots_h, pivots_l
-
 
 def _hh_hl_counts(df: pd.DataFrame, lookback: int = 3, last_pivots: int = 6) -> tuple[int, int, int, int]:
     """Count HH/HL/LH/LL among the last `last_pivots` swing pivots."""
@@ -183,11 +163,10 @@ def _hh_hl_counts(df: pd.DataFrame, lookback: int = 3, last_pivots: int = 6) -> 
     except Exception:
         return 0, 0, 0, 0
 
-
 def _range_compression(df: pd.DataFrame, n: int = 20) -> float:
     """
     1.0 = recent range unusually tight (consolidation); 0.0 = unusually wide.
-    Suppressed when a large gap (>3%) was present — post-breakout consolidation is not range-bound.
+    Suppressed when a large gap (>3%) was present - post-breakout consolidation is not range-bound.
     """
     if len(df) < n * 2:
         return 0.5
@@ -219,7 +198,6 @@ def _range_compression(df: pd.DataFrame, n: int = 20) -> float:
     except Exception:
         return 0.5
 
-
 def _label_regime(trend: float, range_score: float, brk_up: bool, brk_dn: bool, adx: float) -> str:
     """Map scores to a regime label. Priority: breakout > strong ADX > range > choppy."""
     if brk_up and trend > -0.05:
@@ -227,7 +205,7 @@ def _label_regime(trend: float, range_score: float, brk_up: bool, brk_dn: bool, 
     if brk_dn and trend < 0.05:
         return "breakout_down"
 
-    # Strong ADX overrides range_bound — a trending stock is never range-bound
+    # Strong ADX overrides range_bound - a trending stock is never range-bound
     if adx > 30:
         if trend > 0.10:
             return "strong_uptrend" if trend > 0.35 else "weak_uptrend"
@@ -255,7 +233,6 @@ def _label_regime(trend: float, range_score: float, brk_up: bool, brk_dn: bool, 
     if trend < -0.15:
         return "weak_downtrend"
     return "choppy"
-
 
 def _verdict(
     regime: str,
@@ -310,7 +287,6 @@ def _verdict(
         return f"{desc}: {compression}, {leans} ({persist})."
     return f"{desc}: {cleanness}, {persist}."
 
-
 def detect_regime(df: pd.DataFrame, adx: float = 0.0, obv_slope: float = 0.0) -> Regime:
     """Compute market regime. adx/obv_slope come from compute_indicators (avoids re-computing)."""
     closes = df["close"].to_numpy(float)
@@ -356,7 +332,7 @@ def detect_regime(df: pd.DataFrame, adx: float = 0.0, obv_slope: float = 0.0) ->
     # Component scores: each in [−1, 1] (signed = direction); range_score in [0, 1]
     comp: dict[str, float] = {}
 
-    # R² × sign(slope) — trend cleanness weighted by direction
+    # R² × sign(slope) - trend cleanness weighted by direction
     sgn_short = np.sign(slope_short)
     sgn_mid = np.sign(slope_mid)
     sgn_long = np.sign(slope_long)
@@ -397,7 +373,7 @@ def detect_regime(df: pd.DataFrame, adx: float = 0.0, obv_slope: float = 0.0) ->
     trend_score = float(np.clip(sum(comp[k] * w for k, w in weights.items()), -1.0, 1.0))
 
     # Range score: high when trend weak, Hurst near 0.5, range compressed, ADX low, Donchian mid.
-    # ADX > 25 strongly suppresses range_score — a trending stock is not range-bound.
+    # ADX > 25 strongly suppresses range_score - a trending stock is not range-bound.
     adx_range_penalty = min(1.0, adx / 30.0)
     range_pieces = [
         1.0 - min(1.0, abs(trend_score) * 2.0),
@@ -408,7 +384,7 @@ def detect_regime(df: pd.DataFrame, adx: float = 0.0, obv_slope: float = 0.0) ->
     ]
     range_score = float(np.clip(np.mean(range_pieces), 0.0, 1.0))
 
-    # Potential gauges (0–100), normalised to sum to 100
+    # Potential gauges (0-100), normalised to sum to 100
     base_up = max(0.0, trend_score) * 100
     base_down = max(0.0, -trend_score) * 100
     base_flat = range_score * 100
@@ -460,7 +436,6 @@ def detect_regime(df: pd.DataFrame, adx: float = 0.0, obv_slope: float = 0.0) ->
         range_compression=round(float(rc), 3),
         components={k: round(float(v), 3) for k, v in comp.items()},
     )
-
 
 def regime_to_dict(reg: Regime) -> dict:
     return asdict(reg)

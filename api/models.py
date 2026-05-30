@@ -1,4 +1,4 @@
-"""api/models.py — Pydantic request/response models."""
+"""Pydantic request/response models."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from pydantic import BaseModel, field_validator
 from config import VALID_INTERVALS, VALID_MC_MODELS
 
 _TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
-
 
 class ConfigUpdate(BaseModel):
     ticker: str | None = None
@@ -105,37 +104,36 @@ class ConfigUpdate(BaseModel):
     @classmethod
     def valid_nsim(cls, v):
         if v is not None and not (50 <= v <= 50000):
-            raise ValueError("n_sim must be 50–50 000")
+            raise ValueError("n_sim must be 50-50 000")
         return v
 
     @field_validator("n_forward")
     @classmethod
     def valid_nfwd(cls, v):
         if v is not None and not (1 <= v <= 100):
-            raise ValueError("n_forward must be 1–100")
+            raise ValueError("n_forward must be 1-100")
         return v
 
     @field_validator("lookback")
     @classmethod
     def valid_lookback(cls, v):
         if v is not None and not (20 <= v <= 500):
-            raise ValueError("lookback must be 20–500")
+            raise ValueError("lookback must be 20-500")
         return v
 
     @field_validator("chart_bars")
     @classmethod
     def valid_chart_bars(cls, v):
         if v is not None and not (50 <= v <= 1000):
-            raise ValueError("chart_bars must be 50–1000")
+            raise ValueError("chart_bars must be 50-1000")
         return v
 
     @field_validator("poll_seconds")
     @classmethod
     def valid_poll(cls, v):
         if v is not None and not (10 <= v <= 3600):
-            raise ValueError("poll_seconds must be 10–3600")
+            raise ValueError("poll_seconds must be 10-3600")
         return v
-
 
 class ScanRequest(BaseModel):
     """Request model for POST /api/scan."""
@@ -174,16 +172,15 @@ class ScanRequest(BaseModel):
     @classmethod
     def valid_lookback(cls, v):
         if v is not None and not (10 <= v <= 500):
-            raise ValueError("lookback must be 10–500")
+            raise ValueError("lookback must be 10-500")
         return v
 
     @field_validator("min_score_abs")
     @classmethod
     def valid_min_score(cls, v):
         if v is not None and not (0.0 <= v <= 1.0):
-            raise ValueError("min_score_abs must be 0.0–1.0")
+            raise ValueError("min_score_abs must be 0.0-1.0")
         return v
-
 
 class BacktestRequest(BaseModel):
     """Optional overrides for POST /api/backtest."""
@@ -200,5 +197,5 @@ class BacktestRequest(BaseModel):
     @classmethod
     def valid_hist(cls, v):
         if v is not None and not (50 <= v <= 2000):
-            raise ValueError("history_bars must be 50–2000")
+            raise ValueError("history_bars must be 50-2000")
         return v

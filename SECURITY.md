@@ -42,6 +42,6 @@ This project is a self-hosted local dashboard. Key security considerations:
 
 ## Known Limitations
 
-- No built-in TLS — use a reverse proxy for HTTPS.
+- No built-in TLS - use a reverse proxy for HTTPS.
 - No authentication beyond the optional `API_KEY` header.
 - SQLite signal store has no access control beyond filesystem permissions.

@@ -1,32 +1,4 @@
-"""
-core/volume_profile.py — Volume Profile (Market Profile) analysis.
-
-Computes the volume-at-price distribution from OHLCV candle data.
-No external data required — pure OHLCV.
-
-Key outputs
------------
-  poc             : float    Point of Control — highest-volume price level
-  value_area_high : float    Top of Value Area (70 % of total volume)
-  value_area_low  : float    Bottom of Value Area
-  hvn             : list     High Volume Nodes — local peaks → support / resistance
-  lvn             : list     Low Volume Nodes  — local troughs → fast-move gaps
-  bins            : list     Full histogram [{"price", "volume", "pct", "type"}]
-  current_zone    : str      Where is price relative to the VP? "above_va" | "in_va" | "below_va"
-  poc_distance_pct: float    How far current price is from POC (% of price)
-
-Theory
-------
-  HVN: Price spent a lot of time here — buyers/sellers agreed on this level.
-       When price revisits → expect BOUNCE or CONSOLIDATION (market memory).
-
-  LVN: Little volume traded here — price passed through quickly.
-       When price enters an LVN → expect a FAST directional move (low resistance).
-
-  POC: The "fairest" price per the market — acts as a mean-reversion magnet.
-
-  Value Area: The 70 % of volume band. Price outside VA tends to return.
-"""
+"""Volume profile (POC, value area, HVN/LVN)."""
 
 from __future__ import annotations
 
@@ -38,25 +10,18 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-# ─── Config ──────────────────────────────────────────────────────────────────
-
 _N_BINS = 100  # number of price-level buckets
 _VALUE_AREA = 0.70  # fraction of volume that defines the Value Area
 _HVN_PERCENTILE = 70  # bins above this percentile = HVN
 _LVN_PERCENTILE = 30  # bins below this percentile = LVN
 _SMOOTH_WINDOW = 3  # Gaussian smooth the histogram before peak-finding
 
-
-# ─── Dataclasses ─────────────────────────────────────────────────────────────
-
-
 @dataclass
 class VPBin:
     price: float  # centre of the price bucket
     volume: float  # total volume traded in this bucket
-    pct: float  # fraction of total volume (0–1)
+    pct: float  # fraction of total volume (0-1)
     type: str  # "hvn" | "lvn" | "poc" | "normal"
-
 
 @dataclass
 class VolumeProfile:
@@ -91,10 +56,6 @@ class VolumeProfile:
             ],
         }
 
-
-# ─── Core computation ─────────────────────────────────────────────────────────
-
-
 def compute_volume_profile(
     df: pd.DataFrame,
     n_bins: int = _N_BINS,
@@ -103,7 +64,7 @@ def compute_volume_profile(
     Compute Volume Profile from OHLCV DataFrame.
 
     Volume is distributed uniformly across the high-low range of each candle
-    (TPO-style approximation — fine for bars ≥ 1m).
+    (TPO-style approximation - fine for bars ≥ 1m).
 
     Returns None if df is too small or malformed.
     """
@@ -112,7 +73,6 @@ def compute_volume_profile(
     except Exception as exc:
         logger.warning("[VP] compute_volume_profile failed: %s", exc)
         return None
-
 
 def _compute(df: pd.DataFrame, n_bins: int) -> VolumeProfile:
     if df is None or len(df) < 10:
@@ -158,11 +118,9 @@ def _compute(df: pd.DataFrame, n_bins: int) -> VolumeProfile:
     # Smooth for peak detection (don't alter raw values for output)
     smooth = np.convolve(bucket, np.ones(_SMOOTH_WINDOW) / _SMOOTH_WINDOW, mode="same")
 
-    # ── Point of Control ──────────────────────────────────────────────────
     poc_idx = int(np.argmax(bucket))
     poc = float(centres[poc_idx])
 
-    # ── Value Area (70% of volume, expanding from POC) ────────────────────
     va_vol = _VALUE_AREA * total_vol
     va_set = {poc_idx}
     va_accum = bucket[poc_idx]
@@ -189,7 +147,6 @@ def _compute(df: pd.DataFrame, n_bins: int) -> VolumeProfile:
     value_area_low = float(centres[va_indices[0]])
     value_area_high = float(centres[va_indices[-1]])
 
-    # ── HVN / LVN classification ──────────────────────────────────────────
     hvn_thresh = float(np.percentile(bucket, _HVN_PERCENTILE))
     lvn_thresh = float(np.percentile(bucket, _LVN_PERCENTILE))
 
@@ -201,7 +158,6 @@ def _compute(df: pd.DataFrame, n_bins: int) -> VolumeProfile:
         if smooth[i] < smooth[i - 1] and smooth[i] < smooth[i + 1] and bucket[i] <= lvn_thresh:
             lvn_prices.append(float(centres[i]))
 
-    # ── Build bin list ────────────────────────────────────────────────────
     bins: list[VPBin] = []
     for i, (c, vol) in enumerate(zip(centres, bucket, strict=False)):
         if i == poc_idx:
@@ -214,7 +170,6 @@ def _compute(df: pd.DataFrame, n_bins: int) -> VolumeProfile:
             btype = "normal"
         bins.append(VPBin(price=float(c), volume=float(vol), pct=float(vol / total_vol), type=btype))
 
-    # ── Current price context ─────────────────────────────────────────────
     current_price = float(closes[-1])
     if current_price > value_area_high:
         current_zone = "above_va"
@@ -237,10 +192,6 @@ def _compute(df: pd.DataFrame, n_bins: int) -> VolumeProfile:
         current_price=current_price,
     )
 
-
-# ─── Zone proximity helpers ───────────────────────────────────────────────────
-
-
 def nearest_node(
     price: float, vp: VolumeProfile, node_type: str = "hvn", max_pct: float = 3.0
 ) -> float | None:
@@ -254,7 +205,6 @@ def nearest_node(
     dists.sort()
     best_dist, best_price = dists[0]
     return best_price if best_dist <= max_pct else None
-
 
 def zone_type_at_price(price: float, vp: VolumeProfile, tol_pct: float = 0.5) -> str:
     """

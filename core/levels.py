@@ -1,31 +1,4 @@
-"""
-core/levels.py
-══════════════
-Fibonacci retracement / extension analysis and structural price targets.
-
-Given an OHLCV DataFrame this module:
-  1.  Identifies the most significant recent swing high and low using a
-      pivot-window scan (same style as zones.py).
-  2.  Computes the standard Fibonacci retracement levels within that range:
-      23.6 %, 38.2 %, 50 %, 61.8 %, 78.6 %.
-  3.  Computes Fibonacci extension levels beyond the swing endpoints:
-      127.2 %, 161.8 %, 200 %, 261.8 %.
-  4.  Scores every candidate level for confluence:
-        +2.0  at a demand/supply zone (within 0.5 % of price)
-        +1.5  key Fibonacci ratio (38.2, 50, 61.8, 78.6 %)
-        +0.5  near an ATR-multiple from current price
-        +0.25 standard Fibonacci ratio (23.6 %)
-  5.  Returns:
-        max_high     – highest-confluence resistance level above price
-        max_downside – highest-confluence support level below price
-        fib          – all computed Fibonacci levels for chart overlay
-
-Research basis (see README § Estimating max downside / max high):
-  • Fibonacci retracements alone are statistically similar to random.
-    Confluence with S/R zones improves timing accuracy to ~70 %.
-  • The 61.8 % (Golden Ratio) level carries the highest empirical weight.
-  • High-volume S/R zones add 10–16 pp of precision over classical methods.
-"""
+"""Support/resistance and Fibonacci levels."""
 
 from __future__ import annotations
 
@@ -33,8 +6,6 @@ from dataclasses import asdict, dataclass
 
 import numpy as np
 import pandas as pd
-
-# ─── Constants ────────────────────────────────────────────────────────────────
 
 _RETRACEMENTS: list[float] = [0.236, 0.382, 0.500, 0.618, 0.786]
 _EXTENSIONS: list[float] = [1.000, 1.272, 1.618, 2.000, 2.618]
@@ -59,10 +30,6 @@ _FIB_LABELS = {
     2.618: "261.8%",
 }
 
-
-# ─── Data classes ─────────────────────────────────────────────────────────────
-
-
 @dataclass
 class FibLevels:
     """All Fibonacci levels derived from the most recent significant swing."""
@@ -86,7 +53,6 @@ class FibLevels:
     d_1618: float
     d_2618: float
 
-
 @dataclass
 class StructuralTarget:
     """A single max-high or max-downside price target with confluence metadata."""
@@ -99,10 +65,6 @@ class StructuralTarget:
     zone_price: float | None = None
     score: float = 0.0
 
-
-# ─── Internal helpers ─────────────────────────────────────────────────────────
-
-
 def _find_swing(df: pd.DataFrame, window: int = 8) -> tuple[float, float]:
     """
     Return (swing_high, swing_low) from the most significant pivot pair in df.
@@ -111,7 +73,7 @@ def _find_swing(df: pd.DataFrame, window: int = 8) -> tuple[float, float]:
       • Scan the series for local pivot highs and lows using a ±window bar
         look-around.
       • Of the pivot highs found, pick the highest; of the lows, pick the
-        lowest.  This gives the widest swing in the lookback window —
+        lowest.  This gives the widest swing in the lookback window -
         the reference range Fibonacci traders actually use.
       • Fall back to the raw series max/min when fewer than 3× window bars
         are available.
@@ -140,7 +102,6 @@ def _find_swing(df: pd.DataFrame, window: int = 8) -> tuple[float, float]:
     sh = max(pivot_highs) if pivot_highs else float(np.nanmax(highs))
     sl = min(pivot_lows) if pivot_lows else float(np.nanmin(lows))
     return sh, sl
-
 
 def _build_fib_levels(swing_high: float, swing_low: float) -> FibLevels:
     rng = swing_high - swing_low
@@ -173,7 +134,6 @@ def _build_fib_levels(swing_high: float, swing_low: float) -> FibLevels:
         d_1618=ext_dn(1.618),
         d_2618=ext_dn(2.618),
     )
-
 
 def _score_level(
     level: float,
@@ -208,7 +168,6 @@ def _score_level(
 
     return round(score, 2)
 
-
 def _confluence_label(
     fib_ratio: float | None,
     zone_price: float | None,
@@ -222,7 +181,6 @@ def _confluence_label(
     if not parts:
         parts.append("2× ATR" if method == "atr" else "S/R zone")
     return " + ".join(parts)
-
 
 def _best_target(
     candidates: list[tuple[float, float | None]],  # (price, fib_ratio)
@@ -291,10 +249,6 @@ def _best_target(
         score=0.0,
     )
 
-
-# ─── Public API ───────────────────────────────────────────────────────────────
-
-
 def compute_price_targets(
     df: pd.DataFrame,
     current_price: float,
@@ -306,15 +260,15 @@ def compute_price_targets(
     Compute max_downside and max_high structural price targets.
 
     Parameters
-    ──────────
+
     df            : OHLCV DataFrame (the same one passed to analyse())
     current_price : latest close price
     atr_pct       : ATR as a fraction of price (e.g. 0.015 = 1.5 %)
-    zones         : ZoneResult from detect_zones() — optional but improves accuracy
+    zones         : ZoneResult from detect_zones() - optional but improves accuracy
     swing_window  : pivot look-around bars for swing detection
 
     Returns
-    ───────
+
     dict with three keys, all JSON-serialisable:
       "max_high"     : StructuralTarget fields
       "max_downside" : StructuralTarget fields
@@ -325,7 +279,6 @@ def compute_price_targets(
 
     atr_dollar = current_price * max(atr_pct, 0.005)
 
-    # ── 1. Swing detection ───────────────────────────────────────────
     swing_high, swing_low = _find_swing(df, window=swing_window)
 
     # Clamp so levels stay useful even after a breakout / breakdown
@@ -335,14 +288,12 @@ def compute_price_targets(
     fib = _build_fib_levels(swing_high, swing_low)
     rng = swing_high - swing_low
 
-    # ── 2. Collect zone prices ────────────────────────────────────────
     supply_prices: list[float] = []
     demand_prices: list[float] = []
     if zones is not None:
         supply_prices = [z.level for z in (zones.supply_zones or []) if z.level > current_price * 0.97]
         demand_prices = [z.level for z in (zones.demand_zones or []) if z.level < current_price * 1.03]
 
-    # ── 3. Candidate levels above current price (max high) ────────────
     above: list[tuple[float, float | None]] = []
 
     # Retracement levels that happen to sit above current price
@@ -363,7 +314,6 @@ def compute_price_targets(
         if zp > current_price:
             above.append((zp, None))
 
-    # ── 4. Candidate levels below current price (max downside) ────────
     below: list[tuple[float, float | None]] = []
 
     # Retracement levels below current price (the natural pullback targets)
@@ -383,7 +333,6 @@ def compute_price_targets(
         if zp < current_price:
             below.append((zp, None))
 
-    # ── 5. Score and pick ─────────────────────────────────────────────
     max_high = _best_target(above, supply_prices, current_price, atr_dollar, is_above=True)
     max_downside = _best_target(below, demand_prices, current_price, atr_dollar, is_above=False)
 

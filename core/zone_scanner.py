@@ -1,42 +1,4 @@
-"""
-core/zone_scanner.py — Demand/Supply Zone + EMA Strategy Scanner
-─────────────────────────────────────────────────────────────────
-Strategy logic
-──────────────
-For each ticker:
-
-1.  Fetch OHLCV and compute EMA 20 / 50 / 200.
-2.  Detect demand and supply zones (from core.zones).
-3.  Classify the EMA stack:
-      "bull_stack"   — price > EMA20 > EMA50 > EMA200  (full bull alignment)
-      "bear_stack"   — price < EMA20 < EMA50 < EMA200  (full bear alignment)
-      "above_200"    — price > EMA200 only (partial)
-      "below_200"    — price < EMA200 (bearish bias)
-      "mixed"        — neither pattern
-4.  Find actionable setups (4 scenarios):
-      LONG  A: price at/near demand zone  AND bull_stack / above_200
-      LONG  B: price breaks above supply  AND bull_stack / above_200
-      SHORT A: price at/near supply zone  AND bear_stack / below_200
-      SHORT B: price breaks below demand  AND bear_stack / below_200
-5.  Score each setup (0–1):
-      • Zone strength  (0.4 weight)
-      • EMA alignment  (0.4 weight) — full stack vs partial
-      • RSI position   (0.1 weight) — not overbought for longs / not oversold for shorts
-      • Volume confirm (0.1 weight) — OBV slope sign
-6.  Compute MC-based trade setup (reuses trade_setup_from_analysis or ATR estimate).
-7.  Return sorted by setup_score desc.
-
-ZoneScanResult fields
-─────────────────────
-  ticker, price, interval, setup_score, setup_type, side
-  ema20, ema50, ema200, ema_stack
-  nearest_zone_level, nearest_zone_strength, nearest_zone_type
-  zone_tp1, zone_tp2, zone_sl, zone_rr
-  mc_tp1, mc_tp2      — populated only when full MC is run (Load ↗)
-  rsi, adx, obv_slope, atr_pct
-  trade_setup         — full TradeSetup dict (ATR-estimated TPs for scanner speed)
-  reason              — plain-English summary
-"""
+"""Demand/supply zone and EMA strategy scanner."""
 
 from __future__ import annotations
 
@@ -60,20 +22,14 @@ from .zones import Zone, detect_zones
 
 logger = logging.getLogger(__name__)
 
-
-# ─── EMA helpers ─────────────────────────────────────────────────────────────
-
-
 def _ema_series(closes: np.ndarray, period: int) -> pd.Series:
     s = pd.Series(closes.astype(float))
     return s.ewm(span=period, adjust=False).mean()
-
 
 def _ema_value(closes: np.ndarray, period: int) -> float:
     if len(closes) < period:
         return float(closes[-1]) if len(closes) else 0.0
     return float(_ema_series(closes, period).iloc[-1])
-
 
 def _ema_cross(closes: np.ndarray, fast: int, slow: int, lookback: int = 5) -> str:
     """
@@ -97,15 +53,14 @@ def _ema_cross(closes: np.ndarray, fast: int, slow: int, lookback: int = 5) -> s
             return "cross_down"
     return "none"
 
-
 def _classify_ema_stack(price: float, ema20: float, ema50: float, ema200: float) -> str:
     """
     Returns one of:
-      "bull_stack"  — price > EMA20 > EMA50 > EMA200
-      "bear_stack"  — price < EMA20 < EMA50 < EMA200
-      "above_200"   — price > EMA200 but EMAs not fully aligned bullish
-      "below_200"   — price < EMA200 but EMAs not fully aligned bearish
-      "mixed"       — neither
+      "bull_stack"  - price > EMA20 > EMA50 > EMA200
+      "bear_stack"  - price < EMA20 < EMA50 < EMA200
+      "above_200"   - price > EMA200 but EMAs not fully aligned bullish
+      "below_200"   - price < EMA200 but EMAs not fully aligned bearish
+      "mixed"       - neither
     """
     bull = price > ema20 > ema50 > ema200
     bear = price < ema20 < ema50 < ema200
@@ -117,12 +72,8 @@ def _classify_ema_stack(price: float, ema20: float, ema50: float, ema200: float)
         return "above_200"
     return "below_200"
 
-
-# ─── Setup scoring ────────────────────────────────────────────────────────────
-
-
 def _ema_score(ema_stack: str, side: str) -> float:
-    """0–1 EMA alignment score for the given trade side."""
+    """0-1 EMA alignment score for the given trade side."""
     if side == "long":
         return {"bull_stack": 1.0, "above_200": 0.6, "mixed": 0.3, "below_200": 0.1, "bear_stack": 0.0}[
             ema_stack
@@ -131,7 +82,6 @@ def _ema_score(ema_stack: str, side: str) -> float:
         return {"bear_stack": 1.0, "below_200": 0.6, "mixed": 0.3, "above_200": 0.1, "bull_stack": 0.0}[
             ema_stack
         ]
-
 
 def _score_setup(
     zone_strength: float,
@@ -146,7 +96,7 @@ def _score_setup(
     # EMA alignment (40%)
     e_score = _ema_score(ema_stack, side) * 0.40
 
-    # RSI position (10%) — longs want RSI 30–65, shorts want RSI 40–75
+    # RSI position (10%) - longs want RSI 30-65, shorts want RSI 40-75
     if side == "long":
         rsi_ok = 1.0 if 30 <= rsi <= 65 else (0.5 if rsi < 30 else 0.2)
     else:
@@ -159,16 +109,12 @@ def _score_setup(
 
     return round(z_score + e_score + r_score + v_score, 3)
 
-
-# ─── Result dataclass ─────────────────────────────────────────────────────────
-
-
 @dataclass
 class ZoneScanResult:
     ticker: str
     price: float
     interval: str
-    setup_score: float  # 0–1 overall quality
+    setup_score: float  # 0-1 overall quality
     setup_type: str  # "demand_bounce"|"demand_support"|"supply_break"|"supply_bounce"|"demand_break"|"none"
     side: str  # "long"|"short"|"none"
 
@@ -205,7 +151,7 @@ class ZoneScanResult:
     zone_sl_dist: float | None
     zone_rr: float | None
 
-    # ATR-estimated MC targets (for scanner speed — no full MC run)
+    # ATR-estimated MC targets (for scanner speed - no full MC run)
     mc_tp1: float | None
     mc_tp2: float | None
 
@@ -221,10 +167,6 @@ class ZoneScanResult:
 
     def to_dict(self) -> dict:
         return asdict(self)
-
-
-# ─── Single ticker zone scan ──────────────────────────────────────────────────
-
 
 async def _zone_scan_one(
     ticker: str,
@@ -276,7 +218,7 @@ async def _zone_scan_one(
     )
 
     try:
-        # ── 1. Fetch + indicators ────────────────────────────────────
+
         df = await loop.run_in_executor(None, fetch_candles, ticker, interval, lookback, extended)
         ind = await loop.run_in_executor(None, compute_indicators, df)
         reg = await loop.run_in_executor(None, detect_regime, df, ind.adx, ind.obv_slope)
@@ -285,7 +227,6 @@ async def _zone_scan_one(
         closes = df["close"].to_numpy(float)
         price = float(closes[-1])
 
-        # ── 2. EMA 20 / 50 / 200 + cross detection ──────────────────
         ema20 = _ema_value(closes, 20)
         ema50 = _ema_value(closes, 50)
         ema200 = _ema_value(closes, 200)
@@ -299,7 +240,6 @@ async def _zone_scan_one(
         dist_ema50 = round((price - ema50) / price * 100, 2) if price else 0.0
         dist_ema200 = round((price - ema200) / price * 100, 2) if price else 0.0
 
-        # ── 3. Zone detection ────────────────────────────────────────
         zones = await loop.run_in_executor(None, detect_zones, df)
         atr = zones.atr if zones.atr > 0 else price * 0.015
         touch_band = atr * 0.6
@@ -314,10 +254,10 @@ async def _zone_scan_one(
         def _build_zone_list(raw_zones, price: float, zone_kind: str) -> list:
             """Sort by proximity to price, label by strength rank."""
             if zone_kind == "demand":
-                # Demand zones below price — sort by level desc (nearest first)
+                # Demand zones below price - sort by level desc (nearest first)
                 candidates = sorted(raw_zones, key=lambda z: abs(price - z.level))[:3]
             else:
-                # Supply zones above price — sort by level asc (nearest first)
+                # Supply zones above price - sort by level asc (nearest first)
                 candidates = sorted(raw_zones, key=lambda z: abs(price - z.level))[:3]
             result = []
             idx = 1
@@ -346,7 +286,6 @@ async def _zone_scan_one(
         demand_zones_list = _build_zone_list(zones.demand_zones, price, "demand")
         supply_zones_list = _build_zone_list(zones.supply_zones, price, "supply")
 
-        # ── 4. Find best setup ───────────────────────────────────────
         setup_type = "none"
         side = "none"
         trig_zone: Zone | None = None
@@ -367,7 +306,7 @@ async def _zone_scan_one(
             tp2 = round(sups[1].level, 4) if len(sups) > 1 else round(tp1 * 1.02, 4)
             return tp1, tp2
 
-        # LONG A: demand bounce — price AT demand zone, bullish EMA stack
+        # LONG A: demand bounce - price AT demand zone, bullish EMA stack
         # Requires price still ABOVE zone center (not broken below).
         if long_ok and nd and price >= nd.level and (price - nd.level) <= touch_band:
             setup_type = "demand_bounce"
@@ -376,7 +315,7 @@ async def _zone_scan_one(
             zone_tp1, zone_tp2 = _supply_tps(price)
             zone_sl = round(nd.low - atr * 0.25, 4)
 
-        # LONG A2: demand support — price is ABOVE the zone center (zone not broken)
+        # LONG A2: demand support - price is ABOVE the zone center (zone not broken)
         # and within 2×ATR of demand. Fires regardless of EMA direction because
         # the key fact is that price has NOT broken below the zone.
         # Also catches the touch_band case when EMA is not fully bullish.
@@ -409,7 +348,7 @@ async def _zone_scan_one(
             zone_tp2 = round(dems[1].level, 4) if len(dems) > 1 else round(zone_tp1 * 0.98, 4)
             zone_sl = round(ns.high + atr * 0.25, 4)
 
-        # SHORT B: demand break — price has actually broken BELOW the demand zone centre.
+        # SHORT B: demand break - price has actually broken BELOW the demand zone centre.
         # nd.level > price  means the zone centre is now above current price = confirmed break.
         # Guard: zone must be within 2% above price (recent break, not a distant one).
         elif short_ok and nd and nd.level > price and nd.level <= price * 1.02:
@@ -425,7 +364,6 @@ async def _zone_scan_one(
             zone_tp2 = round(dems[1].level, 4) if len(dems) > 1 else round(zone_tp1 * 0.98, 4)
             zone_sl = round(nd.high + atr * 0.25, 4)
 
-        # ── 5. Compute zone distances + R:R ─────────────────────────
         if zone_tp1 is not None and zone_sl is not None:
             if side == "long":
                 zone_tp1_dist = round((zone_tp1 - price) / price * 100, 2)
@@ -439,13 +377,11 @@ async def _zone_scan_one(
             reward = abs(zone_tp1 - price)
             zone_rr = round(reward / risk, 2) if risk > 0 else None
 
-        # ── 6. Setup score ───────────────────────────────────────────
         zone_strength = trig_zone.strength if trig_zone else 0.0
         setup_score = (
             _score_setup(zone_strength, ema_stack, side, ind.rsi, ind.obv_slope) if side != "none" else 0.0
         )
 
-        # ── 7. ATR-estimated MC TP (no full MC run for speed) ────────
         atr_dollar = price * ind.atr_pct
         if side == "long":
             mc_tp1 = round(price + atr_dollar * 1.5, 4)
@@ -456,7 +392,6 @@ async def _zone_scan_one(
         else:
             mc_tp1 = mc_tp2 = None
 
-        # ── 8. Trade setup (ATR-estimated, no full MC) ───────────────
         ts_score = abs(sig.composite) if side != "none" else 0.0
         if "down" in setup_type or side == "short":
             ts_score = -abs(ts_score)
@@ -475,7 +410,7 @@ async def _zone_scan_one(
             atr_pct=ind.atr_pct,
             prob_up=0.0,
             prob_down=0.0,
-            # Pass zone levels as MC percentiles — zones ARE the targets
+            # Pass zone levels as MC percentiles - zones ARE the targets
             mc_p10=zone_tp2 if side == "short" else None,
             mc_p25=zone_tp1 if side == "short" else None,
             mc_p75=zone_tp1 if side == "long" else None,
@@ -485,7 +420,6 @@ async def _zone_scan_one(
         )
         trade_setup_dict = ts_to_dict(ts)
 
-        # ── 9. Reason string ─────────────────────────────────────────
         setup_labels = {
             "demand_bounce": "↑ Demand Bounce",
             "demand_support": "↑ Demand Support",
@@ -509,7 +443,7 @@ async def _zone_scan_one(
                 f"RSI {ind.rsi:.0f} · ADX {ind.adx:.0f}"
             )
         else:
-            reason = f"No zone setup — {ema_labels.get(ema_stack, '?')} · price not near any zone"
+            reason = f"No zone setup - {ema_labels.get(ema_stack, '?')} · price not near any zone"
 
         elapsed = (time.monotonic() - t0) * 1000
 
@@ -562,10 +496,6 @@ async def _zone_scan_one(
         err.reason = f"Error: {e}"
         err.elapsed_ms = round(elapsed, 1)
         return err
-
-
-# ─── Public: scan watchlist for zone setups ──────────────────────────────────
-
 
 async def zone_scan_tickers(
     tickers: list[str],

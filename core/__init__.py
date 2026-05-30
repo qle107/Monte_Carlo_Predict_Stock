@@ -1,9 +1,4 @@
-"""
-core/__init__.py — public analysis pipeline.
-
-Usage: result = analyse(df, n_sim=500, n_forward=10, mc_model="garch")
-Returns a JSON-serialisable dict with price, indicators, regime, signal, MC, candles.
-"""
+"""Core analysis pipeline."""
 
 from __future__ import annotations
 
@@ -18,7 +13,6 @@ from .regime import detect_regime
 from .signal import compute_signal
 from .volume_profile import compute_volume_profile
 
-
 def _df_to_candles(df: pd.DataFrame) -> list:
     """Vectorised OHLCV serialisation."""
     ts_list = [t.isoformat() for t in df.index]
@@ -32,7 +26,6 @@ def _df_to_candles(df: pd.DataFrame) -> list:
         for t, oi, hi, li, ci, vi in zip(ts_list, o, h, lo, c, v, strict=False)
     ]
 
-
 def analyse(
     df: pd.DataFrame,
     n_simulations: int = 10000,
@@ -45,7 +38,7 @@ def analyse(
 
     current_price = float(df["close"].iloc[-1])
 
-    # Microstructure inputs — computed regardless of MC model;
+    # Microstructure inputs - computed regardless of MC model;
     # key levels are useful in the dashboard payload even for non-microstructure models.
     vp = compute_volume_profile(df)
     cvd_history = compute_cvd_from_ohlc(df["open"], df["close"], df["volume"])
@@ -80,7 +73,7 @@ def analyse(
     ind_dict.pop("returns", None)  # already consumed by MC
 
     mc_dict = asdict(mc)
-    mc_dict.pop("paths_full", None)  # numpy array — not JSON-safe
+    mc_dict.pop("paths_full", None)  # numpy array - not JSON-safe
 
     return {
         "current_price": current_price,

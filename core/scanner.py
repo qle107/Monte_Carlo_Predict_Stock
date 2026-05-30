@@ -1,25 +1,4 @@
-"""
-core/scanner.py — Multi-stock breakout / breakdown scanner.
-
-Scans a list of tickers concurrently using the existing indicator →
-regime → signal pipeline.  Returns a ranked list of scan results,
-sorted by breakout/breakdown score.
-
-Breakout score  > 0  → breaking out upward
-Breakdown score < 0  → breaking down
-
-Each result also includes a condensed summary of the key signals so
-the dashboard can display them without additional API calls.
-
-Usage
-─────
-    from core.scanner import scan_tickers
-    results = await scan_tickers(
-        tickers=["AAPL", "NVDA", "SPY", ...],
-        interval="1d",
-        lookback=60,
-    )
-"""
+"""Multi-ticker breakout and breakdown scanner."""
 
 from __future__ import annotations
 
@@ -41,16 +20,12 @@ from .signal import compute_signal
 
 logger = logging.getLogger(__name__)
 
-
-# ─── Predefined watchlists ───────────────────────────────────────────────────
+# Predefined watchlists
 
 WATCHLISTS: dict[str, list[str]] = {
-    # ── All major optionable US stocks ────────────────────────────────────────
-    # ~500 liquid names: full S&P 500 components + NASDAQ 100 extras +
-    # popular ETFs + high-volume retail/meme favourites.
-    # Used as the default scan universe for /api/options/unusual.
+    # Default scan universe for /api/options/unusual
     "all_optionable": [
-        # ── Mega-cap / S&P 500 core ──
+        # Mega-cap / S&P 500 core
         "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "GOOG", "META", "TSLA",
         "BRK-B", "UNH", "LLY", "JPM", "V", "XOM", "MA", "AVGO", "PG",
         "HD", "COST", "MRK", "ABBV", "CVX", "CRM", "AMD", "PEP", "KO",
@@ -67,70 +42,64 @@ WATCHLISTS: dict[str, list[str]] = {
         "NUE", "X", "CLF", "AA", "CF", "MOS",
         "AIG", "MET", "PRU", "AFL", "TRV", "CB", "ALL", "HIG",
         "WFC", "C", "TFC", "STT", "SCHW", "COF", "SYF",
-        # DFS → acquired by Capital One (2024). JNPR → acquired by HPE (2024).
         "CME", "ICE", "CBOE", "MSCI", "MCO", "FIS", "FISV", "GPN",
-        # ── Technology ──
+        # Technology
         "ORCL", "SAP", "NOW", "SNOW", "PLTR", "CRWD", "PANW", "ZS",
         "DDOG", "NET", "MDB", "OKTA", "ZM", "DOCU", "TWLO", "HUBS",
         "SHOP", "PYPL", "COIN", "HOOD", "SOFI", "AFRM",
-        # SQ → still active as BLOCK (ticker SQ). PSTG → still active.
         "SQ", "PSTG",
         "MRVL", "KLAC", "LRCX", "ASML", "TSM", "MU", "SMCI", "ARM",
         "QRVO", "SWKS", "MPWR", "ON", "WOLF", "ACLS", "COHU",
         "UBER", "LYFT", "ABNB", "DASH", "RBLX", "SNAP", "PINS",
         "SPOT", "MTCH", "IAC", "YELP", "TRIP",
         "HPQ", "HPE", "DELL", "WDC", "STX", "NTAP",
-        # JNPR removed (acquired by HPE 2024). IQM/ARQQ removed (no listed options).
         "FFIV", "ANET", "CIEN", "LITE", "VIAV",
-        # ── Semiconductors / AI / Quantum ──
+        # Semiconductors / Quantum
         "MSTR", "IONQ", "RGTI", "QUBT",
-        # ── Biotech / Healthcare ──
+        # Biotech / Healthcare
         "MRNA", "BNTX", "BIIB", "ALNY", "BMRN", "SRPT", "EXEL",
         "ACAD", "INCY", "RARE", "BEAM", "NTLA", "CRSP", "EDIT",
         "RXRX", "SEER", "FATE", "KYMR", "IMVT", "CLOV",
         "PFE", "JNJ", "AZN", "NVO", "SNY", "GSK",
-        # BAYRY → OTC ADR, skipped; PKI → renamed RVTY
         "RVTY",
         "ISRG", "EW", "DXCM", "PODD", "HOLX", "IDXX", "IQV",
         "A", "BIO", "MTD", "TECH", "NTRA",
-        # LPNT → taken private. Removed.
         "HCA", "THC", "UHS", "CNC", "MOH", "ELV",
-        # ── Financials ──
+        # Financials
         "BX", "KKR", "APO", "CG", "ARES", "OWL",
-        # BLUE → bluebird bio, now very small/illiquid options. Removed.
         "VRT", "ENVA", "LC", "UPST", "OPEN",
-        # ── Energy ──
-        "COP", "OXY", "DVN", "FANG", "HAL", "SLB",
-        # PXD → acquired by ExxonMobil (2023). MRO → acquired by COP (2024).
-        # CLR → taken private (2022). HFC → renamed DINO.
+        # Energy
+        "COP", "OXY", "DVN", "FANG", "HAL", "SLB", "TE",
+        # PXD acquired by ExxonMobil (2023). MRO acquired by COP (2024).
+        # CLR taken private (2022). HFC renamed to DINO.
         "DINO", "BKR", "NOV", "HP", "PTEN", "WHD",
         "LNG", "CQP", "ET", "EPD", "MPLX", "WMB", "OKE", "KMI",
         "VLO", "MPC", "PSX", "DK",
         "EOG", "APA", "PR", "SM", "CIVI",
-        # ── Consumer / Retail ──
+        # Consumer / Retail
         "NKE", "LULU", "RL", "PVH", "HBI", "UAA", "UA",
         "TGT", "LOW", "BBY", "BBWI", "M", "KSS",
-        # JWN → taken private (2025). Removed.
+        # JWN taken private (2025). Removed.
         "CMG", "YUM", "QSR", "DRI", "TXRH", "SHAK", "WING",
         "AMZN", "ETSY", "CHWY", "W",
         "GM", "F", "RIVN", "LCID", "NIO", "XPEV", "LI",
-        # FSR → Fisker bankrupt (2024). HYLN → renamed/delisted. Removed.
-        # ── Real estate / Industrials ──
+        # FSR bankrupt (2024). HYLN renamed/delisted. Removed.
+        # Real estate / Industrials
         "AMT", "CCI", "SBAC", "EQIX", "DLR", "PLD", "SPG",
         "O", "WPC", "NNN", "VICI", "MGM", "LVS", "WYNN", "CZR",
         "BA", "LMT", "NOC", "GD", "LHX", "HEI", "TDG", "HWM",
-        # L3H → incorrect ticker; correct is LHX (L3Harris).
+        # L3H is an incorrect ticker; use LHX (L3Harris).
         "AAL", "DAL", "UAL", "LUV", "JBLU", "ALK",
         "CCL", "RCL", "NCLH",
-        # ── Media / Telecom ──
+        # Media / Telecom
         "CMCSA", "CHTR", "T", "VZ", "TMUS", "LUMN",
         "FOXA", "FOX", "WBD", "PARA", "SIRI",
-        # VIAC → renamed to PARA (already present). Removed duplicate.
+        # VIAC renamed to PARA (already present). Removed duplicate.
         "NYT", "NWS", "NWSA",
-        # ── Commodities / Materials ──
+        # Commodities / Materials
         "GOLD", "NEM", "AEM", "WPM", "PAAS", "AG",
         "BHP", "RIO", "VALE", "MT", "STLD",
-        # ── Popular ETFs with liquid options ──
+        # Popular ETFs with liquid options
         "SPY", "QQQ", "IWM", "DIA", "VTI", "VOO", "TQQQ", "SQQQ",
         "GLD", "GDX", "GDXJ", "SLV", "USO", "UNG",
         "TLT", "IEF", "SHY", "HYG", "LQD", "JNK",
@@ -140,12 +109,12 @@ WATCHLISTS: dict[str, list[str]] = {
         "VNQ", "REET", "KBWB", "KRE", "XHB", "XRT",
         "IBB", "XBI", "SMH", "SOXX",
         "VXX", "UVXY", "SVXY",
-        # ── High-activity retail / meme / crypto ──
+        # High-activity retail / meme / crypto
         "GME", "AMC", "CLOV", "WKHS",
-        # BBBY → bankrupt (2023). WISH → delisted. RIDE → bankrupt. Removed.
+        # BBBY bankrupt (2023). WISH delisted. RIDE bankrupt. All removed.
         "SPCE", "NKLA", "BLNK", "CHPT", "EVGO",
         "TLRY", "CGC", "ACB", "SNDL",
-        # CURLF → OTC/CSE, no US-listed options. Removed.
+        # CURLF is OTC/CSE with no US-listed options. Removed.
         "DKNG", "PENN",
         "MARA", "RIOT", "HUT", "CLSK", "BTBT", "CIFR",
         "AI", "BBAI", "SOUN", "PRCT", "ASTS", "RKLB",
@@ -305,13 +274,55 @@ WATCHLISTS: dict[str, list[str]] = {
         "RGTI",
         "QUBT",
     ],
+    "space": [
+        "ASTS", "RKLB", "SPCE", "IRDM", "GSAT", "VSAT",
+        "LMT", "NOC", "RTX", "GD", "LHX", "HEI", "TDG",
+        "KTOS", "AVAV", "BWXT",
+    ],
+    "robotics": [
+        "ISRG", "TER", "CGNX", "ROK", "ABB", "SYM", "ZBRA",
+        "AZTA", "IRBT", "PATH", "NVDA", "BOTZ",
+    ],
+    "energy": [
+        "OKLO", "SMR", "CEG", "VST", "NRG", "BWXT",
+        "CCJ", "UEC", "UUUU", "LEU",
+        "XOM", "CVX", "COP", "OXY", "DVN", "FANG",
+        "HAL", "SLB", "BKR",
+        "LNG", "ET", "EPD", "WMB", "OKE",
+        "VLO", "MPC", "PSX",
+        "EOG", "APA", "CIVI",
+        "FSLR", "ENPH", "TE", "PLUG", "BE",
+        "XLE", "URA",
+    ],
+    "defense": [
+        "LMT", "NOC", "RTX", "GD", "BA",
+        "LHX", "HEI", "TDG", "HWM",
+        "KTOS", "AVAV",
+        "PLTR", "LDOS", "SAIC", "BAH", "CACI", "AXON",
+        "BWXT", "DRS",
+    ],
+    "crypto": [
+        "COIN", "HOOD", "SQ", "MSTR",
+        "MARA", "RIOT", "CLSK", "CORZ", "WULF", "IREN", "HUT", "CIFR", "BTBT",
+    ],
+    "ev": [
+        "TSLA", "RIVN", "LCID", "NIO", "XPEV", "LI", "GM", "F",
+        "CHPT", "BLNK", "EVGO",
+    ],
+    "financials": [
+        "JPM", "GS", "MS", "BAC", "C", "WFC",
+        "USB", "PNC", "TFC",
+        "BX", "KKR", "APO", "CG", "ARES",
+        "CME", "ICE", "CBOE",
+        "V", "MA", "AXP",
+        "SCHW", "COF",
+    ],
+    "cannabis": ["TLRY", "CGC", "ACB", "SNDL"],
 }
 
 DEFAULT_WATCHLIST = "sp500_large"
 
-
-# ─── Result dataclass ────────────────────────────────────────────────────────
-
+# Result dataclass
 
 @dataclass
 class ScanResult:
@@ -344,19 +355,16 @@ class ScanResult:
     error: str | None = None
     elapsed_ms: float = 0.0
 
-
-# ─── Scoring ─────────────────────────────────────────────────────────────────
-
+# Scoring
 
 def _compute_scan_score(reg, sig, ind) -> float:
     """
     Composite breakout/breakdown score in [-1, 1].
     Combines regime, signal, and key indicator reads.
-    Positive → breakout up; Negative → breakdown.
+    Positive -> breakout up; Negative -> breakdown.
     """
     score = 0.0
 
-    # 1. Regime direction (dominant, 40% weight)
     regime_map = {
         "breakout_up": +1.0,
         "strong_uptrend": +0.75,
@@ -369,25 +377,20 @@ def _compute_scan_score(reg, sig, ind) -> float:
     }
     score += regime_map.get(reg.regime, 0.0) * 0.40
 
-    # 2. Signal composite (30% weight)
     score += float(np.clip(sig.composite * sig.confidence, -1.0, 1.0)) * 0.30
 
-    # 3. Donchian position (breakout proximity, 15% weight)
     score += float(np.clip(reg.donchian_pos, -1.0, 1.0)) * 0.15
 
-    # 4. OBV slope — volume confirmation (10% weight)
     score += float(np.clip(ind.obv_slope / 1.0, -1.0, 1.0)) * 0.10
 
-    # 5. RSI extremes — confirmation or fade (5% weight)
     rsi_score = 0.0
     if ind.rsi > 70:
-        rsi_score = -0.3  # overbought → mild fade
+        rsi_score = -0.3  # overbought - mild fade
     elif ind.rsi < 30:
-        rsi_score = 0.3  # oversold → mild bounce
+        rsi_score = 0.3  # oversold - mild bounce
     score += rsi_score * 0.05
 
     return float(np.clip(score, -1.0, 1.0))
-
 
 def _classify_direction(score: float, regime: str) -> tuple[str, str]:
     """Returns (direction, strength)."""
@@ -421,9 +424,7 @@ def _classify_direction(score: float, regime: str) -> tuple[str, str]:
 
     return direction, strength
 
-
-# ─── Single-ticker scan ───────────────────────────────────────────────────────
-
+# Single-ticker scan
 
 async def _scan_one(
     ticker: str,
@@ -509,9 +510,7 @@ async def _scan_one(
             elapsed_ms=round(elapsed, 1),
         )
 
-
-# ─── Public: scan watchlist ───────────────────────────────────────────────────
-
+# Public: scan watchlist
 
 async def _run_mc_on_result(
     result: ScanResult,
@@ -551,7 +550,6 @@ async def _run_mc_on_result(
     except Exception as e:
         logger.debug("[scanner MC] %s failed: %s", result.ticker, e)
     return result
-
 
 async def scan_tickers(
     tickers: list[str],
@@ -600,7 +598,7 @@ async def scan_tickers(
     # Sort by score descending
     ranked = sorted(valid, key=lambda r: r.score, reverse=True)
 
-    # ── Fast MC on top-N results ──────────────────────────────────────────
+    # Fast MC on top-N results
     if mc_top_n > 0 and ranked:
         # Pick top N by |score| (covers both strong breakouts and breakdowns)
         by_abs = sorted(ranked, key=lambda r: abs(r.score), reverse=True)
@@ -622,7 +620,7 @@ async def scan_tickers(
 
         mc_tasks = [asyncio.create_task(_mc_throttled(r)) for r in top_n]
         await asyncio.gather(*mc_tasks)
-        # Results are mutated in place — ranked already references the same objects
+        # Results are mutated in place - ranked already references the same objects
 
     elapsed = round((time.monotonic() - t_start) * 1000)
 
@@ -646,7 +644,6 @@ async def scan_tickers(
         "all": [_to_dict(r) for r in ranked],
         "errors": [{"ticker": r.ticker, "error": r.error} for r in errors],
     }
-
 
 def get_watchlist(name: str) -> list[str]:
     """Return a named watchlist (case-insensitive). Falls back to sp500_large."""

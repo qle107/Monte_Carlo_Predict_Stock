@@ -1,8 +1,7 @@
-/* ──────────────────────────────────────────────────────────────────────────
+
    Portfolio Drawer Styles
    Scoped under #portfolio-drawer so it cannot leak into the main dashboard.
    Extracted from templates/dashboard.html during the May 2026 refactor.
-   ────────────────────────────────────────────────────────────────────────── */
 
 @keyframes slideIn { from { transform: translateY(30px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }
 

@@ -1,43 +1,4 @@
-"""
-core/backtest.py — walk-forward backtesting.
-
-Given a long candle DataFrame, slide a window across history. At every step:
-  1. Compute indicators + signal on history-up-to-i (NO look-ahead)
-  2. Run Monte Carlo with the chosen model
-  3. Compare predicted prob_up vs the realised next-N-bar return
-
-Refactor notes (vs. the previous version)
-─────────────────────────────────────────
-  • Consistent `band_pct` threshold everywhere — previously line 200 used 0
-    and line 254/317 used a hard-coded 0.3, so the same return was "up" by
-    one metric and "flat" by another.
-  • Non-overlapping trades: by default we now skip ahead by `n_forward` after
-    every directional call, so a single signal isn't counted as N trades.
-    Pass `allow_overlap=True` to restore the old behaviour.
-  • Annualised Sharpe respects the bar interval — sqrt(252) was wrong for
-    intraday strategies. We now compute periods-per-year from the actual
-    timeframe (15m → ~252 × 26, 1d → 252, etc.) and the trade duration.
-  • Max-drawdown runs on the equity curve (1 + cum_return) instead of the
-    raw cumulative sum, so drawdowns don't blow up when the curve passes
-    through zero.
-  • Profit factor uses inf for all-wins (instead of None), which makes
-    downstream comparisons sane.
-
-Reports
-───────
-  hit_rate            % of calls (Buy / Sell) that finished in the right direction
-  brier_score         MSE of prob_up vs realised up (lower is better)
-  log_loss            Binary cross-entropy of prob_up vs realised up
-  expected_vs_real    Correlation between MC expected_return and realised return
-  calibration         Bucketed reliability across 5 prob_up bins
-  sharpe_ratio        Annualised Sharpe of strategy returns (net of costs)
-  max_drawdown        Maximum peak-to-trough drawdown on the equity curve (%)
-  avg_win/loss        Mean return on winning / losing trades (%)
-  win_loss_ratio      avg_win / |avg_loss|
-  profit_factor       sum of wins / sum of |losses|
-  max_consec_losses   Maximum consecutive losing trades
-  signals             Per-step list (compact) for plotting / inspection
-"""
+"""Walk-forward backtesting."""
 
 from __future__ import annotations
 
@@ -69,23 +30,20 @@ _BARS_PER_YEAR = {
     "1mo": 12,
 }
 
-
 def _safe_log(p: float) -> float:
     return math.log(max(min(p, 1 - 1e-9), 1e-9))
-
 
 def _max_drawdown_equity(equity: np.ndarray) -> float:
     """
     Maximum peak-to-trough drawdown of an equity curve (decimal).
     `equity` must be strictly positive (cumulative wealth, not cumulative
-    return). Returns a positive number — 0.15 = 15 % drawdown.
+    return). Returns a positive number - 0.15 = 15 % drawdown.
     """
     if equity.size == 0:
         return 0.0
     running_peak = np.maximum.accumulate(equity)
     dd = (running_peak - equity) / running_peak
     return float(dd.max())
-
 
 def _sharpe_annualised(trade_returns: list[float], trade_duration_bars: int, bars_per_year: float) -> float:
     """
@@ -103,7 +61,6 @@ def _sharpe_annualised(trade_returns: list[float], trade_duration_bars: int, bar
     trades_per_year = bars_per_year / float(trade_duration_bars)
     return float(mean / std * math.sqrt(trades_per_year))
 
-
 def _max_consec_losses(hits: list[bool]) -> int:
     max_run = cur_run = 0
     for h in hits:
@@ -113,7 +70,6 @@ def _max_consec_losses(hits: list[bool]) -> int:
         else:
             cur_run = 0
     return max_run
-
 
 def walk_forward(
     df: pd.DataFrame,
@@ -132,7 +88,7 @@ def walk_forward(
     mc_model       MC innovation model
     min_history    require at least this many bars before issuing a signal
     step           stride between candidate signals (1 = every bar)
-    interval       timeframe code — drives Sharpe annualisation
+    interval       timeframe code - drives Sharpe annualisation
     allow_overlap  if False (default) a directional call blocks new calls
                    for `n_forward` bars, eliminating duplicate counting
 
@@ -184,7 +140,7 @@ def walk_forward(
     pred_returns: list[float] = []
     real_returns: list[float] = []
 
-    # Trade-level stats — only directional (Buy/Sell) calls
+    # Trade-level stats - only directional (Buy/Sell) calls
     trade_net_rets: list[float] = []
     trade_hits: list[bool] = []
     next_eligible_bar: int = -1  # for non-overlapping trades
@@ -227,7 +183,7 @@ def walk_forward(
         pred_returns.append(pred_ret)
         real_returns.append(real_ret)
 
-        # Directional call tracking — Buy/Sell only
+        # Directional call tracking - Buy/Sell only
         label = sig.label
         is_call = ("Buy" in label) or ("Sell" in label)
         up_call = "Buy" in label
@@ -265,7 +221,6 @@ def walk_forward(
     if not rows:
         return _empty("no valid evaluation points")
 
-    # ── Calibration buckets on prob_up ────────────────────────────────────
     buckets = [(0.0, 0.2), (0.2, 0.4), (0.4, 0.6), (0.6, 0.8), (0.8, 1.0001)]
     calibration = []
     for lo, hi in buckets:
@@ -293,7 +248,6 @@ def walk_forward(
     else:
         corr = 0.0
 
-    # ── Trade-level statistics ────────────────────────────────────────────
     wins = [r for r in trade_net_rets if r > 0]
     losses = [r for r in trade_net_rets if r <= 0]
 

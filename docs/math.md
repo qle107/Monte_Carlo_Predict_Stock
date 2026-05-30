@@ -33,7 +33,7 @@ E[ exp(μ + σ Z) ] = exp( μ + ½σ² )              [Jensen's inequality for e
 
 So naïvely using `log_drift = μ` (instead of `μ − ½σ²`) causes every path to drift upward by `½σ²` per step. Over `n` steps this accumulates to a multiplicative bias of `exp(n · ½σ²)`.
 
-At `σ = 0.02`, `n = 10`:  bias `≈ exp(0.002) − 1 ≈ 0.2%` — visible on a chart.
+At `σ = 0.02`, `n = 10`:  bias `≈ exp(0.002) − 1 ≈ 0.2%` - visible on a chart.
 
 ### Implementation
 
@@ -59,7 +59,7 @@ dS/S = (μ − λκ) dt + σ dW + J dN
 where:
 - `N` is a Poisson process with intensity `λ` (expected jumps per bar)
 - `J ~ N(μ_J, σ_J²)` is the log-jump size (so the price jump multiplier is `e^J`)
-- `κ = E[e^J − 1]` is the **jump compensator** — the drift adjustment that keeps the process a martingale under the risk-neutral measure
+- `κ = E[e^J − 1]` is the **jump compensator** - the drift adjustment that keeps the process a martingale under the risk-neutral measure
 
 ### Computing κ correctly
 
@@ -86,7 +86,7 @@ The old code used `drift_eff = drift − λ·μ_J`. This is the correct compensa
              ≈ λ · ½σ_J²      (for small μ_J, σ_J)
 ```
 
-At `λ=0.05`, `σ_J = 5σ = 0.10`: missing bias `≈ 0.05 · 0.005 = 0.00025` per step, or `0.0025` over 10 steps — detectable without noise.
+At `λ=0.05`, `σ_J = 5σ = 0.10`: missing bias `≈ 0.05 · 0.005 = 0.00025` per step, or `0.0025` over 10 steps - detectable without noise.
 
 ### Implementation
 
@@ -189,7 +189,7 @@ After resampling, returns are rescaled to the target `σ` and the Itô correctio
 
 ### Reference
 
-Peng, C.-K. et al. (1994). "Mosaic organization of DNA nucleotides." *Physical Review E*, 49(2), 1685–1689.
+Peng, C.-K. et al. (1994). "Mosaic organization of DNA nucleotides." *Physical Review E*, 49(2), 1685-1689.
 
 ### Why DFA instead of R/S Hurst?
 
@@ -197,7 +197,7 @@ The classical rescaled-range (R/S) estimator of Hurst (1951) is:
 
 1. **Biased** on short series (< 200 observations). It systematically overestimates `H` for n < 100.
 2. **Sensitive to non-stationarity**: trends and seasonalities inflate the estimate.
-3. **No standard error** — the regression is not standard OLS.
+3. **No standard error** - the regression is not standard OLS.
 
 DFA-1 integrates then locally detrends (removing linear trends within windows), making it valid on **non-stationary** series such as log-price levels.
 
@@ -234,8 +234,8 @@ log F(n) = α · log n + const      →     slope = α
 
 ### Usage in this codebase
 
-- `dfa(np.log(prices))` — regime estimation on price levels (non-stationary OK)
-- `dfa(log_returns)` — microstructure model on stationary return series
+- `dfa(np.log(prices))` - regime estimation on price levels (non-stationary OK)
+- `dfa(log_returns)` - microstructure model on stationary return series
 
 ---
 
@@ -273,9 +273,9 @@ This guarantees `prob_up + prob_flat + prob_down == 100.0` as a floating-point i
 
 ## References
 
-- Black, F. & Scholes, M. (1973). The pricing of options and corporate liabilities. *Journal of Political Economy*, 81(3), 637–654.
-- Merton, R.C. (1976). Option pricing when underlying stock returns are discontinuous. *Journal of Financial Economics*, 3(1–2), 125–144.
-- Peng, C.-K., Buldyrev, S.V., Havlin, S., Simon, M., Stanley, H.E., & Goldberger, A.L. (1994). Mosaic organization of DNA nucleotides. *Physical Review E*, 49(2), 1685–1689.
-- Politis, D.N. & Romano, J.P. (1994). The stationary bootstrap. *Journal of the American Statistical Association*, 89(428), 1303–1313.
-- Engle, R.F. (1982). Autoregressive conditional heteroscedasticity with estimates of the variance of United Kingdom inflation. *Econometrica*, 50(4), 987–1007.
-- Bollerslev, T. (1986). Generalised autoregressive conditional heteroscedasticity. *Journal of Econometrics*, 31(3), 307–327.
+- Black, F. & Scholes, M. (1973). The pricing of options and corporate liabilities. *Journal of Political Economy*, 81(3), 637-654.
+- Merton, R.C. (1976). Option pricing when underlying stock returns are discontinuous. *Journal of Financial Economics*, 3(1-2), 125-144.
+- Peng, C.-K., Buldyrev, S.V., Havlin, S., Simon, M., Stanley, H.E., & Goldberger, A.L. (1994). Mosaic organization of DNA nucleotides. *Physical Review E*, 49(2), 1685-1689.
+- Politis, D.N. & Romano, J.P. (1994). The stationary bootstrap. *Journal of the American Statistical Association*, 89(428), 1303-1313.
+- Engle, R.F. (1982). Autoregressive conditional heteroscedasticity with estimates of the variance of United Kingdom inflation. *Econometrica*, 50(4), 987-1007.
+- Bollerslev, T. (1986). Generalised autoregressive conditional heteroscedasticity. *Journal of Econometrics*, 31(3), 307-327.

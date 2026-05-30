@@ -1,11 +1,11 @@
-// ──────────────────────────────────────────────────────────────────────────
-// /static/js/tabs/options.js — Options tab renderer (Phase 3).
+
+
 //
 // Owns:
 //   • Unusual Activity table (DTE filter pills, sortable columns, sentiment tag)
 //
 // Hooks into the existing sentiment-panel flow: when the inline _renderSentimentPanel()
-// runs in dashboard.html it calls window.renderUnusualActivity(data) — see the
+// runs in dashboard.html it calls window.renderUnusualActivity(data) - see the
 // thin shim at the bottom of this file.
 //
 // The volume tooltips and the "Flow direction unavailable" disclaimer are pure
@@ -13,34 +13,30 @@
 //
 // Public globals (used by inline onclick=... attributes):
 //   • setUnusualFilter(filter)
-// ──────────────────────────────────────────────────────────────────────────
 
 (function () {
   'use strict';
 
-  // ── State ───────────────────────────────────────────────────────────────
   let _unusualData = [];     // last unusual_activity[] from /api/sentiment
   let _uaFilter    = 'all';  // 'all' | '0-7' | '8-30' | '31-60' | 'leaps'
   let _uaSortKey   = 'vol_oi';
   let _uaSortAsc   = false;
 
-  // ── Helpers ─────────────────────────────────────────────────────────────
   function _fmtVol(n) {
-    if (n == null || isNaN(n)) return '—';
+    if (n == null || isNaN(n)) return '-';
     if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
     if (n >= 1_000)     return (n / 1_000).toFixed(1) + 'K';
     return Number(n).toLocaleString();
   }
 
   function _fmtDollar(n) {
-    if (n == null || isNaN(n)) return '—';
+    if (n == null || isNaN(n)) return '-';
     if (n >= 1_000_000_000) return '$' + (n / 1_000_000_000).toFixed(2) + 'B';
     if (n >= 1_000_000)     return '$' + (n / 1_000_000).toFixed(2) + 'M';
     if (n >= 1_000)         return '$' + (n / 1_000).toFixed(1) + 'K';
     return '$' + Number(n).toFixed(0);
   }
 
-  // ── DTE bucket logic ────────────────────────────────────────────────────
   function _inBucket(dte, bucket) {
     if (bucket === 'all')   return true;
     if (bucket === '0-7')   return dte >= 0  && dte <= 7;
@@ -50,9 +46,8 @@
     return true;
   }
 
-  // ── Sentiment tag for an unusual contract ───────────────────────────────
   // IMPORTANT: yfinance does not expose aggressor side. The "tag" below is
-  // descriptive only — it tells the user what TYPE of unusual flow it is, not
+  // descriptive only - it tells the user what TYPE of unusual flow it is, not
   // whether the flow is buyer- or seller-initiated. The disclaimer banner at
   // the top of the Options tab makes this explicit.
   function _sentimentTag(c) {
@@ -69,7 +64,6 @@
     return                    { label: '🔻 Put' + itm,          color: 'var(--red)',   weight: 600 };
   }
 
-  // ── Render ──────────────────────────────────────────────────────────────
   function renderUnusualActivity(data) {
     const ua = (data && data.options_flow && data.options_flow.unusual_activity) || [];
     _unusualData = Array.isArray(ua) ? ua : [];
@@ -127,7 +121,7 @@
         c.pct_change == null ? 'var(--muted)' :
         c.pct_change > 0 ? 'var(--green)' :
         c.pct_change < 0 ? 'var(--red)' : 'var(--muted)';
-      const chgStr   = c.pct_change == null ? '—'
+      const chgStr   = c.pct_change == null ? '-'
         : (c.pct_change >= 0 ? '+' : '') + c.pct_change.toFixed(1) + '%';
       const flowColor =
         c.flow == null ? 'var(--muted)' :
@@ -155,7 +149,6 @@
     }).join('');
   }
 
-  // ── DTE filter pill click ───────────────────────────────────────────────
   function setUnusualFilter(filter) {
     _uaFilter = filter;
     document.querySelectorAll('[data-ua-filter]').forEach(b => {
@@ -165,7 +158,6 @@
     _renderTable();
   }
 
-  // ── Column-header click → sort toggle ───────────────────────────────────
   document.addEventListener('click', (e) => {
     const th = e.target.closest('[data-ua-sort]');
     if (!th) return;
@@ -180,7 +172,6 @@
     _renderTable();
   });
 
-  // ── Expose to inline HTML (onclick=…) and the inline render pipeline ────
   window.setUnusualFilter      = setUnusualFilter;
   window.renderUnusualActivity = renderUnusualActivity;
 

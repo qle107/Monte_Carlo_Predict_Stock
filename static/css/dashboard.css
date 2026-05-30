@@ -1,9 +1,4 @@
-/* ──────────────────────────────────────────────────────────────────────────
-   MC Trader Dashboard — main stylesheet
-   Extracted from templates/dashboard.html during the May 2026 Phase 2 refactor.
-   Contains the global theme + every panel/tab style except the portfolio
-   drawer (which lives in portfolio.css and is scoped to #portfolio-drawer).
-   ────────────────────────────────────────────────────────────────────────── */
+/* MC Trader dashboard styles */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -18,7 +13,6 @@ body {
   font-size: 14px; min-height: 100vh;
 }
 
-/* ── header ─────────────────────────────────────────────────────────── */
 header { display: flex; align-items: center; gap: 10px; padding: 12px 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 header h1 { font-size: 15px; font-weight: 600; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
@@ -39,7 +33,6 @@ header h1 { font-size: 15px; font-weight: 600; }
 .hdr-btn:disabled { opacity: .4; cursor: not-allowed; }
 .hdr-btn.active { border-color: var(--blue); color: var(--blue); }
 
-/* ── Quick-ticker control ────────────────────────────────────────── */
 #quick-ticker-wrap { display: flex; flex-direction: column; gap: 3px; }
 #quick-ticker-label { font-size: 9px; font-weight: 700; letter-spacing: .9px; text-transform: uppercase; color: rgba(88, 166, 255, .75); padding-left: 3px; }
 #quick-config {
@@ -76,11 +69,9 @@ header h1 { font-size: 15px; font-weight: 600; }
 .spinner { display: none; width: 10px; height: 10px; border: 2px solid rgba(255, 255, 255, .15); border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ── warning banner ─────────────────────────────────────────────────── */
 #warning-banner { display: none; background: rgba(210, 153, 34, .12); border-bottom: 1px solid rgba(210, 153, 34, .3); padding: 10px 20px; font-size: 13px; color: var(--amber); line-height: 1.5; }
 #warning-banner.show { display: block; }
 
-/* ── regime banner ──────────────────────────────────────────────────── */
 #regime-banner {
   display: grid; grid-template-columns: 1.2fr 1.8fr; gap: 0;
   border-bottom: 1px solid var(--border); background: var(--surface);
@@ -111,7 +102,6 @@ header h1 { font-size: 15px; font-weight: 600; }
 .potential-pct.down { color: var(--red); }
 .potential-pct.flat { color: var(--muted); }
 
-/* ── settings panel ─────────────────────────────────────────────────── */
 #settings-panel { display: none; background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 20px; }
 #settings-panel.open { display: block; }
 .settings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; margin-bottom: 14px; }
@@ -128,7 +118,6 @@ header h1 { font-size: 15px; font-weight: 600; }
 .btn-reset:hover { color: var(--text); }
 #settings-msg { font-size: 12px; margin-left: 6px; }
 
-/* ── metrics strip ──────────────────────────────────────────────────── */
 .grid-top { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; background: var(--border); border-bottom: 1px solid var(--border); }
 @media (max-width: 900px) { .grid-top { grid-template-columns: repeat(3, 1fr); } }
 .metric { background: var(--bg); padding: 11px 16px; }
@@ -138,7 +127,6 @@ header h1 { font-size: 15px; font-weight: 600; }
 .down { color: var(--red); }
 .flat { color: var(--muted); }
 
-/* ── main layout ────────────────────────────────────────────────────── */
 .main {
   display: grid;
   grid-template-columns: 1fr 340px;
@@ -163,7 +151,6 @@ header h1 { font-size: 15px; font-weight: 600; }
 /* Volume chart: always compact */
 .chart-wrap2 { position: relative; width: 100%; height: clamp(60px, 8vh, 100px); }
 
-/* ── sidebar ────────────────────────────────────────────────────────── */
 .side {
   background: var(--bg);
   padding: 14px;
@@ -198,7 +185,6 @@ header h1 { font-size: 15px; font-weight: 600; }
 .range-item { text-align: center; }
 .range-item .rv { font-size: 14px; font-weight: 600; margin-top: 2px; }
 
-/* ── indicator bars ─────────────────────────────────────────────────── */
 .ind-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .ind-name { width: 88px; font-size: 12px; color: var(--muted); flex-shrink: 0; }
 .ind-bar-bg { flex: 1; height: 5px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
@@ -212,7 +198,6 @@ header h1 { font-size: 15px; font-weight: 600; }
 .conf-bar-bg { flex: 1; height: 4px; background: var(--surface2); border-radius: 2px; overflow: hidden; }
 .conf-bar-fill { height: 100%; background: var(--blue); border-radius: 2px; transition: width .5s; }
 
-/* ── backtest panel ─────────────────────────────────────────────────── */
 .bt-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-size: 12px; }
 .bt-cell { background: var(--surface2); padding: 8px 10px; border-radius: 6px; }
 .bt-cell .l { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
@@ -222,14 +207,12 @@ header h1 { font-size: 15px; font-weight: 600; }
 .btn-bt:hover { background: rgba(255, 255, 255, .07); }
 .btn-bt:disabled { opacity: .4; cursor: not-allowed; }
 
-/* ── sub-score chips ────────────────────────────────────────────────── */
 .scores { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
 .score-chip { font-size: 10px; padding: 2px 7px; border-radius: 10px; background: var(--surface2); color: var(--muted); display: inline-flex; gap: 5px; align-items: center; }
 .score-chip .v { font-weight: 600; }
 .score-chip.pos .v { color: var(--green); }
 .score-chip.neg .v { color: var(--red); }
 
-/* ── Trade Setup card ───────────────────────────────────────────────── */
 .ts-banner { border-radius: 6px; padding: 9px 12px; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; }
 .ts-banner.long  { background: rgba(63, 185, 80, .12);   color: var(--green); border: 1px solid rgba(63, 185, 80, .3); }
 .ts-banner.short { background: rgba(248, 81, 73, .12);   color: var(--red);   border: 1px solid rgba(248, 81, 73, .3); }
@@ -266,7 +249,6 @@ header h1 { font-size: 15px; font-weight: 600; }
 .ts-sl-both .sl-row span:first-child { color: var(--muted); }
 .ts-sl-both .sl-row span:last-child  { font-weight: 600; color: var(--red); }
 
-/* ── Price Targets card (max high / max downside + Fibonacci) ─────────── */
 .pt-card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
 .pt-box { border-radius: 8px; padding: 10px 12px; }
 .pt-box.up   { background: rgba(63, 185, 80, .08); border: 1px solid rgba(63, 185, 80, .28); }
@@ -298,7 +280,6 @@ header h1 { font-size: 15px; font-weight: 600; }
 .pt-fib-row .fib-ratio { color: var(--muted); font-size: 10px; }
 .pt-swing-note { font-size: 10px; color: var(--muted); text-align: center; margin-bottom: 8px; padding: 4px 8px; background: var(--surface2); border-radius: 5px; }
 
-/* ── Social Sentiment card (sidebar mini) ─────────────────────────── */
 .sent-overall { border-radius: 6px; padding: 8px 12px; margin-bottom: 10px; text-align: center; border: 1px solid transparent; }
 .sent-overall.bullish { background: rgba(63, 185, 80, .12);   border-color: rgba(63, 185, 80, .25); }
 .sent-overall.bearish { background: rgba(248, 81, 73, .12);   border-color: rgba(248, 81, 73, .25); }
@@ -344,9 +325,8 @@ header h1 { font-size: 15px; font-weight: 600; }
 .sent-refresh-btn:hover { background: rgba(88, 166, 255, .2); }
 .sent-refresh-btn:disabled { opacity: .4; cursor: not-allowed; }
 
-/* ═══════════════════════════════════════════════════════════════════════════
    MACRO INDICATORS STRIP
-   ═══════════════════════════════════════════════════════════════════════════ */
+
 #macro-strip {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
@@ -400,9 +380,8 @@ header h1 { font-size: 15px; font-weight: 600; }
 .macro-refresh-btn:hover { background: rgba(88, 166, 255, .18); }
 .macro-refresh-btn:disabled { opacity: .4; cursor: not-allowed; }
 
-/* ═══════════════════════════════════════════════════════════════════════════
    NEWS FEED PANEL (inside scanner tab area)
-   ═══════════════════════════════════════════════════════════════════════════ */
+
 .macro-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
 @media (max-width: 900px) { .macro-grid { grid-template-columns: repeat(2, 1fr); } }
 
@@ -441,7 +420,6 @@ header h1 { font-size: 15px; font-weight: 600; }
 
 .news-empty { text-align: center; padding: 32px 20px; color: var(--muted); font-size: 13px; }
 
-/* ── Skeleton / progressive loading ──────────────────────────────────────── */
 @keyframes shimmer {
   0%   { background-position: -600px 0; }
   100% { background-position:  600px 0; }
@@ -478,9 +456,8 @@ header h1 { font-size: 15px; font-weight: 600; }
 .skel-card-sm { border-radius: 6px; height: 52px; }
 .skel-status-bar { height: 28px; background: var(--card); border-top: 1px solid var(--border); display: flex; align-items: center; padding: 0 14px; gap: 10px; }
 
-/* ──────────────────────────────────────────────────────────────────────────
-   Sentiment panel styles (Phase 2 merge — was a separate <style> in the body)
-   ────────────────────────────────────────────────────────────────────────── */
+/* Sentiment panel */
+
 .sent-grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 18px; }
 @media (max-width: 1100px) { .sent-grid3 { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 700px)  { .sent-grid3 { grid-template-columns: 1fr; } }
@@ -510,7 +487,6 @@ header h1 { font-size: 15px; font-weight: 600; }
 #sp-posts-table tbody tr:last-child td { border-bottom: none; }
 #sp-posts-table tbody tr:hover td { background: rgba(255, 255, 255, .02); }
 
-/* ── Scanner styles ───────────────────────────────────────────────── */
 #scanner-section { background: var(--bg); padding: 0 20px 32px; border-top: 1px solid var(--border); flex: 1; }
 .scan-toolbar { display: flex; align-items: center; gap: 10px; padding: 16px 0 14px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .scan-title { font-size: 15px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
@@ -582,12 +558,11 @@ header h1 { font-size: 15px; font-weight: 600; }
 #scan-empty-state p { font-size: 13px; }
 #scan-error-state { display: none; text-align: center; padding: 32px; color: var(--red); font-size: 13px; }
 
-/* ── Unusual Options table ───────────────────────────────────────── */
 #uo-table {
   width: 100%; min-width: 100%; border-collapse: collapse; font-size: 12px;
   table-layout: fixed;   /* columns share available width evenly */
 }
-/* Column widths — controls proportional distribution */
+/* Column widths - controls proportional distribution */
 #uo-table col.uo-c-ticker  { width: 6%; }
 #uo-table col.uo-c-type    { width: 6%; }
 #uo-table col.uo-c-expiry  { width: 7%; }
@@ -630,7 +605,7 @@ header h1 { font-size: 15px; font-weight: 600; }
 }
 #uo-table td:last-child { border-right: none; }
 
-/* Left-stripe accent — first-child td carries the inline border-left per row */
+/* Left-stripe accent - first-child td carries the inline border-left per row */
 #uo-table td:first-child { padding-left: 10px; }
 
 #uo-table tbody tr { transition: background .1s; }
@@ -639,7 +614,7 @@ header h1 { font-size: 15px; font-weight: 600; }
 #uo-table tbody tr:hover { background: rgba(88,166,255,.07) !important; }
 #uo-table tbody tr:last-child td { border-bottom: none; }
 
-/* Flags column — allow wrap since flags are inline chips */
+/* Flags column - allow wrap since flags are inline chips */
 #uo-table .uo-col-flags { white-space: normal; }
 
 /* Scrollable wrapper for the UO table */
@@ -648,7 +623,6 @@ header h1 { font-size: 15px; font-weight: 600; }
   border-radius: 8px; border: 1px solid var(--border);
 }
 
-/* ── Scanner tab switcher ────────────────────────────────────────── */
 .scanner-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 0; padding: 14px 0 0; }
 .scanner-tab {
   padding: 9px 20px; font-size: 13px; font-weight: 600; cursor: pointer;
@@ -662,14 +636,12 @@ header h1 { font-size: 15px; font-weight: 600; }
 .scanner-tab .tab-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; background: rgba(255, 255, 255, .08); color: var(--muted); min-width: 20px; text-align: center; }
 .scanner-tab.active .tab-badge { background: rgba(88, 166, 255, .2); color: var(--blue); }
 
-/* ── Market Structure panel ──────────────────────────────────────── */
 #market-structure-panel { display: none; }
 #ms-zone-table th, #ms-zone-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); }
 #ms-zone-table tbody tr:hover { background: rgba(255, 255, 255, .03); }
 .ms-prob-bar { display: flex; align-items: center; gap: 5px; }
 .ms-prob-fill { height: 4px; border-radius: 2px; flex-shrink: 0; }
 
-/* ── Zone scanner table ──────────────────────────────────────────── */
 #zone-scan-panel { display: none; }
 #zone-scan-table { width: 100%; border-collapse: collapse; font-size: 12px; display: none; }
 #zone-scan-table thead tr { background: var(--surface); }
@@ -698,7 +670,6 @@ header h1 { font-size: 15px; font-weight: 600; }
 .zone-none { background: rgba(139, 148, 158, .08); color: var(--muted); }
 .setup-score-bar { display: inline-block; height: 5px; border-radius: 3px; vertical-align: middle; margin-right: 5px; background: linear-gradient(90deg, var(--blue), var(--purple)); }
 
-/* ── Fix 9: Price alert panel ────────────────────────────────────────────── */
 #mc-alerts-panel {
   position: fixed;
   top: 50px;
@@ -872,7 +843,6 @@ header h1 { font-size: 15px; font-weight: 600; }
   pointer-events: none;
 }
 
-/* ── Fix 10: Data source transparency tags ──────────────────────────────── */
 .src-tag {
   display: inline-flex;
   align-items: center;
@@ -899,7 +869,6 @@ header h1 { font-size: 15px; font-weight: 600; }
   vertical-align: middle;
 }
 
-/* ── Fix 6: Unified signal card pillars ─────────────────────────────────── */
 #unified-signal-card { display: none; }
 #unified-signal-card.visible { display: flex !important; }
 .sig-pillar {
@@ -925,7 +894,6 @@ header h1 { font-size: 15px; font-weight: 600; }
 .sig-pillar-val.bear  { color: var(--red); }
 .sig-pillar-val.neutral { color: var(--muted); }
 
-/* ── Fix 5: Tippy.js mc-dark tooltip theme ──────────────────────────────── */
 .tippy-box[data-theme~='mc-dark'] {
   background: #1c2128;
   color: #c9d1d9;
@@ -965,12 +933,9 @@ header h1 { font-size: 15px; font-weight: 600; }
   color: #58a6ff;
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   Fix 8 — Mobile Responsiveness
+/* Mobile layout */
    Breakpoints: ≤1024px (tablet) and ≤640px (mobile phone)
-   ══════════════════════════════════════════════════════════════════════════ */
 
-/* ── ≤1024px: Tablet ─────────────────────────────────────────────────────── */
 @media (max-width: 1024px) {
   header { padding: 8px 14px; gap: 7px; }
   header h1 { font-size: 14px; }
@@ -996,9 +961,8 @@ header h1 { font-size: 15px; font-weight: 600; }
   #mc-alerts-panel { width: 290px; }
 }
 
-/* ── ≤640px: Mobile phone ────────────────────────────────────────────────── */
 @media (max-width: 640px) {
-  /* ── Header ── */
+  /* Header */
   header {
     padding: 8px 10px;
     gap: 6px;
@@ -1015,7 +979,7 @@ header h1 { font-size: 15px; font-weight: 600; }
   .hdr-btn { font-size: 11px; padding: 4px 7px; }
   #fwd-wrap { display: none; }               /* hide n_forward control */
 
-  /* ── Metrics strip: horizontal scroll ── */
+  /* Metrics strip: horizontal scroll */
   .grid-top {
     display: flex;
     overflow-x: auto;
@@ -1029,29 +993,29 @@ header h1 { font-size: 15px; font-weight: 600; }
   .metric { flex-shrink: 0; min-width: 110px; padding: 9px 12px; border-right: 1px solid var(--border); }
   .metric .val { font-size: 16px; }
 
-  /* ── Macro strip: compress ── */
+  /* Macro strip: compress */
   #macro-strip { padding: 6px 10px; }
   .macro-strip-label { display: none; }
   #macro-chips { gap: 0; overflow-x: auto; }
   .macro-refresh-btn { display: none; }
 
-  /* ── Unified signal card ── */
+  /* Unified signal card */
   #unified-signal-card { padding: 7px 10px; gap: 6px; }
   .sig-pillar { min-width: 58px; padding: 4px 8px; }
   .sig-pillar-label { font-size: 9px; }
   .sig-pillar-val { font-size: 10px; }
 
-  /* ── Main layout: single column, no grid ── */
+  /* Main layout: single column, no grid */
   .main { display: flex; flex-direction: column; }
   .left-col { border-right: none; border-bottom: 1px solid var(--border); }
   .chart-wrap { height: clamp(220px, 40vw, 320px); }
   .chart-wrap2 { height: 55px; }
 
-  /* ── Scanner tabs: horizontal scroll ── */
+  /* Scanner tabs: horizontal scroll */
   .scanner-tabs { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 1px; -webkit-overflow-scrolling: touch; }
   .scanner-tab { flex-shrink: 0; font-size: 12px; padding: 8px 14px; white-space: nowrap; }
 
-  /* ── Sidebar: bottom sheet drawer on mobile ── */
+  /* Sidebar: bottom sheet drawer on mobile */
   .side {
     position: fixed !important;
     bottom: 0;
@@ -1112,18 +1076,18 @@ header h1 { font-size: 15px; font-weight: 600; }
     cursor: pointer;
   }
 
-  /* ── Cards ── */
+  /* Cards */
   .card { padding: 10px 11px; border-radius: 7px; }
   .card-title { font-size: 10.5px; }
 
-  /* ── Sentiment grid ── */
+  /* Sentiment grid */
   .sent-grid3 { grid-template-columns: 1fr !important; }
   .sent-kpi4  { grid-template-columns: 1fr 1fr !important; }
 
-  /* ── Macro grid ── */
+  /* Macro grid */
   .macro-grid { grid-template-columns: 1fr 1fr !important; }
 
-  /* ── Alerts panel ── */
+  /* Alerts panel */
   #mc-alerts-panel {
     top: auto;
     bottom: 0;
@@ -1135,15 +1099,14 @@ header h1 { font-size: 15px; font-weight: 600; }
     border-bottom: none;
   }
 
-  /* ── Regime banner ── */
+  /* Regime banner */
   #regime-banner { grid-template-columns: 1fr; font-size: 12px; }
 
-  /* ── Backtest grid ── */
+  /* Backtest grid */
   .bt-grid { grid-template-columns: 1fr 1fr; }
 
-  /* ── Disclaimer banner ── */
+  /* Disclaimer banner */
   #disclaimer-banner { flex-direction: column; align-items: flex-start; gap: 6px; font-size: 11px; padding: 8px 12px; }
 }
 
-/* ── Mobile sidebar FAB: hidden by default (only shown on ≤640px) ──────── */
 #mc-side-fab { display: none; }

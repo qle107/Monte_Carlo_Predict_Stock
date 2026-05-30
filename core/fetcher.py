@@ -1,14 +1,4 @@
-"""
-core/fetcher.py
-Fetches OHLCV candles. Priority: Alpaca (IEX, free) → Polygon → yfinance.
-
-Extended hours (pre-market 4am–9:30am ET, after-hours 4pm–8pm ET):
-- Auto-enabled when the current time is outside regular session.
-- Can also be forced on/off via the `extended` parameter.
-- yfinance: prepost=True includes pre/post bars.
-- Alpaca IEX: naturally includes extended bars when available.
-- Polygon: always includes extended bars in aggregate data.
-"""
+"""OHLCV candle fetcher with caching."""
 
 import logging
 import os
@@ -22,7 +12,6 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-# ── In-process TTL cache ──────────────────────────────────────────────────────
 # Prevents duplicate network round-trips when the scanner fetches the same
 # ticker concurrently (e.g. scan pass + MC top-N pass both need AAPL/1d/60).
 # Cache is keyed by (ticker, interval, lookback, extended) and expires after
@@ -32,7 +21,6 @@ _CACHE_TTL = 30.0  # seconds before a cached DataFrame is evicted
 _cache_lock = threading.RLock()
 _cache: dict = {}  # key → (df, expire_time)
 
-# ── In-flight coalescing ───────────────────────────────────────────────────────
 # If two threads request the same (ticker, interval, lookback, extended) within
 # milliseconds of each other (both miss the TTL cache) the second thread waits
 # for the first (the "leader") to finish and then reads from the cache instead
@@ -42,7 +30,6 @@ _cache: dict = {}  # key → (df, expire_time)
 
 _inflight_lock = threading.RLock()
 _inflight: dict = {}  # key → threading.Event
-
 
 def _cache_get(key: tuple) -> pd.DataFrame | None:
     with _cache_lock:
@@ -55,7 +42,6 @@ def _cache_get(key: tuple) -> pd.DataFrame | None:
             return None
         return df.copy()  # return a copy so callers can't mutate the cache
 
-
 def _cache_put(key: tuple, df: pd.DataFrame) -> None:
     with _cache_lock:
         # Evict expired entries to prevent unbounded growth
@@ -65,18 +51,13 @@ def _cache_put(key: tuple, df: pd.DataFrame) -> None:
             del _cache[k]
         _cache[key] = (df.copy(), now + _CACHE_TTL)
 
-
 def clear_fetch_cache() -> None:
     """Flush the entire in-process fetch cache (useful in tests)."""
     with _cache_lock:
         _cache.clear()
 
-
-# ── Retry helper ─────────────────────────────────────────────────────────────
-
 _RETRY_ATTEMPTS = 3
 _RETRY_BASE_S = 1.0  # first sleep = 1 s, then 2 s, then 4 s
-
 
 def _with_retry(fn, *args, label: str = "fetch"):
     """
@@ -92,7 +73,7 @@ def _with_retry(fn, *args, label: str = "fetch"):
             if attempt < _RETRY_ATTEMPTS - 1:
                 sleep_s = _RETRY_BASE_S * (2**attempt)
                 logger.debug(
-                    "[fetcher] %s attempt %d failed (%s) — retrying in %.1fs",
+                    "[fetcher] %s attempt %d failed (%s) - retrying in %.1fs",
                     label,
                     attempt + 1,
                     exc,
@@ -101,19 +82,15 @@ def _with_retry(fn, *args, label: str = "fetch"):
                 time.sleep(sleep_s)
     raise last_exc
 
-
-# ── Session timing constants (US Eastern) ────────────────────────────────────
-# Pre-market:  04:00 – 09:29
-# Regular:     09:30 – 15:59
-# After-hours: 16:00 – 19:59
-# Closed:      20:00 – 03:59
+# Pre-market:  04:00 - 09:29
+# Regular:     09:30 - 15:59
+# After-hours: 16:00 - 19:59
+# Closed:      20:00 - 03:59
 
 _REGULAR_START = (9, 30)  # hour, minute ET
 _REGULAR_END = (16, 0)
 _PRE_START = (4, 0)
 _AFTER_END = (20, 0)
-
-# ── Lookback window calculator ────────────────────────────────────────────────
 
 _YF_MAX_DAYS = {
     "1m": 7,  # yfinance hard limit for 1m
@@ -137,7 +114,6 @@ _INTERVAL_MINUTES = {
     "1d": 1440,
 }
 
-
 def _lookback_days(interval: str, n_candles: int, buffer: float = 1.6) -> int:
     """
     How many calendar days to request to reliably get n_candles.
@@ -160,10 +136,6 @@ def _lookback_days(interval: str, n_candles: int, buffer: float = 1.6) -> int:
     cpd = 390.0 / mins  # candles per trading day
     needed = max(int((n_candles / cpd) * buffer) + 3, 5)
     return min(needed, _YF_MAX_DAYS.get(interval, 60))
-
-
-# ── Session detection ─────────────────────────────────────────────────────────
-
 
 def current_session() -> str:
     """Return the current US market session based on ET wall-clock time."""
@@ -190,7 +162,6 @@ def current_session() -> str:
         return "after-hours"
     return "closed"
 
-
 def should_use_extended(user_extended: bool) -> bool:
     """
     Return True if extended-hours data should be fetched.
@@ -200,7 +171,6 @@ def should_use_extended(user_extended: bool) -> bool:
         return True
     session = current_session()
     return session in ("pre-market", "after-hours")
-
 
 def _session_label(df: pd.DataFrame) -> str:
     """Tag the last candle's session."""
@@ -212,7 +182,7 @@ def _session_label(df: pd.DataFrame) -> str:
         return current_session()
 
     h, m = last_et.hour, last_et.minute
-    # Daily bars arrive as midnight UTC (= 7pm/8pm ET) — treat as regular
+    # Daily bars arrive as midnight UTC (= 7pm/8pm ET) - treat as regular
     if h == 0 and m == 0:
         return "regular"
     if (h > 9 or (h == 9 and m >= 30)) and h < 16:
@@ -223,14 +193,10 @@ def _session_label(df: pd.DataFrame) -> str:
         return "after-hours"
     return "closed"
 
-
-# ── Regular-hours filter ─────────────────────────────────────────────────────
-
-
 def _filter_regular_hours(df: pd.DataFrame, interval: str = "") -> pd.DataFrame:
     """
-    Strip candles outside 9:30am–4:00pm ET.
-    For daily bars the index is date-only (midnight UTC) — skip filtering,
+    Strip candles outside 9:30am-4:00pm ET.
+    For daily bars the index is date-only (midnight UTC) - skip filtering,
     otherwise we'd remove every row.
     """
     # Daily bars: midnight timestamps have hour==0, filtering would wipe them.
@@ -238,7 +204,7 @@ def _filter_regular_hours(df: pd.DataFrame, interval: str = "") -> pd.DataFrame:
         return df
     try:
         et = df.index.tz_convert("America/New_York")
-        # If ALL bars are at midnight it's a daily feed — don't filter
+        # If ALL bars are at midnight it's a daily feed - don't filter
         if (et.hour == 0).all():
             return df
         mask = ((et.hour > 9) | ((et.hour == 9) & (et.minute >= 30))) & (
@@ -249,10 +215,6 @@ def _filter_regular_hours(df: pd.DataFrame, interval: str = "") -> pd.DataFrame:
         return filtered if len(filtered) > 0 else df
     except Exception:
         return df
-
-
-# ── Data sources ─────────────────────────────────────────────────────────────
-
 
 def _yfinance(ticker: str, interval: str, n: int, extended: bool) -> pd.DataFrame:
     import yfinance as yf
@@ -284,7 +246,6 @@ def _yfinance(ticker: str, interval: str, n: int, extended: bool) -> pd.DataFram
     if not extended:
         df = _filter_regular_hours(df, interval=interval)
     return df.tail(n)
-
 
 def _alpaca(ticker: str, interval: str, n: int, extended: bool) -> pd.DataFrame:
     from alpaca.data.historical import StockHistoricalDataClient
@@ -325,7 +286,6 @@ def _alpaca(ticker: str, interval: str, n: int, extended: bool) -> pd.DataFrame:
         bars = _filter_regular_hours(bars, interval=interval)
     return bars.tail(n)
 
-
 def _polygon(ticker: str, interval: str, n: int, extended: bool) -> pd.DataFrame:
     import httpx
 
@@ -363,10 +323,6 @@ def _polygon(ticker: str, interval: str, n: int, extended: bool) -> pd.DataFrame
         df = _filter_regular_hours(df, interval=interval)
     return df.tail(n)
 
-
-# ── Public entry point ────────────────────────────────────────────────────────
-
-
 def fetch_candles(
     ticker: str,
     interval: str = "15m",
@@ -378,27 +334,25 @@ def fetch_candles(
 
     Extended hours are AUTO-ENABLED when the market is currently outside
     the regular session (pre-market or after-hours) so live data is never
-    missed — regardless of the user's extended setting.
+    missed - regardless of the user's extended setting.
 
     Priority: Alpaca → Polygon → yfinance (always falls back).
     """
-    # ── Auto-enable extended outside regular hours ────────────────────────
+
     use_extended = should_use_extended(extended)
     session_now = current_session()
 
     if use_extended and not extended:
-        logger.debug(f"[fetcher] Market is {session_now} — auto-enabling extended hours")
+        logger.debug(f"[fetcher] Market is {session_now} - auto-enabling extended hours")
 
-    # ── Check TTL cache first ────────────────────────────────────────────────
     cache_key = (ticker.upper(), interval, lookback, use_extended)
     cached = _cache_get(cache_key)
     if cached is not None:
-        logger.debug("[fetcher] %s %s — cache hit (%d rows)", ticker, interval, len(cached))
+        logger.debug("[fetcher] %s %s - cache hit (%d rows)", ticker, interval, len(cached))
         return cached
 
-    # ── Coalesce concurrent identical requests ────────────────────────────────
     # If another thread is already fetching the same key, wait for it to finish
-    # and read from cache — avoids duplicate network calls on cache misses.
+    # and read from cache - avoids duplicate network calls on cache misses.
     with _inflight_lock:
         if cache_key in _inflight:
             event = _inflight[cache_key]
@@ -409,14 +363,14 @@ def fetch_candles(
             is_leader = True
 
     if not is_leader:
-        logger.debug("[fetcher] %s %s — waiting for in-flight fetch", ticker, interval)
+        logger.debug("[fetcher] %s %s - waiting for in-flight fetch", ticker, interval)
         event.wait(timeout=35.0)  # never hang longer than the retry budget
         cached = _cache_get(cache_key)
         if cached is not None:
-            logger.debug("[fetcher] %s %s — coalesced hit (%d rows)", ticker, interval, len(cached))
+            logger.debug("[fetcher] %s %s - coalesced hit (%d rows)", ticker, interval, len(cached))
             return cached
-        # Leader failed — fall through and try ourselves (different source may work)
-        logger.debug("[fetcher] %s %s — leader failed, attempting own fetch", ticker, interval)
+        # Leader failed - fall through and try ourselves (different source may work)
+        logger.debug("[fetcher] %s %s - leader failed, attempting own fetch", ticker, interval)
         # Become a new leader for a fresh attempt
         with _inflight_lock:
             event2 = threading.Event()
@@ -425,7 +379,7 @@ def fetch_candles(
             is_leader = True
 
     sources = []
-    # ── Alpaca disabled ───────────────────────────────────────────────────────
+
     # Uncomment the block below to re-enable Alpaca (requires a valid key).
     # When the key is invalid (HTTP 401) _with_retry wastes ~3-4 s per call
     # retrying a permanent auth failure before falling back to yfinance.
@@ -450,25 +404,24 @@ def fetch_candles(
 
                 session = _session_label(df)
                 logger.info(
-                    f"[fetcher] {ticker} {interval} — {len(df)} candles via {name} "
+                    f"[fetcher] {ticker} {interval} - {len(df)} candles via {name} "
                     f"| last_candle={session} | clock={session_now} | extended={use_extended}"
                 )
                 df.attrs["session"] = session
                 df.attrs["session_now"] = session_now  # current clock session
                 df.attrs["extended"] = use_extended
 
-                # ── Store in cache ────────────────────────────────────────────
                 _cache_put(cache_key, df)
                 return df
 
             except Exception as e:
-                # Strip HTML bodies and long tracebacks — log a one-line summary only
+                # Strip HTML bodies and long tracebacks - log a one-line summary only
                 err_str = str(e)
                 if "<html" in err_str.lower() or len(err_str) > 120:
                     # Extract HTTP status code if present (e.g. "401", "403", "429")
                     status = re.search(r"\b([45]\d{2})\b", err_str)
                     short = f"HTTP {status.group(1)}" if status else err_str[:80].replace("\n", " ").strip()
-                    logger.warning(f"[fetcher] {name} unavailable — {short}")
+                    logger.warning(f"[fetcher] {name} unavailable - {short}")
                 else:
                     logger.warning(f"[fetcher] {name} failed: {err_str}")
                 last_err = e
@@ -482,7 +435,6 @@ def fetch_candles(
             with _inflight_lock:
                 _inflight.pop(cache_key, None)
             event.set()  # wake any threads that were waiting on this key
-
 
 def get_latest_price(ticker: str) -> float | None:
     """Always fetches with extended=True to get live price at any hour."""

@@ -1,24 +1,4 @@
-"""
-core/hmm_regime.py — Hidden Markov Model for probabilistic market regime states.
-
-Pure NumPy/SciPy implementation — NO compiled extensions required.
-Works on any Python version without a C++ compiler.
-
-Fits a Gaussian HMM via the Baum-Welch (EM) algorithm to log-return data
-and identifies latent market states.
-
-States (auto-labelled by learned properties after fitting)
-----------------------------------------------------------
-  "trending"  : high |mean| return, moderate vol → momentum; zones may break
-  "ranging"   : near-zero mean, low vol → mean-reversion; zones tend to hold
-  "volatile"  : high vol, mixed mean → unpredictable; elevated risk
-
-Zone-reaction conditional priors
----------------------------------
-  Ranging  → bounce: ~65%,  break: ~15%,  consolidate: ~20%
-  Trending → bounce: ~28%,  break: ~52%,  consolidate: ~20%
-  Volatile → bounce: ~35%,  break: ~35%,  consolidate: ~30%
-"""
+"""Hidden Markov Model regime detection."""
 
 from __future__ import annotations
 
@@ -30,15 +10,12 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# ─── Config ──────────────────────────────────────────────────────────────────
-
 N_STATES = 3
 MIN_BARS = 40
 MAX_ITER = 80  # Baum-Welch iterations
 TOL = 1e-4  # convergence tolerance on log-likelihood
 N_RESTARTS = 3  # random restarts to avoid local optima
 
-# ── Zone reaction priors per regime ─────────────────────────────────────────
 _PRIORS: dict[str, dict[str, float]] = {
     "ranging": {"bounce": 0.65, "break": 0.15, "consolidate": 0.20},
     "trending": {"bounce": 0.28, "break": 0.52, "consolidate": 0.20},
@@ -46,17 +23,12 @@ _PRIORS: dict[str, dict[str, float]] = {
     "unknown": {"bounce": 0.40, "break": 0.30, "consolidate": 0.30},
 }
 
-
-# ─── Dataclasses ─────────────────────────────────────────────────────────────
-
-
 @dataclass
 class HMMState:
     label: str
     mean_return: float
     volatility: float
     probability: float  # P(currently in this state)
-
 
 @dataclass
 class HMMResult:
@@ -91,15 +63,10 @@ class HMMResult:
             "transition_matrix": [[round(v, 4) for v in row] for row in self.transition_matrix],
         }
 
-
-# ─── Gaussian HMM (pure NumPy Baum-Welch) ────────────────────────────────────
-
-
 def _gauss_pdf(x: np.ndarray, mu: float, sigma: float) -> np.ndarray:
-    """Gaussian pdf — safe against zero sigma."""
+    """Gaussian pdf - safe against zero sigma."""
     sigma = max(sigma, 1e-9)
     return np.exp(-0.5 * ((x - mu) / sigma) ** 2) / (sigma * np.sqrt(2 * np.pi))
-
 
 def _forward(
     x: np.ndarray, pi: np.ndarray, A: np.ndarray, mus: np.ndarray, sigs: np.ndarray
@@ -129,7 +96,6 @@ def _forward(
 
     return alpha, c
 
-
 def _backward(x: np.ndarray, c: np.ndarray, A: np.ndarray, mus: np.ndarray, sigs: np.ndarray) -> np.ndarray:
     """Scaled backward algorithm. Returns beta (T × K)."""
     T, K = len(x), A.shape[0]
@@ -142,7 +108,6 @@ def _backward(x: np.ndarray, c: np.ndarray, A: np.ndarray, mus: np.ndarray, sigs
 
     return beta
 
-
 def _baum_welch(
     x: np.ndarray, K: int, seed: int = 0
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, float]:
@@ -154,7 +119,6 @@ def _baum_welch(
     rng = np.random.default_rng(seed)
     T = len(x)
 
-    # ── Initialise parameters ──────────────────────────────────────────────
     pi = np.ones(K) / K
     A = rng.dirichlet(np.ones(K) * 5, size=K)  # row-stochastic
     A /= A.sum(axis=1, keepdims=True)
@@ -203,14 +167,12 @@ def _baum_welch(
 
     return pi, A, mus, sigs, prev_ll
 
-
 def _label_states(mus: np.ndarray, sigs: np.ndarray) -> list[str]:
     """Auto-label states: highest σ → volatile, highest |μ| → trending, rest → ranging."""
     K = len(mus)
     labels = ["unknown"] * K
     remaining = set(range(K))
 
-    # 1. Volatile = highest σ
     vol_idx = int(np.argmax(sigs))
     labels[vol_idx] = "volatile"
     remaining.discard(vol_idx)
@@ -225,7 +187,6 @@ def _label_states(mus: np.ndarray, sigs: np.ndarray) -> list[str]:
         labels[i] = "ranging"
 
     return labels
-
 
 def _fit_hmm(returns: np.ndarray) -> HMMResult:
     """Fit Gaussian HMM with multiple random restarts, pick best log-likelihood."""
@@ -284,13 +245,9 @@ def _fit_hmm(returns: np.ndarray) -> HMMResult:
         n_bars_used=len(returns),
     )
 
-
-# ─── Heuristic fallback ──────────────────────────────────────────────────────
-
-
 def _heuristic_regime(returns: np.ndarray) -> HMMResult:
     """
-    Volatility/momentum 3-way classifier — O(n), no fitting needed.
+    Volatility/momentum 3-way classifier - O(n), no fitting needed.
 
     • Recent σ > 75th-percentile rolling σ  →  volatile
     • |recent mean| > 0.8 × recent σ        →  trending
@@ -337,7 +294,6 @@ def _heuristic_regime(returns: np.ndarray) -> HMMResult:
         n_bars_used=n,
     )
 
-
 def _unknown_result(n: int, error: str) -> HMMResult:
     state_list = [
         HMMState(label="ranging", mean_return=0.0, volatility=0.01, probability=0.50),
@@ -355,10 +311,6 @@ def _unknown_result(n: int, error: str) -> HMMResult:
         error=error,
     )
 
-
-# ─── Public entry point ───────────────────────────────────────────────────────
-
-
 def analyse_hmm(returns: Sequence[float]) -> HMMResult:
     """
     Fit Gaussian HMM (Baum-Welch EM, pure NumPy) and identify current market regime.
@@ -374,7 +326,7 @@ def analyse_hmm(returns: Sequence[float]) -> HMMResult:
         try:
             return _fit_hmm(arr)
         except Exception as exc:
-            logger.debug("[HMM] Baum-Welch failed (%s) — using heuristic", exc)
+            logger.debug("[HMM] Baum-Welch failed (%s) - using heuristic", exc)
             return _heuristic_regime(arr)
 
     except Exception as exc:
@@ -385,10 +337,6 @@ def analyse_hmm(returns: Sequence[float]) -> HMMResult:
             return _heuristic_regime(arr) if len(arr) >= 10 else _unknown_result(0, str(exc))
         except Exception:
             return _unknown_result(0, str(exc)[:80])
-
-
-# ─── Regime-blended zone probability ─────────────────────────────────────────
-
 
 def blend_zone_probability(
     hmm: HMMResult,

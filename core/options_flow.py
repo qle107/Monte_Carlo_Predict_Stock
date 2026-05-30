@@ -1,39 +1,4 @@
-"""
-core/options_flow.py — Options flow: Max Pain + Gamma Exposure (GEX).
-
-Fetches the options chain (yfinance, free) and computes:
-
-  max_pain      : Strike where total option-buyer loss is maximised.
-                  Price gravitates here into expiry (market-maker incentive).
-
-  net_gex       : Total dealer net gamma exposure across all strikes.
-                  Positive  → dealers are long gamma → they BUY dips, SELL rips
-                              → volatility is DAMPED, price tends to pin.
-                  Negative  → dealers are short gamma → they SELL dips, BUY rips
-                              → volatility is AMPLIFIED, moves accelerate.
-
-  gamma_flip    : The price level where net GEX crosses zero.
-                  Above gamma flip  →  volatility suppression (positive GEX).
-                  Below gamma flip  →  volatility amplification (negative GEX).
-
-  call_wall     : Strike with highest call OI (strong resistance ceiling).
-  put_wall      : Strike with highest put OI (strong support floor).
-
-  gex_profile   : Per-strike GEX bars for charting.
-
-Why this helps predict price reaction at demand/supply zones
-------------------------------------------------------------
-  • Zone at / above call_wall → bounce is harder; expect compression or failure.
-  • Zone at / below put_wall  → bounce is stronger; dealers must buy there too.
-  • Zone between gamma_flip and call_wall (positive GEX band) → pinning / chop.
-  • Zone below gamma_flip      → directional moves; zone may not hold.
-  • Max pain acts as a gravity attractor going into weekly/monthly expiry.
-
-Black-Scholes gamma (closed-form):
-  d1    = (ln(S/K) + (r + σ²/2)·T) / (σ·√T)
-  Gamma = N'(d1) / (S · σ · √T)
-  GEX_k = OI_calls(k)·Γ(k)·S²·100 - OI_puts(k)·Γ(k)·S²·100
-"""
+"""Options flow: max pain, GEX, and unusual activity."""
 
 from __future__ import annotations
 
@@ -46,8 +11,7 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-# ─── Sector mapping ───────────────────────────────────────────────────────────
-# Used to tag each UnusualOption hit so the frontend can filter by sector.
+# Sector mapping - tags each UnusualOption hit so the frontend can filter by sector.
 _SECTOR_MAP: dict[str, str] = {
     # Mega-cap / Mixed-use tech
     "AAPL": "Tech",    "MSFT": "Tech",    "GOOGL": "Tech",   "GOOG": "Tech",
@@ -61,18 +25,19 @@ _SECTOR_MAP: dict[str, str] = {
     "WOLF": "Semis",   "ACLS": "Semis",   "COHU": "Semis",
     # Software / Cloud
     "CRM":  "Software","ORCL": "Software","NOW":  "Software","SNOW": "Software",
-    "PLTR": "Software","CRWD": "Software","PANW": "Software","ZS":   "Software",
+    "CRWD": "Software","PANW": "Software","ZS":   "Software",
     "DDOG": "Software","NET":  "Software","MDB":  "Software","OKTA": "Software",
     "ZM":   "Software","DOCU": "Software","TWLO": "Software","HUBS": "Software",
     "SHOP": "Software","ADBE": "Software","INTU": "Software","SAP":  "Software",
     "ACN":  "Software","IBM":  "Software","CSCO": "Software","ANET": "Software",
     "FFIV": "Software","CIEN": "Software","PSTG": "Software",
-    # AI / Quantum / Blockchain
-    "MSTR": "Crypto",  "IONQ": "Quantum", "RGTI": "Quantum", "QUBT": "Quantum",
+    # Quantum
+    "IONQ": "Quantum", "RGTI": "Quantum", "QUBT": "Quantum",
     "BBAI": "AI",      "SOUN": "AI",      "AI":   "AI",
+    "PLTR": "Defense",
     # FinTech / Payments
     "V":    "Finance", "MA":   "Finance", "PYPL": "FinTech", "SQ":   "FinTech",
-    "COIN": "Crypto",  "HOOD": "FinTech", "SOFI": "FinTech", "AFRM": "FinTech",
+    "COIN": "Crypto",  "HOOD": "Crypto",  "SOFI": "FinTech", "AFRM": "FinTech",
     "ENVA": "FinTech", "LC":   "FinTech", "UPST": "FinTech",
     # Financials
     "JPM":  "Finance", "GS":   "Finance", "MS":   "Finance", "BAC":  "Finance",
@@ -97,12 +62,12 @@ _SECTOR_MAP: dict[str, str] = {
     "JNJ":  "Health",  "UNH":  "Health",  "CVS":  "Health",  "HUM":  "Health",
     "CNC":  "Health",  "MOH":  "Health",  "ELV":  "Health",  "CI":   "Health",
     "HCA":  "Health",  "THC":  "Health",  "UHS":  "Health",  "CLOV": "Health",
-    "ISRG": "MedTech", "EW":   "MedTech", "DXCM": "MedTech", "PODD": "MedTech",
+    "ISRG": "Robotics","EW":   "MedTech", "DXCM": "MedTech", "PODD": "MedTech",
     "HOLX": "MedTech", "IDXX": "MedTech", "SYK":  "MedTech", "ZTS":  "MedTech",
     "BSX":  "MedTech", "MDT":  "MedTech", "ABT":  "MedTech", "TMO":  "MedTech",
     "DHR":  "MedTech", "A":    "MedTech", "BIO":  "MedTech", "IQV":  "MedTech",
     "RVTY": "MedTech", "PRCT": "MedTech", "NTRA": "MedTech",
-    # Energy
+    # Traditional energy (oil & gas)
     "XOM":  "Energy",  "CVX":  "Energy",  "COP":  "Energy",  "OXY":  "Energy",
     "DVN":  "Energy",  "FANG": "Energy",  "HAL":  "Energy",  "SLB":  "Energy",
     "BKR":  "Energy",  "NOV":  "Energy",  "HP":   "Energy",  "PTEN": "Energy",
@@ -111,6 +76,13 @@ _SECTOR_MAP: dict[str, str] = {
     "VLO":  "Energy",  "MPC":  "Energy",  "PSX":  "Energy",  "DK":   "Energy",
     "DINO": "Energy",  "EOG":  "Energy",  "APA":  "Energy",  "PR":   "Energy",
     "SM":   "Energy",  "CIVI": "Energy",  "WHD":  "Energy",
+    # Nuclear power
+    "OKLO": "Nuclear", "SMR":  "Nuclear", "CEG":  "Nuclear", "VST":  "Nuclear",
+    "NRG":  "Nuclear", "BWXT": "Nuclear",
+    # Uranium (fuel cycle)
+    "CCJ":  "Uranium", "UEC":  "Uranium", "UUUU": "Uranium", "LEU":  "Uranium",
+    # Clean / Renewable energy
+    "FSLR": "Solar",   "ENPH": "Solar",   "TE":  "Solar",        "PLUG": "CleanEnergy", "BE": "CleanEnergy",
     # Consumer / Retail
     "NKE":  "Consumer","LULU": "Consumer","RL":   "Consumer","PVH":  "Consumer",
     "HBI":  "Consumer","UAA":  "Consumer","UA":   "Consumer","TGT":  "Consumer",
@@ -136,9 +108,18 @@ _SECTOR_MAP: dict[str, str] = {
     # Defense / Aerospace
     "BA":   "Defense", "LMT":  "Defense", "NOC":  "Defense", "GD":   "Defense",
     "RTX":  "Defense", "LHX":  "Defense", "HEI":  "Defense", "TDG":  "Defense",
-    "HWM":  "Defense",
+    "HWM":  "Defense", "KTOS": "Defense", "AVAV": "Defense", "DRS":  "Defense",
+    "LDOS": "Defense", "SAIC": "Defense", "BAH":  "Defense", "CACI": "Defense",
+    "AXON": "Defense",
+    # Robotics / Automation
+    "TER":  "Robotics","CGNX": "Robotics","ROK":  "Robotics","ABB":  "Robotics",
+    "IRBT": "Robotics","PATH": "Robotics","SYM":  "Robotics","ZBRA": "Robotics",
+    "AZTA": "Robotics","BOTZ": "Robotics",
+    # Space / Satellite
+    "ASTS": "SpaceTech","RKLB":"SpaceTech","SPCE":"SpaceTech","IRDM":"SpaceTech",
+    "GSAT": "SpaceTech","VSAT":"SpaceTech",
     # Industrial / Utilities
-    "CAT":  "Industrial","DE":  "Industrial","EMR": "Industrial","ROK": "Industrial",
+    "CAT":  "Industrial","DE":  "Industrial","EMR": "Industrial",
     "PH":   "Industrial","ITW": "Industrial","GWW": "Industrial","CMI": "Industrial",
     "ETN":  "Industrial","DOV": "Industrial","UPS": "Industrial","FDX": "Industrial",
     "NSC":  "Industrial","MMM": "Industrial","HON": "Industrial",
@@ -168,61 +149,49 @@ _SECTOR_MAP: dict[str, str] = {
     "VALE": "Mining",  "MT":   "Materials","STLD": "Materials","NUE":  "Materials",
     "X":    "Materials","CLF":  "Materials","AA":   "Materials","CF":   "Materials",
     "MOS":  "Materials","FCX":  "Mining",
-    # Crypto / Blockchain miners
-    "MARA": "Crypto",  "RIOT": "Crypto",  "HUT":  "Crypto",  "CLSK": "Crypto",
-    "BTBT": "Crypto",  "CIFR": "Crypto",
+    # Crypto / Bitcoin miners
+    "MSTR": "Crypto",  "MARA": "Crypto",  "RIOT": "Crypto",  "HUT":  "Crypto",
+    "CLSK": "Crypto",  "BTBT": "Crypto",  "CIFR": "Crypto",
+    "CORZ": "Crypto",  "WULF": "Crypto",  "IREN": "Crypto",  "BITF": "Crypto",
     # Meme / Speculative
-    "GME":  "Meme",    "AMC":  "Meme",    "SPCE": "Meme",    "NKLA": "Meme",
-    "WKHS": "Meme",
+    "GME":  "Meme",    "AMC":  "Meme",    "NKLA": "Meme",    "WKHS": "Meme",
     # Cannabis
     "TLRY": "Cannabis","CGC":  "Cannabis","ACB":  "Cannabis","SNDL": "Cannabis",
-    # Space / Emerging
-    "ASTS": "SpaceTech","RKLB":"SpaceTech",
     # ETFs
     "SPY":  "ETF", "QQQ":  "ETF", "IWM":  "ETF", "DIA":  "ETF", "VTI":  "ETF",
     "VOO":  "ETF", "TQQQ": "ETF", "SQQQ": "ETF", "GLD":  "ETF", "GDX":  "ETF",
     "GDXJ": "ETF", "SLV":  "ETF", "USO":  "ETF", "UNG":  "ETF", "TLT":  "ETF",
     "IEF":  "ETF", "SHY":  "ETF", "HYG":  "ETF", "LQD":  "ETF", "JNK":  "ETF",
-    "XLE":  "ETF", "XLF":  "ETF", "XLK":  "ETF", "XLV":  "ETF", "XLI":  "ETF",
-    "XLU":  "ETF", "XLP":  "ETF", "XLB":  "ETF", "XLRE": "ETF", "EEM":  "ETF",
-    "EFA":  "ETF", "FXI":  "ETF", "EWZ":  "ETF", "EWJ":  "ETF", "KWEB": "ETF",
-    "ARKK": "ETF", "ARKG": "ETF", "ARKW": "ETF", "ARKF": "ETF", "REET": "ETF",
-    "KBWB": "ETF", "KRE":  "ETF", "XHB":  "ETF", "XRT":  "ETF", "IBB":  "ETF",
-    "XBI":  "ETF", "SMH":  "ETF", "SOXX": "ETF", "VXX":  "ETF", "UVXY": "ETF",
-    "SVXY": "ETF", "TPVG": "ETF", "GLAD": "ETF", "PSEC": "ETF",
+    "XLE":  "ETF", "URA":  "ETF", "XLF":  "ETF", "XLK":  "ETF", "XLV":  "ETF",
+    "XLI":  "ETF", "XLU":  "ETF", "XLP":  "ETF", "XLB":  "ETF", "XLRE": "ETF",
+    "EEM":  "ETF", "EFA":  "ETF", "FXI":  "ETF", "EWZ":  "ETF", "EWJ":  "ETF",
+    "KWEB": "ETF", "ARKK": "ETF", "ARKG": "ETF", "ARKW": "ETF", "ARKF": "ETF",
+    "REET": "ETF", "KBWB": "ETF", "KRE":  "ETF", "XHB":  "ETF", "XRT":  "ETF",
+    "IBB":  "ETF", "XBI":  "ETF", "SMH":  "ETF", "SOXX": "ETF", "VXX":  "ETF",
+    "UVXY": "ETF", "SVXY": "ETF", "TPVG": "ETF", "GLAD": "ETF", "PSEC": "ETF",
 }
 
-# ─── Cache (avoid hammering yfinance) ────────────────────────────────────────
+# Cache (avoid hammering yfinance - 5 min TTL)
 _cache_lock = threading.RLock()
-_cache: dict = {}  # key → (result, expire_time)
+_cache: dict = {}  # key -> (result, expire_time)
 _CACHE_TTL = 300.0  # 5 minutes
 
-# ─── yfinance rate-limit guard ────────────────────────────────────────────────
-# Limits the number of simultaneous yfinance HTTP connections across all threads.
+# yfinance rate-limit guard
+# Limits simultaneous yfinance HTTP connections across all threads.
 # Even when the executor has N workers, only _YF_SEM_SLOTS connections run at once.
 _YF_SEM_SLOTS = 4
 _yf_semaphore = threading.Semaphore(_YF_SEM_SLOTS)
 
 _RATE_LIMIT_PHRASES = ("too many requests", "rate limit", "429")
 
-
 def _is_rate_limit(exc: Exception) -> bool:
     msg = str(exc).lower()
     return any(p in msg for p in _RATE_LIMIT_PHRASES)
 
-
 def _yf_call(fn, *args, retries: int = 3, base_delay: float = 2.0, **kwargs):
     """
     Call a yfinance function under the global semaphore with exponential-backoff
-    retry on rate-limit errors.
-
-    Parameters
-    ----------
-    fn          : callable — the yfinance method to call
-    *args       : positional args forwarded to fn
-    retries     : max number of retry attempts after the first failure
-    base_delay  : seconds to wait before the first retry (doubles each time)
-    **kwargs    : keyword args forwarded to fn
+    retry on rate-limit errors. base_delay doubles each attempt.
     """
     last_exc: Exception | None = None
     for attempt in range(retries + 1):
@@ -242,7 +211,6 @@ def _yf_call(fn, *args, retries: int = 3, base_delay: float = 2.0, **kwargs):
 
     raise last_exc  # type: ignore[misc]
 
-
 def _cache_get(key):
     with _cache_lock:
         entry = _cache.get(key)
@@ -250,14 +218,11 @@ def _cache_get(key):
             return entry[0]
     return None
 
-
 def _cache_put(key, value):
     with _cache_lock:
         _cache[key] = (value, time.monotonic() + _CACHE_TTL)
 
-
-# ─── Dataclasses ─────────────────────────────────────────────────────────────
-
+# Dataclasses
 
 @dataclass
 class GEXBar:
@@ -265,7 +230,6 @@ class GEXBar:
     gex: float  # net GEX at this strike (calls positive, puts negative)
     call_oi: int
     put_oi: int
-
 
 @dataclass
 class OptionsFlow:
@@ -277,7 +241,7 @@ class OptionsFlow:
     put_wall: float  # strike with peak put OI
     gamma_flip: float  # price where net GEX ≈ 0
     net_gex: float  # total dealer net GEX
-    gex_positive: bool  # True = volatility-damping regime
+    gex_positive: bool  # True means volatility-damping regime
     days_to_expiry: float
     gex_profile: list[GEXBar]  # sorted by strike
     error: str | None = None
@@ -306,19 +270,14 @@ class OptionsFlow:
             ],
         }
 
-
-# ─── Black-Scholes helpers ────────────────────────────────────────────────────
-
+# Black-Scholes helpers
 
 def _norm_pdf(x: float) -> float:
     return math.exp(-0.5 * x * x) / math.sqrt(2 * math.pi)
 
-
 def _bs_gamma(S: float, K: float, T: float, sigma: float, r: float = 0.05) -> float:
-    """
-    Black-Scholes gamma.  Returns 0 on bad inputs.
-    S = spot, K = strike, T = time to expiry in years, sigma = implied vol.
-    """
+    """Black-Scholes gamma. Returns 0 on bad inputs.
+    S=spot, K=strike, T=time to expiry in years, sigma=implied vol."""
     try:
         if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
             return 0.0
@@ -327,18 +286,13 @@ def _bs_gamma(S: float, K: float, T: float, sigma: float, r: float = 0.05) -> fl
     except (ValueError, ZeroDivisionError):
         return 0.0
 
-
-# ─── Max Pain ─────────────────────────────────────────────────────────────────
-
+# Max Pain
 
 def _compute_max_pain(calls_df, puts_df) -> float:
     """
-    Max pain = strike that minimises total payout to option holders.
-
-    Total payout at expiry price P:
-      Σ_K [OI_call(K) · max(P−K, 0) + OI_put(K) · max(K−P, 0)] × 100
-
-    We evaluate over all strikes in the chain.
+    Max pain = strike that minimizes total payout to option holders.
+    Evaluates total payout across all strikes in the chain:
+      sum_K [OI_call(K) * max(P-K, 0) + OI_put(K) * max(K-P, 0)] * 100
     """
     all_strikes = sorted(set(list(calls_df["strike"].values) + list(puts_df["strike"].values)))
     if not all_strikes:
@@ -361,9 +315,7 @@ def _compute_max_pain(calls_df, puts_df) -> float:
 
     return float(max_pain_strike)
 
-
-# ─── GEX profile ─────────────────────────────────────────────────────────────
-
+# GEX profile
 
 def _compute_gex_profile(
     calls_df,
@@ -374,14 +326,11 @@ def _compute_gex_profile(
     max_bars: int = 50,
 ) -> list[GEXBar]:
     """
-    For each strike compute net GEX:
-      GEX_net(K) = (OI_call(K) - OI_put(K)) · Γ(S, K, T, σ) · S² · 100
+    Compute net GEX per strike:
+      GEX_net(K) = (OI_call(K) - OI_put(K)) * gamma(S, K, T, IV) * S^2 * 100
 
-    We use each option's own implied vol (IV) from the chain.
-    Falls back to average IV if individual IV is missing.
-
-    Limits output to max_bars bars centered around spot price
-    to reduce response size and keep chart legible.
+    Uses each contract's own IV from the chain, falls back to chain average IV.
+    Output is capped at max_bars strikes centered around spot to keep charts legible.
     """
     import pandas as pd
 
@@ -411,15 +360,15 @@ def _compute_gex_profile(
         g_call = _bs_gamma(spot, K, T, c_iv, risk_free)
         g_put = _bs_gamma(spot, K, T, p_iv, risk_free)
 
-        # Dealers who sold calls are long delta → they are short gamma (negative GEX from calls)
-        # Convention: call GEX positive (dealers short vol), put GEX negative
+        # Dealers who sold calls are long delta (short gamma = negative GEX from calls).
+        # Convention: call GEX positive (dealers short vol), put GEX negative.
         gex = (c_oi * g_call - p_oi * g_put) * spot * spot * 100.0
 
         bars.append(GEXBar(strike=K, gex=gex, call_oi=c_oi, put_oi=p_oi))
 
     bars.sort(key=lambda b: b.strike)
 
-    # ── Limit to most relevant strikes (centered around spot) ──────────────────
+    # Limit to most relevant strikes (centered around spot)
     if len(bars) > max_bars:
         # Find spot index
         spot_idx = min(range(len(bars)), key=lambda i: abs(bars[i].strike - spot))
@@ -434,13 +383,12 @@ def _compute_gex_profile(
 
     return bars
 
-
 def _find_gamma_flip(bars: list[GEXBar], spot: float) -> float:
     """
     Find the strike closest to where cumulative net GEX crosses zero
     (scanning from spot downward).
     """
-    # Only consider strikes ≤ spot (below spot = where gamma flip matters most)
+    # Only consider strikes at or below spot (where gamma flip matters most)
     below = [(b.strike, b.gex) for b in bars if b.strike <= spot * 1.05]
     if not below:
         return spot
@@ -453,15 +401,13 @@ def _find_gamma_flip(bars: list[GEXBar], spot: float) -> float:
         prev_cum = cum
         cum += gex
         if prev_cum > 0 and cum <= 0:
-            # crossed zero between prev_strike and strike — interpolate
+            # crossed zero between prev_strike and strike - interpolate
             frac = abs(prev_cum) / (abs(prev_cum) + abs(cum) + 1e-12)
             return prev_strike - frac * (prev_strike - strike)
         prev_strike = strike
-    return below[-1][0]  # no flip found — return lowest strike
+    return below[-1][0]  # no flip found - return lowest strike
 
-
-# ─── Public entry point ───────────────────────────────────────────────────────
-
+# Public entry point
 
 def fetch_options_flow(ticker: str, spot: float | None = None) -> OptionsFlow:
     """
@@ -477,7 +423,6 @@ def fetch_options_flow(ticker: str, spot: float | None = None) -> OptionsFlow:
     result = _fetch(key, spot)
     _cache_put(key, result)
     return result
-
 
 def _fetch(ticker: str, spot_override: float | None) -> OptionsFlow:
     _empty = OptionsFlow(
@@ -514,23 +459,52 @@ def _fetch(ticker: str, spot_override: float | None) -> OptionsFlow:
             _empty.error = "no_spot_price"
             return _empty
 
-        # Pick nearest expiry ≥ 7 days out (avoid pin risk noise on 0DTE)
+        # Pick the most liquid expiry: scan up to 4 near-term expirations (>=5 DTE,
+        # <=90 DTE) and choose the one with the highest total open interest near spot.
+        # This avoids pinning all levels to thin weekly chains.
         exps = t.options
         if not exps:
             _empty.error = "no_options_chain"
             return _empty
 
         now = datetime.now(timezone.utc).date()
-        chosen_exp = None
+
+        # Collect candidate expiries (5-90 DTE window, max 4 to keep fetch cost low)
+        candidates = []
         for exp in exps:
             d = datetime.strptime(exp, "%Y-%m-%d").date()
             dte = (d - now).days
-            if dte >= 5:
-                chosen_exp = exp
+            if 5 <= dte <= 90:
+                candidates.append(exp)
+            if len(candidates) >= 4:
                 break
-        if chosen_exp is None:
-            chosen_exp = exps[0]
+        if not candidates:
+            # Fallback: first expiry with >=5 DTE regardless of 90-day cap
+            for exp in exps:
+                d = datetime.strptime(exp, "%Y-%m-%d").date()
+                if (d - now).days >= 5:
+                    candidates = [exp]
+                    break
+        if not candidates:
+            candidates = [exps[0]]
 
+        # Choose candidate with most total OI near spot (±30% to be inclusive)
+        best_exp = candidates[0]
+        best_oi = -1
+        lo_scan, hi_scan = spot * 0.70, spot * 1.30
+        for exp in candidates:
+            try:
+                ch = t.option_chain(exp)
+                c_oi = ch.calls[(ch.calls["strike"] >= lo_scan) & (ch.calls["strike"] <= hi_scan)]["openInterest"].fillna(0).sum()
+                p_oi = ch.puts[(ch.puts["strike"] >= lo_scan) & (ch.puts["strike"] <= hi_scan)]["openInterest"].fillna(0).sum()
+                total = int(c_oi) + int(p_oi)
+                if total > best_oi:
+                    best_oi = total
+                    best_exp = exp
+            except Exception:
+                pass
+
+        chosen_exp = best_exp
         exp_date = datetime.strptime(chosen_exp, "%Y-%m-%d").date()
         T = max((exp_date - now).days, 1) / 365.0
 
@@ -542,25 +516,22 @@ def _fetch(ticker: str, spot_override: float | None) -> OptionsFlow:
             _empty.error = "empty_chain"
             return _empty
 
-        # Focus on strikes within ±20% of spot (filter out deep OTM noise)
-        lo, hi = spot * 0.80, spot * 1.20
+        # Focus on strikes within ±30% of spot (wider than ±20% to catch illiquid/small-cap chains)
+        lo, hi = spot * 0.70, spot * 1.30
         calls = calls[(calls["strike"] >= lo) & (calls["strike"] <= hi)]
-        puts = puts[(puts["strike"] >= lo) & (puts["strike"] <= hi)]
+        puts  = puts[(puts["strike"]  >= lo) & (puts["strike"]  <= hi)]
 
         if calls.empty or puts.empty:
             _empty.error = "no_near_strikes"
             return _empty
 
-        # ── Max Pain ──────────────────────────────────────────────────────
         max_pain = _compute_max_pain(calls, puts)
 
-        # ── Call Wall / Put Wall ──────────────────────────────────────────
         c_oi_max_idx = calls["openInterest"].fillna(0).astype(int).idxmax()
         p_oi_max_idx = puts["openInterest"].fillna(0).astype(int).idxmax()
         call_wall = float(calls.loc[c_oi_max_idx, "strike"])
         put_wall = float(puts.loc[p_oi_max_idx, "strike"])
 
-        # ── GEX profile ───────────────────────────────────────────────────
         gex_profile = _compute_gex_profile(calls, puts, spot, T)
         net_gex = sum(b.gex for b in gex_profile)
         gamma_flip = _find_gamma_flip(gex_profile, spot)
@@ -601,21 +572,18 @@ def _fetch(ticker: str, spot_override: float | None) -> OptionsFlow:
         _empty.error = str(exc)[:120]
         return _empty
 
-
-# ─── Unusual Options Activity Scanner ────────────────────────────────────────
+# Unusual Options Activity Scanner
 #
 # Detects statistically unusual options activity across a list of tickers.
+# Each signal is scored 0-1 and combined into a composite "unusual_score":
 #
-# Signals scored (each 0–1, combined into a composite "unusual_score"):
-#   vol_oi_ratio   — contract Volume / Open Interest > threshold (new money flowing in)
-#   iv_spike       — implied vol significantly above the chain average (fear / conviction)
-#   otm_bias       — large volume on deep OTM strikes (speculative / event-driven bets)
-#   premium_size   — notional premium value (contracts × 100 × mid-price) in top decile
-#   cp_divergence  — call/put volume ratio deviates far from 1 (directional sweep)
+#   vol_oi_ratio  - contract Volume / OI > threshold (new money flowing in)
+#   iv_spike      - implied vol significantly above chain average (fear/conviction)
+#   otm_bias      - large volume on deep OTM strikes (speculative/event-driven bets)
+#   premium_size  - notional premium (contracts * 100 * mid) in top decile
+#   cp_divergence - call/put volume ratio far from 1 (directional sweep)
 #
-# Each hit is tagged with a human-readable "flag" list and a directional
-# "sentiment": "bullish" | "bearish" | "mixed".
-
+# Each hit gets a "flags" list and a directional sentiment: bullish/bearish/mixed.
 
 @dataclass
 class UnusualOption:
@@ -630,9 +598,9 @@ class UnusualOption:
     implied_vol: float
     avg_chain_iv: float       # average IV across the chain for context
     in_the_money: bool
-    premium_per_contract: float   # mid-price × 100
-    total_premium: float          # volume × premium_per_contract
-    unusual_score: float          # 0–1 composite
+    premium_per_contract: float   # mid-price * 100
+    total_premium: float          # volume * premium_per_contract
+    unusual_score: float          # 0-1 composite
     flags: list                   # e.g. ["high_vol_oi", "iv_spike", "otm_sweep"]
     sentiment: str                # "bullish" | "bearish" | "mixed"
     spot: float
@@ -663,7 +631,6 @@ class UnusualOption:
             "days_to_expiry": round(self.days_to_expiry, 1),
         }
 
-
 def _safe_int(val, default: int = 0) -> int:
     """Convert val to int, returning default for None / NaN / Inf."""
     try:
@@ -674,7 +641,6 @@ def _safe_int(val, default: int = 0) -> int:
     except (TypeError, ValueError):
         return default
 
-
 def _safe_float(val, default: float = 0.0) -> float:
     """Convert val to float, returning default for None / NaN / Inf."""
     try:
@@ -684,7 +650,6 @@ def _safe_float(val, default: float = 0.0) -> float:
         return default if (math.isnan(f) or math.isinf(f)) else f
     except (TypeError, ValueError):
         return default
-
 
 def _scan_ticker_unusual(
     ticker: str,
@@ -700,22 +665,8 @@ def _scan_ticker_unusual(
     """
     Fetch options chain for one ticker and return unusual contracts.
 
-    Returns
-    -------
-    list[UnusualOption]  — zero or more hits (empty = scanned, nothing unusual)
-    None                 — ticker appears delisted / has no valid market data
-
-    Parameters
-    ----------
-    ticker              : stock symbol
-    min_volume          : ignore contracts with volume below this (sanity floor)
-    min_oi              : ignore contracts with OI below this
-    vol_oi_threshold    : flag contract when volume / OI > this multiple
-    iv_spike_z          : flag IV when it exceeds chain_mean + z * chain_std
-    otm_pct             : flag as OTM sweep when |strike/spot - 1| > this fraction
-    max_dte             : only scan expiries within this many calendar days
-    min_premium         : skip contracts where total_premium < this value (USD)
-    new_positions_only  : if True, only include contracts where volume > open_interest
+    Returns a list of UnusualOption hits (empty list = nothing unusual found),
+    or None if the ticker appears delisted / has no valid market data.
     """
     import statistics
     from datetime import datetime, timezone
@@ -726,23 +677,23 @@ def _scan_ticker_unusual(
     try:
         t = yf.Ticker(ticker.upper())
 
-        # Spot price — guarded by semaphore + retry
+        # Spot price (guarded by semaphore + retry)
         info = _yf_call(lambda: t.fast_info)
         spot = float(getattr(info, "last_price", None) or getattr(info, "regular_market_price", None) or 0.0)
         if spot <= 0:
-            # No price at all — check options to distinguish delisted vs. closed market
+            # No price at all - check options to distinguish delisted vs. closed market
             try:
                 exps = _yf_call(lambda: t.options)
             except Exception:
                 exps = []
             if not exps:
-                logger.info("[UnusualOptions] %s: no price + no options chain — likely delisted/invalid", ticker)
+                logger.info("[UnusualOptions] %s: no price + no options chain, likely delisted/invalid", ticker)
                 return None   # signal "delisted" to caller
-            return []   # has options but no live price — data gap, not delisted
+            return []   # has options but no live price - data gap, not delisted
 
         now_date = datetime.now(timezone.utc).date()
 
-        # Collect expiries within max_dte — guarded
+        # Collect expiries within max_dte (guarded by semaphore)
         all_exps = _yf_call(lambda: t.options) or []
         near_exps = []
         for exp in all_exps:
@@ -779,7 +730,7 @@ def _scan_ticker_unusual(
                     bid    = _safe_float(row.get("bid"))
                     ask    = _safe_float(row.get("ask"))
                     last   = _safe_float(row.get("lastPrice"))
-                    # Use bid/ask mid when available; fall back to lastPrice
+                    # Use bid/ask midpoint when available, fall back to lastPrice
                     mid    = (bid + ask) / 2.0 if (bid > 0 or ask > 0) else last
                     itm    = bool(row.get("inTheMoney", False))
                     pct_chg = _safe_float(row.get("percentChange"))
@@ -787,11 +738,11 @@ def _scan_ticker_unusual(
                     if vol < min_volume or oi < min_oi or strike <= 0:
                         continue
 
-                    # Premium filter — skip cheap/small contracts early
+                    # Skip contracts below the premium threshold early
                     if min_premium > 0 and (vol * mid * 100) < min_premium:
                         continue
 
-                    # New-positions filter — only contracts where vol > OI
+                    # New-positions filter: only contracts where vol > OI
                     if new_positions_only and vol <= oi:
                         continue
 
@@ -826,17 +777,17 @@ def _scan_ticker_unusual(
         premiums = sorted(c["volume"] * c["mid"] * 100 for c in all_contracts)
         prem_threshold = premiums[int(len(premiums) * 0.70)] if premiums else 0
 
-        # ── Signal weights (must sum to 1.0) ──────────────────────────────────
-        # cp_divergence is chain-level (same value for every contract on the ticker)
-        # so it gets a low weight — prevents all contracts from scoring 100% when
-        # the chain happens to be call/put-skewed.
+        # Signal weights (sum to 1.0).
+        # cp_divergence is chain-level (same for every contract on the ticker)
+        # so it stays at 0.05 - prevents all contracts scoring 100% just because
+        # the chain is call/put skewed.
         _SIG_W = {
-            "high_vol_oi":   0.35,  # contract-specific — new money flowing in
-            "iv_spike":      0.25,  # contract-specific — implied vol conviction
-            "otm_sweep":     0.20,  # contract-specific — directional speculation
-            "large_premium": 0.15,  # contract-specific — notional size
+            "high_vol_oi":   0.35,  # contract-specific: new money flowing in
+            "iv_spike":      0.25,  # contract-specific: elevated IV conviction
+            "otm_sweep":     0.20,  # contract-specific: directional speculation
+            "large_premium": 0.15,  # contract-specific: notional size
             "cp_divergence": 0.05,  # chain-level tie-breaker only
-        }  # sum = 1.00
+        }
 
         for c in all_contracts:
             vol_oi = c["volume"] / max(c["oi"], 1)
@@ -849,28 +800,23 @@ def _scan_ticker_unusual(
             flags: list[str] = []
             signal_scores: dict[str, float] = {}
 
-            # ① Vol/OI ratio — fresh position opening
             if vol_oi >= vol_oi_threshold:
                 flags.append("high_vol_oi")
                 signal_scores["high_vol_oi"] = min(vol_oi / (vol_oi_threshold * 3), 1.0)
 
-            # ② IV spike above chain average
             if std_iv > 0 and (iv - avg_iv) / std_iv >= iv_spike_z:
                 flags.append("iv_spike")
                 signal_scores["iv_spike"] = min((iv - avg_iv) / (std_iv * 3), 1.0)
 
-            # ③ OTM sweep (speculative directional bet)
             if is_otm and otm_dist >= otm_pct and c["volume"] >= min_volume * 2:
                 flags.append("otm_sweep")
                 signal_scores["otm_sweep"] = min(otm_dist / 0.20, 1.0)
 
-            # ④ Large notional premium
             if total_prem >= prem_threshold and total_prem > 0:
                 flags.append("large_premium")
                 max_prem = max(premiums[-1], 1)
                 signal_scores["large_premium"] = min(total_prem / max_prem, 1.0)
 
-            # ⑤ CP divergence (chain-level, low-weight tie-breaker)
             if cp_ratio > 3.0 or cp_ratio < 0.33:
                 flags.append("cp_divergence")
                 div = max(cp_ratio, 1.0 / max(cp_ratio, 0.01))
@@ -879,7 +825,7 @@ def _scan_ticker_unusual(
             if not flags:
                 continue
 
-            # Weighted composite — denominator is always the full weight sum (1.0),
+            # Weighted composite - denominator is always the full weight sum (1.0),
             # so a contract with only cp_divergence maxes at 0.05, not 1.0.
             composite = sum(signal_scores[f] * _SIG_W[f] for f in signal_scores)
 
@@ -923,7 +869,6 @@ def _scan_ticker_unusual(
     results.sort(key=lambda x: x.unusual_score, reverse=True)
     return results[:20]
 
-
 def scan_unusual_options(
     tickers: list[str],
     min_volume: int = 10,
@@ -938,29 +883,10 @@ def scan_unusual_options(
     new_positions_only: bool = False,
 ) -> dict:
     """
-    Scan a list of tickers for unusual options activity and return the
-    top-N hits ranked by composite unusual score.
+    Scan a list of tickers for unusual options activity. Returns top-N hits
+    ranked by composite unusual score.
 
-    Parameters
-    ----------
-    tickers          : list of stock symbols to scan
-    min_volume       : minimum contract volume to consider
-    min_oi           : minimum open interest to consider
-    vol_oi_threshold : Vol/OI ratio to flag as unusual (default 3×)
-    iv_spike_z       : IV z-score above chain mean to flag as spike
-    otm_pct          : fraction OTM to flag as directional sweep
-    max_dte          : max calendar days to expiry to include
-    max_concurrent   : parallel worker threads
-    top_n            : max results returned (across all tickers)
-
-    Returns
-    -------
-    {
-      "hits":    [ UnusualOption.to_dict(), ... ],   # sorted by unusual_score desc
-      "summary": { "tickers_scanned", "tickers_with_hits", "total_hits",
-                   "bullish_count", "bearish_count", "mixed_count" },
-      "scanned_at": ISO-8601
-    }
+    Returns a dict with keys: hits (list), summary (dict), scanned_at (ISO-8601).
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from datetime import datetime, timezone
@@ -1031,7 +957,7 @@ def scan_unusual_options(
         )
 
     logger.info(
-        "[UnusualOptions] scan complete — %d hits from %d/%d tickers  bull=%d bear=%d mixed=%d  delisted=%d",
+        "[UnusualOptions] scan complete: %d hits from %d/%d tickers  bull=%d bear=%d mixed=%d  delisted=%d",
         len(top_hits), len(tickers_with_hits), len(tickers), bullish, bearish, mixed, len(delisted_tickers),
     )
 
@@ -1049,3 +975,119 @@ def scan_unusual_options(
         },
         "scanned_at": datetime.now(timezone.utc).isoformat(),
     }
+
+# Volume spike scanner
+
+def scan_volume_spikes(
+    tickers: list[str],
+    min_vol_ratio: float = 2.0,
+    top_n: int = 50,
+    lookback_days: int = 20,
+    batch_size: int = 100,
+    min_avg_volume: int = 50_000,
+) -> list[dict]:
+    """
+    Scan tickers for unusual single-day volume spikes.
+
+    For each ticker computes: vol_ratio = today_volume / avg(volume over lookback_days).
+    Returns the top_n tickers where vol_ratio >= min_vol_ratio, sorted descending.
+    Batches downloads (batch_size tickers at a time) to avoid timeouts.
+    Tickers with avg volume below min_avg_volume are skipped as illiquid.
+
+    Each result dict contains: ticker, price, today_volume, avg_volume, vol_ratio, sector.
+    """
+    import yfinance as yf
+    import pandas as pd
+
+    results: list[dict] = []
+    unique_tickers = list(dict.fromkeys(t.upper().strip() for t in tickers if t.strip()))
+
+    period_str = f"{lookback_days + 8}d"  # extra buffer for weekends/holidays
+
+    for batch_start in range(0, len(unique_tickers), batch_size):
+        batch = unique_tickers[batch_start : batch_start + batch_size]
+        try:
+            raw = yf.download(
+                batch,
+                period=period_str,
+                interval="1d",
+                progress=False,
+                auto_adjust=True,
+                group_by="column",
+            )
+        except Exception as exc:
+            logger.warning("[vol_spike] batch download failed (start=%d): %s", batch_start, exc)
+            continue
+
+        if raw is None or raw.empty:
+            continue
+
+        # Extract Volume & Close
+        try:
+            if len(batch) == 1:
+                # Single-ticker download: flat column names
+                ticker = batch[0]
+                vol_series_map = {ticker: raw.get("Volume", pd.Series(dtype=float)).dropna()}
+                close_series_map = {ticker: raw.get("Close", pd.Series(dtype=float)).dropna()}
+            elif isinstance(raw.columns, pd.MultiIndex):
+                # Multi-ticker: MultiIndex (field, ticker)
+                vol_df = raw.get("Volume", pd.DataFrame())
+                close_df = raw.get("Close", pd.DataFrame())
+                vol_series_map = {
+                    t: (vol_df[t].dropna() if isinstance(vol_df, pd.DataFrame) and t in vol_df.columns else pd.Series(dtype=float))
+                    for t in batch
+                }
+                close_series_map = {
+                    t: (close_df[t].dropna() if isinstance(close_df, pd.DataFrame) and t in close_df.columns else pd.Series(dtype=float))
+                    for t in batch
+                }
+            else:
+                # Unexpected shape - skip batch
+                logger.debug("[vol_spike] unexpected column shape in batch %d", batch_start)
+                continue
+        except Exception as exc:
+            logger.warning("[vol_spike] column extraction failed (batch %d): %s", batch_start, exc)
+            continue
+
+        for ticker in batch:
+            try:
+                vol_s = vol_series_map.get(ticker, pd.Series(dtype=float))
+                close_s = close_series_map.get(ticker, pd.Series(dtype=float))
+
+                if len(vol_s) < 5:
+                    continue
+
+                today_vol = float(vol_s.iloc[-1])
+                hist = vol_s.iloc[max(0, len(vol_s) - lookback_days - 1) : -1]
+                if len(hist) == 0:
+                    continue
+                avg_vol = float(hist.mean())
+
+                # Skip illiquid / data-absent tickers
+                if avg_vol < min_avg_volume or today_vol <= 0:
+                    continue
+
+                ratio = today_vol / avg_vol
+                if ratio < min_vol_ratio:
+                    continue
+
+                price = round(float(close_s.iloc[-1]), 4) if not close_s.empty else 0.0
+                results.append(
+                    {
+                        "ticker": ticker,
+                        "price": price,
+                        "today_volume": int(today_vol),
+                        "avg_volume": int(avg_vol),
+                        "vol_ratio": round(ratio, 2),
+                        "sector": _SECTOR_MAP.get(ticker, "Other"),
+                    }
+                )
+            except Exception:
+                continue
+
+    results.sort(key=lambda x: x["vol_ratio"], reverse=True)
+    logger.info(
+        "[vol_spike] scan complete: %d/%d tickers exceed %.1fx avg vol",
+        len(results), len(unique_tickers), min_vol_ratio,
+    )
+    return results[:top_n]

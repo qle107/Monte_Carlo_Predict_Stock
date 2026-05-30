@@ -1,24 +1,4 @@
-"""
-core/montecarlo.py
-Vectorised Monte Carlo price simulation with multiple innovation models.
-
-Models
-──────
-gaussian        Classic GBM with Normal innovations.
-student_t       Heavy-tailed innovations (Student-t with df fit from kurtosis).
-garch           GARCH(1,1)-style volatility clustering.
-bootstrap       Resamples the stock's actual historical returns.
-jump            Merton jump-diffusion: Gaussian + Poisson-triggered jumps.
-ensemble        Adaptive blend of GARCH + bootstrap + jump.
-microstructure  Market-microstructure-aware: GARCH(1,1) + Student-t (df=4) +
-                volume-profile gravity (POC/VAH/VAL/HVN/LVN) + CVD drift bias +
-                Hurst regime detection + LVN acceleration. Falls back gracefully
-                when volume_profile / cvd_history / volume_history are absent.
-
-Output schema (`MCResult`) is identical across all models so callers don't
-care which one ran. The microstructure-only diagnostic fields (`ms_regime`,
-`ms_hurst`, `ms_drift_bias`, `ms_key_levels`) default to None for other models.
-"""
+"""Monte Carlo price path simulation."""
 
 from __future__ import annotations
 
@@ -37,9 +17,8 @@ from config import cfg
 from .hurst import dfa
 from .signal import Signal
 
-# ── GARCH MLE result cache ────────────────────────────────────────────────────
 # _calibrate_garch_mle() calls scipy.optimize.minimize (Nelder-Mead, 400 iter).
-# On a typical CPU this costs 50–200 ms per call.  With a 5-minute poll loop
+# On a typical CPU this costs 50-200 ms per call.  With a 5-minute poll loop
 # the returns series barely changes between runs, so we cache the fitted params
 # keyed by a short hash of the input array and expire after 5 minutes.
 #
@@ -49,12 +28,10 @@ _GARCH_CACHE_TTL = 300.0  # seconds (5 min)
 _garch_cache_lock = threading.RLock()
 _garch_cache: dict = {}  # hash → ((omega, alpha, beta), expire_mono)
 
-
 def _garch_cache_key(returns: np.ndarray) -> str:
     """Cheap fingerprint: last 90 values rounded to 6 dp → MD5."""
     tail = np.round(returns[-90:], 6).tobytes()
     return hashlib.md5(tail).hexdigest()
-
 
 def _garch_cache_get(key: str) -> tuple | None:
     with _garch_cache_lock:
@@ -67,7 +44,6 @@ def _garch_cache_get(key: str) -> tuple | None:
             return None
         return params
 
-
 def _garch_cache_put(key: str, params: tuple) -> None:
     with _garch_cache_lock:
         now = time.monotonic()
@@ -76,11 +52,7 @@ def _garch_cache_put(key: str, params: tuple) -> None:
             del _garch_cache[k]
         _garch_cache[key] = (params, now + _GARCH_CACHE_TTL)
 
-
-# ════════════════════════════════════════════════════════════════════════════
-# Microstructure model — tunable parameters
-# ════════════════════════════════════════════════════════════════════════════
-
+# Microstructure model - tunable parameters
 
 @dataclass(frozen=True)
 class _MSParams:
@@ -141,14 +113,9 @@ class _MSParams:
     hvn_rel_threshold: float = 0.50  # HVN ≥ 50 % of POC volume
     lvn_rel_threshold: float = 0.30  # LVN ≤ 30 % of median volume
 
-
 _PARAMS = _MSParams()
 
-
-# ════════════════════════════════════════════════════════════════════════════
 # Result type
-# ════════════════════════════════════════════════════════════════════════════
-
 
 @dataclass
 class MCResult:
@@ -172,8 +139,8 @@ class MCResult:
     median_path: list[float]
     model: str
 
-    # Monte Carlo standard errors (Part 4.5)
-    # prob_up_se  = sqrt(p*(1-p)/n_sim)*100  — binomial SE of prob_up
+    # Monte Carlo standard errors 
+    # prob_up_se  = sqrt(p*(1-p)/n_sim)*100  - binomial SE of prob_up
     # prob_down_se = same for prob_down
     # cvar_5_se   = SE of the tail-mean estimator (std of tail / sqrt(tail_n))
     prob_up_se: float = 0.0
@@ -187,11 +154,7 @@ class MCResult:
     ms_drift_bias: float | None = None
     ms_key_levels: dict | None = field(default=None)
 
-
-# ════════════════════════════════════════════════════════════════════════════
-# Existing model helpers (untouched — proven & tested)
-# ════════════════════════════════════════════════════════════════════════════
-
+# Existing model helpers (untouched - proven & tested)
 
 def _calibrate_garch(
     recent_returns: Sequence[float] | None, base_alpha: float, base_beta: float
@@ -232,7 +195,6 @@ def _calibrate_garch(
 
     return float(np.clip(alpha, 0.01, 0.49)), float(np.clip(beta, 0.10, 0.94))
 
-
 def _adaptive_clip(recent_returns: Sequence[float] | None, base_clip: float) -> float:
     """Adapt return clipping threshold to empirical tail quantiles."""
     if recent_returns is None or len(recent_returns) < 20:
@@ -244,7 +206,6 @@ def _adaptive_clip(recent_returns: Sequence[float] | None, base_clip: float) -> 
     p99 = float(np.percentile(np.abs(arr), 99))
     return float(np.clip(p99 * 3.0, 0.05, base_clip))
 
-
 def _realized_vol(recent_returns: Sequence[float], window: int = 20) -> float:
     arr = np.asarray(recent_returns, dtype=float)
     arr = arr[np.isfinite(arr)]
@@ -252,7 +213,6 @@ def _realized_vol(recent_returns: Sequence[float], window: int = 20) -> float:
         return 0.0
     rv = float(np.std(arr[-window:]))
     return rv if np.isfinite(rv) else 0.0
-
 
 def _blend_vol(base_sigma: float, recent_returns: Sequence[float] | None, kurtosis_excess: float) -> float:
     """Blend ATR-based σ with realised vol; weight realised more under fat tails."""
@@ -265,10 +225,8 @@ def _blend_vol(base_sigma: float, recent_returns: Sequence[float] | None, kurtos
     blended = (1.0 - kurt_weight) * base_sigma + kurt_weight * rv
     return float(np.clip(blended, 0.002, 0.08))
 
-
 def _innov_gaussian(rng, n_sim, n_steps):
     return rng.standard_normal((n_sim, n_steps))
-
 
 def _innov_student_t(rng, n_sim, n_steps, kurtosis_excess: float):
     """Student-t innovations rescaled to unit variance (df from excess kurtosis)."""
@@ -280,7 +238,6 @@ def _innov_student_t(rng, n_sim, n_steps, kurtosis_excess: float):
     raw = rng.standard_t(df=df, size=(n_sim, n_steps))
     raw *= np.sqrt((df - 2.0) / df)  # variance = df/(df-2)
     return raw
-
 
 def _simulate_garch(
     rng, n_sim, n_steps, base_sigma, recent_returns, alpha: float | None = None, beta: float | None = None
@@ -320,31 +277,8 @@ def _simulate_garch(
 
     return eps_out, sigma_out
 
-
 def _simulate_bootstrap(rng, n_sim, n_steps, recent_returns: Sequence[float], drift, sigma):
-    """
-    Stationary bootstrap (Politis & Romano, 1994) with Itô correction.
-
-    Algorithm
-    ─────────
-    Block length L ~ Geometric(p) with mean b = max(2, round(N^{1/3})).
-    Each path starts at a random position and advances by 1 unless a
-    Bernoulli(p) draw triggers a jump to a new random position (modulo N).
-    This preserves short-range serial dependence (volatility clustering,
-    momentum) that the naive i.i.d. resample destroys (ACF → 0).
-
-    Itô correction (Part 4.1)
-    ─────────────────────────
-    After rescaling to the target σ, the resampled returns have variance
-    σ². Because paths are built with exp(), we subtract ½σ² from the
-    drift so E[S_T / S_0] = exp(T · drift) rather than exp(T · (drift + ½σ²)).
-
-    Performance
-    ───────────
-    The inner loop (n_sim × n_steps) is pure Python for clarity; at
-    n_sim=2000, n_steps=10 it runs in < 30 ms on a modern CPU.  NumPy
-    vectorisation would save ~5 ms but add ~40 LOC for marginal gain.
-    """
+    """Stationary bootstrap resample with Ito drift correction."""
     rets = np.asarray(recent_returns, dtype=float)
     rets = rets[np.isfinite(rets)]
     if rets.size < 10:
@@ -375,7 +309,6 @@ def _simulate_bootstrap(rng, n_sim, n_steps, recent_returns: Sequence[float], dr
     # Itô correction: subtract ½σ² per step (σ² = var of rescaled centred)
     return (drift - 0.5 * sigma**2) + out
 
-
 def _simulate_jump(
     rng,
     n_sim,
@@ -386,37 +319,14 @@ def _simulate_jump(
     jump_mean: float = 0.0,
     jump_sigma_mult: float | None = None,
 ):
-    """
-    Merton jump-diffusion LOG-return innovations (Part 4.2).
-
-    Path model:  S_{t+1} = S_t · exp(log_ret_t)
-    where       log_ret_t = (drift_eff − ½σ²) + σ·Z_t + ΣJ_i for each jump
-
-    Compensator for LOG-return paths (Itô + Merton combined):
-    ─────────────────────────────────────────────────────────
-    For Gaussian jumps J ~ N(μ_J, σ_J²) inside an exp() path:
-        E[e^J] = exp(μ_J + ½σ_J²)
-        κ = E[e^J − 1] = exp(μ_J + ½σ_J²) − 1
-
-    The expected price multiplier per step from λ Poisson jumps is
-        exp(λ·κ) (to first order for small λ).
-
-    To keep E[S_T / S_0] = exp(T·drift) we set
-        drift_eff = drift − λ·κ
-
-    and apply the regular Itô correction − ½σ² to the diffusion part.
-
-    The old arithmetic compensator λ·μ_J was correct for the i.i.d.
-    arithmetic model (1 + r formulation) but underestimates the bias for
-    the log-return / exp() formulation, especially for large σ_J.
-    """
+    """Merton jump-diffusion log-return innovations."""
     if jump_intensity is None:
         jump_intensity = cfg.jump_intensity
     if jump_sigma_mult is None:
         jump_sigma_mult = cfg.jump_sigma_mult
     sigma_jump = sigma * jump_sigma_mult
 
-    # Merton compensator for log-return path (Part 4.2)
+    # Merton compensator for log-return path 
     kappa = float(np.exp(jump_mean + 0.5 * sigma_jump**2) - 1.0)
     drift_eff = drift - jump_intensity * kappa
 
@@ -428,7 +338,6 @@ def _simulate_jump(
     jump_mask = rng.random((n_sim, n_steps)) < jump_intensity
     jump_size = jump_mean + sigma_jump * rng.standard_normal((n_sim, n_steps))
     return diffusion + jump_mask * jump_size
-
 
 def _simulate_ensemble(
     rng, n_sim, n_steps, base_sigma, drift, recent_returns: Sequence[float] | None, kurtosis_excess: float
@@ -460,8 +369,8 @@ def _simulate_ensemble(
             if stds.size >= 2 and float(np.mean(stds)) > 0:
                 vov_norm = float(np.clip(np.std(stds) / np.mean(stds), 0.0, 1.0))
 
-    w_garch = 0.30 + 0.25 * vov_norm  # 0.30 – 0.55
-    w_jump = 0.15 + 0.20 * kurt_norm  # 0.15 – 0.35
+    w_garch = 0.30 + 0.25 * vov_norm  # 0.30 - 0.55
+    w_jump = 0.15 + 0.20 * kurt_norm  # 0.15 - 0.35
     w_boot = (1.0 - w_garch - w_jump) if has_history else 0.0
 
     # Guard rails: ensure non-negative & re-normalise
@@ -497,19 +406,13 @@ def _simulate_ensemble(
 
     return w_garch * ret_garch + w_boot * ret_boot + w_jump * ret_jump
 
-
-# ════════════════════════════════════════════════════════════════════════════
 # Microstructure model
 #
 # Two-phase design:
-#   Phase 1: build _MSContext  — calibrate GARCH, derive levels, compute regime
+
 #                                & CVD bias once, before any path is simulated.
-#   Phase 2: step the simulation — every step calls ctx.compute_gravity(S) on the
+
 #                                  full price vector (vectorised across n_sim).
-# ════════════════════════════════════════════════════════════════════════════
-
-# ─── DFA exponent (replaces legacy variance-of-lag Hurst) ───────────────────
-
 
 def _hurst_exponent(ts: Sequence[float]) -> float:
     """
@@ -530,10 +433,6 @@ def _hurst_exponent(ts: Sequence[float]) -> float:
     alpha, _ = dfa(arr)
     return float(np.clip(alpha, 0.0, 1.0))
 
-
-# ─── Volume profile normalisation ────────────────────────────────────────────
-
-
 def _normalise_volume_profile(
     vp: Any,
     p: _MSParams = _PARAMS,
@@ -545,12 +444,11 @@ def _normalise_volume_profile(
       • core.volume_profile.VolumeProfile dataclass      (preferred)
       • {"POC":..., "VAH":..., "VAL":..., "HVNs":[...], "LVNs":[...]}  pre-computed
       • {price_level: volume_at_level}                   raw histogram → derive here
-      • None                                             → graceful fallback
+      • None                                             → skip
     """
     if vp is None:
         return None
 
-    # Case 1 — VolumeProfile dataclass
     if hasattr(vp, "poc") and hasattr(vp, "value_area_high"):
         return (
             float(vp.poc),
@@ -560,7 +458,6 @@ def _normalise_volume_profile(
             [float(x) for x in getattr(vp, "lvn", [])],
         )
 
-    # Case 2 — pre-computed key-levels dict
     if isinstance(vp, Mapping) and "POC" in vp:
         poc = float(vp["POC"])
         return (
@@ -571,7 +468,6 @@ def _normalise_volume_profile(
             [float(x) for x in vp.get("LVNs", [])],
         )
 
-    # Case 3 — raw {price: volume} → derive levels here
     if isinstance(vp, Mapping):
         items = sorted((float(pp), float(v)) for pp, v in vp.items() if v >= 0)
         if not items:
@@ -624,10 +520,6 @@ def _normalise_volume_profile(
 
     return None
 
-
-# ─── GARCH MLE for microstructure (richer than the legacy _calibrate_garch) ──
-
-
 def _calibrate_garch_mle(returns: np.ndarray) -> tuple[float, float, float]:
     """
     Fit GARCH(1,1) by maximum likelihood on a single returns series.
@@ -635,9 +527,9 @@ def _calibrate_garch_mle(returns: np.ndarray) -> tuple[float, float, float]:
 
     Results are cached for 5 minutes keyed by a fingerprint of the returns
     array, so repeated calls inside the poll loop hit the cache instead of
-    re-running scipy.optimize (~50–200 ms saved per poll cycle).
+    re-running scipy.optimize (~50-200 ms saved per poll cycle).
     """
-    # ── Cache lookup ──────────────────────────────────────────────────────────
+
     if returns is not None and len(returns) >= 30:
         cache_key = _garch_cache_key(returns)
         cached = _garch_cache_get(cache_key)
@@ -646,7 +538,6 @@ def _calibrate_garch_mle(returns: np.ndarray) -> tuple[float, float, float]:
     else:
         cache_key = None
 
-    # ── NLL objective (unchanged) ────────────────────────────────────────────
     def _nll(params, r):
         omega, alpha, beta = params
         if omega <= 0 or alpha < 0 or beta < 0 or alpha + beta >= 0.999:
@@ -680,14 +571,9 @@ def _calibrate_garch_mle(returns: np.ndarray) -> tuple[float, float, float]:
         omega = max(1e-10, (1.0 - alpha - beta) * float(np.var(returns)))
         result = float(omega), float(alpha), float(beta)
 
-    # ── Cache store ───────────────────────────────────────────────────────────
     if cache_key is not None:
         _garch_cache_put(cache_key, result)
     return result
-
-
-# ─── Volume / CVD / regime sub-states ────────────────────────────────────────
-
 
 def _compute_volume_state(
     volume_history: Sequence[float] | None,
@@ -726,7 +612,6 @@ def _compute_volume_state(
         validates = (p_trend == 0) or (v_trend * p_trend >= 0)
 
     return vol_mult, validates
-
 
 def _compute_cvd_state(
     cvd_history: Sequence[float] | None,
@@ -781,7 +666,6 @@ def _compute_cvd_state(
         bias *= p.drift_distrust
     return bias, accumulation, distribution
 
-
 def _compute_regime_state(
     rets: np.ndarray,
     p: _MSParams = _PARAMS,
@@ -802,10 +686,6 @@ def _compute_regime_state(
     if p.hurst_mean_rev > H:
         return "mean-reverting", H, p.reg_mr_drift, p.reg_mr_gravity, p.reg_mr_sigma
     return "neutral", H, p.reg_neut_drift, p.reg_neut_gravity, p.reg_neut_sigma
-
-
-# ─── Microstructure simulation context ───────────────────────────────────────
-
 
 @dataclass
 class _MSContext:
@@ -853,13 +733,12 @@ class _MSContext:
     def has_vp(self) -> bool:
         return np.isfinite(self.poc)
 
-    # ── Vectorised gravity ───────────────────────────────────────────────────
     def compute_gravity(self, S: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """
         Vectorised over the (n_sim,) price vector.
 
         Returns
-        -------
+
         gravity : np.ndarray  shape (n_sim,)
             Additive log-return contribution per path at this step.
         sigma_mult : np.ndarray  shape (n_sim,)
@@ -874,13 +753,11 @@ class _MSContext:
         gravity = np.zeros(n)
         smult = np.ones(n)
 
-        # ── LVN air-pocket: kill gravity, boost σ ─────────────────────────
         in_lvn = np.zeros(n, dtype=bool)
         if self.lvns.size:
             d = np.abs(self.lvns[None, :] - S[:, None]) / np.maximum(self.lvns[None, :], 1e-9)
             in_lvn = np.any(d < p.lvn_proximity_pct, axis=1)
 
-        # ── POC pull (strongest) ──────────────────────────────────────────
         near_poc = np.abs(S - self.poc) / max(self.poc, 1e-9) < p.proximity_pct
         gravity = np.where(
             near_poc,
@@ -888,7 +765,6 @@ class _MSContext:
             gravity,
         )
 
-        # ── Nearest-HVN pull (also damps σ) ───────────────────────────────
         near_hvn = np.zeros(n, dtype=bool)
         if self.hvns.size:
             d = np.abs(self.hvns[None, :] - S[:, None]) / np.maximum(self.hvns[None, :], 1e-9)
@@ -903,7 +779,6 @@ class _MSContext:
                 gravity = np.where(near_hvn, gravity + pull, gravity)
                 smult = np.where(near_hvn, smult * p.sigma_hvn_damp, smult)
 
-        # ── VAH / VAL mean-reversion at value-area edges ─────────────────
         # Apply at most one (priority: VAH first, then VAL), matching the
         # original "first match wins" semantics from the spec.
         applied_va = np.zeros(n, dtype=bool)
@@ -914,7 +789,6 @@ class _MSContext:
             gravity = np.where(near, gravity + p.va_gravity * rg * (level - S) / level, gravity)
             applied_va = applied_va | near
 
-        # ── Accumulation / distribution side-pull ─────────────────────────
         if self.accumulation:
             for tgt in (self.val, self.poc):
                 if not np.isfinite(tgt):
@@ -936,7 +810,6 @@ class _MSContext:
                     gravity,
                 )
 
-        # ── Final: LVN paths override everything ─────────────────────────
         if in_lvn.any():
             lvn_smult = p.sigma_lvn_boost * p.lvn_accel_extra
             gravity = np.where(in_lvn, 0.0, gravity)
@@ -944,7 +817,6 @@ class _MSContext:
 
         return gravity, smult
 
-    # ── For surfacing through MCResult ───────────────────────────────────────
     def diagnostics(self) -> dict:
         return {
             "regime": self.regime,
@@ -961,7 +833,6 @@ class _MSContext:
             "garch": {"omega": self.omega, "alpha": self.alpha, "beta": self.beta},
         }
 
-
 def _build_ms_context(
     base_drift: float,
     base_sigma: float,
@@ -973,7 +844,7 @@ def _build_ms_context(
     p: _MSParams = _PARAMS,
 ) -> _MSContext:
     """Compute every once-per-call value the simulation loop will need."""
-    # ── Volume profile levels ───────────────────────────────────────────────
+
     vp_levels = _normalise_volume_profile(volume_profile, p)
     if vp_levels is not None:
         poc, vah, val, hvns_list, lvns_list = vp_levels
@@ -983,7 +854,6 @@ def _build_ms_context(
     hvns = np.asarray(hvns_list, dtype=float) if hvns_list else np.empty(0)
     lvns = np.asarray(lvns_list, dtype=float) if lvns_list else np.empty(0)
 
-    # ── GARCH calibration ───────────────────────────────────────────────────
     rets = np.asarray(recent_returns, dtype=float) if recent_returns is not None else np.array([])
     rets = rets[np.isfinite(rets)] if rets.size else rets
 
@@ -998,14 +868,12 @@ def _build_ms_context(
         omega = (1.0 - alpha - beta) * sigma2_init
         eps_init = 0.0
 
-    # ── Volume σ scaling & validation ───────────────────────────────────────
     vol_sigma_mult, volume_validates = _compute_volume_state(
         volume_history,
         price_history,
         p,
     )
 
-    # ── CVD-driven drift bias ───────────────────────────────────────────────
     cvd_bias, accumulation, distribution = _compute_cvd_state(
         cvd_history,
         price_history,
@@ -1013,7 +881,6 @@ def _build_ms_context(
         p,
     )
 
-    # ── Hurst regime ────────────────────────────────────────────────────────
     regime, hurst, drift_mult, gravity_mult, sigma_mult = _compute_regime_state(rets, p)
 
     return _MSContext(
@@ -1041,7 +908,6 @@ def _build_ms_context(
         distribution=distribution,
         params=p,
     )
-
 
 def _simulate_microstructure(
     rng,
@@ -1075,7 +941,7 @@ def _simulate_microstructure(
         grav, smult = ctx.compute_gravity(paths[:, step])
         sigma_eff = np.clip(sigma_eff * smult, p.sigma_min, p.sigma_max)
 
-        # Total log-return with Itô / Jensen correction (Part 4.1):
+        # Total log-return with Itô / Jensen correction :
         #   Under log-normal GBM, E[exp(μ + σZ)] = exp(μ + ½σ²).
         #   To achieve E[S_{t+1}/S_t] = exp(final_drift) we must set
         #   the log-drift to (final_drift − ½σ²_eff).  Without this
@@ -1087,11 +953,7 @@ def _simulate_microstructure(
 
     return paths
 
-
-# ════════════════════════════════════════════════════════════════════════════
 # Public entry point
-# ════════════════════════════════════════════════════════════════════════════
-
 
 def run(
     current_price: float,
@@ -1120,7 +982,6 @@ def run(
     garch_alpha, garch_beta = _calibrate_garch(recent_returns, cfg.garch_alpha, cfg.garch_beta)
     clip_val = _adaptive_clip(recent_returns, float(cfg.mc_clip))
 
-    # ── Microstructure model owns its own loop (price-dependent gravity) ───
     if model == "microstructure":
         ctx = _build_ms_context(
             base_drift=drift,
@@ -1135,9 +996,7 @@ def run(
         paths = np.where(np.isfinite(paths) & (paths > 0), paths, current_price)
         return _build_mc_result(rng, paths, current_price, model, n_sim, ctx=ctx)
 
-    # ── Other models: produce per-step LOG-returns, then exp-path uniformly ──
-    #
-    # Itô / Jensen bias correction (Part 4.1):
+    # Itô / Jensen bias correction:
     #   All returns here are LOG-returns fed into exp() path building.
     #   For any model with step-vol σ, E[exp(μ + σZ)] = exp(μ + ½σ²).
     #   To keep E[S_T/S_0] = exp(T·drift) we set log_drift = drift − ½σ².
@@ -1188,11 +1047,7 @@ def run(
 
     return _build_mc_result(rng, paths, current_price, model, n_sim)
 
-
-# ════════════════════════════════════════════════════════════════════════════
 # Result builder (shared)
-# ════════════════════════════════════════════════════════════════════════════
-
 
 def _build_mc_result(
     rng,
@@ -1209,7 +1064,7 @@ def _build_mc_result(
     """
     final = paths[:, -1]
 
-    # Probabilities — the "flat" band must scale with the forecast horizon,
+    # Probabilities - the "flat" band must scale with the forecast horizon,
     # otherwise a long horizon always shows ~0 % flat. We use the cross-path
     # standard deviation of returns as a horizon-aware σ proxy and call
     # anything inside 0.25·σ "flat". Falls back to 30 bps when paths are
@@ -1223,7 +1078,7 @@ def _build_mc_result(
     prob_down = float(np.mean(final < current_price - band))
     prob_flat = max(0.0, 1.0 - prob_up - prob_down)
 
-    # Final-price percentiles & summary stats — single batched call
+    # Final-price percentiles & summary stats - single batched call
     p10, p25, med, p75, p90 = (float(v) for v in np.percentile(final, [10, 25, 50, 75, 90]))
     mean = float(np.mean(final))
     expected_return = (mean / current_price - 1.0) * 100 if current_price else 0.0
@@ -1233,11 +1088,10 @@ def _build_mc_result(
     tail_rets = np.sort(rets_final)[:worst_n]
     cvar_5 = float(np.mean(tail_rets)) * 100
 
-    # ── Part 4.5 — Monte Carlo standard errors ───────────────────────────────
     # Binomial SE of the up/down probability estimates:
     #   SE(p̂) = sqrt( p̂·(1−p̂) / n_sim )
     # Multiplied by 100 to match the percentage scale used in MCResult.
-    # At n_sim=2000, p̂=0.5: SE ≈ 1.1 pp — gives honest uncertainty bounds.
+    # At n_sim=2000, p̂=0.5: SE ≈ 1.1 pp - gives honest uncertainty bounds.
     # cvar_5_se is the SE of the tail-mean (sample-mean of the worst-5% bucket):
     #   SE(CVaR) = std(tail_rets) / sqrt(worst_n)  × 100
     prob_up_se = float(np.sqrt(prob_up * (1.0 - prob_up) / n_sim)) * 100.0
@@ -1247,7 +1101,6 @@ def _build_mc_result(
         if worst_n > 1 else 0.0
     )
 
-    # ── Part 4.6 — Exact round-to-100 ───────────────────────────────────────
     # Naïve independent rounding can yield sums of 99.9 or 100.1 depending on
     # how the half-up boundaries fall.  We round each component to 1 d.p., then
     # add the cumulative rounding error to whichever component is largest
@@ -1274,17 +1127,16 @@ def _build_mc_result(
         else:
             pd_r = round(pd_r + rounding_err, 1)
 
-    # Per-step bands — single batched percentile pass
+    # Per-step bands - single batched percentile pass
     band_p10, band_p25, median_path_arr, band_p75, band_p90 = np.percentile(
         paths,
         [10, 25, 50, 75, 90],
         axis=0,
     )
-    # ── Vectorised rounding — 10-50× faster than nested list comprehensions ──
-    # np.round operates on the whole array in one C call; .tolist() is fast.
+        # np.round operates on the whole array in one C call; .tolist() is fast.
     median_path = np.round(median_path_arr, 4).tolist()
 
-    # Subsample 100 paths for the chart payload — vectorised round + tolist
+    # Subsample 100 paths for the chart payload - vectorised round + tolist
     chart_idx = rng.choice(n_sim, size=min(100, n_sim), replace=False)
     paths_sample = np.round(paths[chart_idx], 4).tolist()
 
@@ -1303,7 +1155,7 @@ def _build_mc_result(
         expected_price=round(mean, 4),
         expected_return=round(expected_return, 3),
         cvar_5=round(cvar_5, 3),
-        # Vectorised band rounding — one numpy call each instead of a list comp
+        # Vectorised band rounding - one numpy call each instead of a list comp
         upper_band=np.round(band_p75, 4).tolist(),
         lower_band=np.round(band_p25, 4).tolist(),
         p90_band=np.round(band_p90, 4).tolist(),
@@ -1322,11 +1174,7 @@ def _build_mc_result(
         ms_key_levels=ms["key_levels"] if ms else None,
     )
 
-
-# ════════════════════════════════════════════════════════════════════════════
 # CVD computation helper
-# ════════════════════════════════════════════════════════════════════════════
-
 
 def compute_cvd_from_ohlc(
     opens: Sequence[float],
@@ -1340,7 +1188,7 @@ def compute_cvd_from_ohlc(
       −volume on down-bars (close < open)
        0      on dojis     (close == open)
 
-    Returns the cumulative sum — same length as the inputs.
+    Returns the cumulative sum - same length as the inputs.
     """
     o = np.asarray(opens, dtype=float)
     c = np.asarray(closes, dtype=float)

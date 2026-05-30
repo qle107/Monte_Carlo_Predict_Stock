@@ -1,12 +1,12 @@
-// ══════════════════════════════════════════════════════════════════
+
 // Scanner logic
-// Extracted from templates/dashboard.html during the May 2026 Phase 2 refactor.
+
 // Global state: _scanData, _scanSortKey, _scanSortAsc, _scanFilter, _scanFakeProgress
 // Public functions (used via inline onclick in dashboard.html):
 //   runScanner, setScanSort, filterScan, renderScanTable, loadTicker
 // Depends on globals defined later in main app JS:
 //   currentConfig, applySettings, log
-// ══════════════════════════════════════════════════════════════════
+
 let _scanData    = [];
 let _scanSortKey = 'score';
 let _scanSortAsc = false;
@@ -155,13 +155,12 @@ function buildTopCards(data) {
       </div>
       <div class="stc-score"  style="color:${isUp ? 'var(--green)' : 'var(--red)'}">Score ${scoreStr}</div>
       <div class="stc-regime">${regDisp}</div>
-      <div class="stc-price">$${typeof r.price === 'number' ? r.price.toFixed(2) : '—'}  · RSI ${(r.rsi||0).toFixed(0)}</div>
+      <div class="stc-price">$${typeof r.price === 'number' ? r.price.toFixed(2) : '-'}  · RSI ${(r.rsi||0).toFixed(0)}</div>
     `;
     wrap.appendChild(card);
   });
 }
 
-// ── Sort ─────────────────────────────────────────────────────────
 function setScanSort(key) {
   if (_scanSortKey === key) { _scanSortAsc = !_scanSortAsc; }
   else { _scanSortKey = key; _scanSortAsc = key === 'ticker'; }
@@ -172,7 +171,6 @@ function setScanSort(key) {
   renderScanTable();
 }
 
-// ── Filter ───────────────────────────────────────────────────────
 function filterScan(type) {
   _scanFilter = type;
   ['sc-up','sc-down','sc-neut','sc-all'].forEach(id => {
@@ -183,7 +181,6 @@ function filterScan(type) {
   renderScanTable();
 }
 
-// ── Render table ─────────────────────────────────────────────────
 function renderScanTable() {
   let rows = [..._scanData];
 
@@ -196,7 +193,7 @@ function renderScanTable() {
   const q = (document.getElementById('scan-search')?.value || '').toUpperCase().trim();
   if (q) rows = rows.filter(r => r.ticker.includes(q));
 
-  // Sort — supports nested trade_setup fields via adapter map
+  // Sort - supports nested trade_setup fields via adapter map
   rows.sort((a, b) => {
     const adapter = _tsSortAdapters[_scanSortKey];
     let av = adapter ? adapter(a) : a[_scanSortKey];
@@ -244,39 +241,38 @@ function renderScanTable() {
     const barW  = Math.round(Math.min(Math.abs(score) * 100, 100));
     const barC  = score >= 0 ? 'rgba(63,185,80,.7)' : 'rgba(248,81,73,.7)';
 
-    // ── Trade Setup cells ──────────────────────────────────────────
     const ts = r.trade_setup || {};
     const tsValid = ts.valid === true;
 
     let tsSideHtml, tsEntryHtml, tsSlHtml, tsTp1Html, tsTp2Html, tsRrHtml, tsProbHtml;
 
     if (!tsValid) {
-      // No entry — show reason as tooltip
+      // No entry - show reason as tooltip
       const reason = ts.reason || 'Criteria not met';
       const shortReason = reason.length > 28 ? reason.slice(0, 28) + '…' : reason;
       tsSideHtml  = `<span title="${reason}" style="color:var(--muted);font-size:10px;cursor:help;">⊘ No Entry</span>`;
-      tsEntryHtml = `<span style="color:var(--muted);">—</span>`;
-      tsSlHtml    = `<span style="color:var(--muted);">—</span>`;
-      tsTp1Html   = `<span style="color:var(--muted);">—</span>`;
-      tsTp2Html   = `<span style="color:var(--muted);">—</span>`;
-      tsRrHtml    = `<span style="color:var(--muted);">—</span>`;
-      tsProbHtml  = `<span style="color:var(--muted);" title="${shortReason}">—</span>`;
+      tsEntryHtml = `<span style="color:var(--muted);">-</span>`;
+      tsSlHtml    = `<span style="color:var(--muted);">-</span>`;
+      tsTp1Html   = `<span style="color:var(--muted);">-</span>`;
+      tsTp2Html   = `<span style="color:var(--muted);">-</span>`;
+      tsRrHtml    = `<span style="color:var(--muted);">-</span>`;
+      tsProbHtml  = `<span style="color:var(--muted);" title="${shortReason}">-</span>`;
     } else {
       const side   = ts.side || 'long';
       const isLong = side === 'long';
       const sideColor = isLong ? 'var(--green)' : 'var(--red)';
       const sideIcon  = isLong ? '▲ LONG' : '▼ SHORT';
 
-      const fmt = v => v != null ? '$' + Number(v).toFixed(2) : '—';
-      const fmtPct = v => v != null ? (v >= 0 ? '+' : '') + Number(v).toFixed(1) + '%' : '—';
+      const fmt = v => v != null ? '$' + Number(v).toFixed(2) : '-';
+      const fmtPct = v => v != null ? (v >= 0 ? '+' : '') + Number(v).toFixed(1) + '%' : '-';
 
-      // Use best R:R (tighter of ATR vs fixed stop) — same logic as backend sl_recommended
+      // Use best R:R (tighter of ATR vs fixed stop) - same logic as backend sl_recommended
       const rr_atr = ts.rr_atr ?? 0;
       const rr_pct = ts.rr_pct ?? 0;
       const rr     = Math.max(rr_atr, rr_pct);                      // best R:R
       const rrC    = rr >= 2.0 ? 'var(--green)' : rr >= 1.3 ? 'var(--amber)' : 'var(--red)';
-      const prob1  = ts.prob_tp1 != null ? Math.round(ts.prob_tp1 * 100) + '%' : '—';
-      const probSlAtr = ts.prob_sl_atr != null ? Math.round(ts.prob_sl_atr * 100) + '%' : '—';
+      const prob1  = ts.prob_tp1 != null ? Math.round(ts.prob_tp1 * 100) + '%' : '-';
+      const probSlAtr = ts.prob_sl_atr != null ? Math.round(ts.prob_sl_atr * 100) + '%' : '-';
 
       // Show the recommended (tighter) SL in the table cell
       const recSL   = ts.sl_recommended === 'pct' ? ts.sl_pct : ts.sl_atr;
@@ -299,7 +295,7 @@ function renderScanTable() {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td style="font-weight:700; color:var(--blue); font-size:13px;">${r.ticker}</td>
-      <td style="color:var(--text);">$${typeof r.price==='number' ? r.price.toFixed(2) : '—'}</td>
+      <td style="color:var(--text);">$${typeof r.price==='number' ? r.price.toFixed(2) : '-'}</td>
       <td style="white-space:nowrap;">
         <span style="display:inline-block;width:36px;height:4px;background:var(--surface2);border-radius:2px;vertical-align:middle;margin-right:6px;overflow:hidden;">
           <span style="display:block;height:100%;width:${barW}%;background:${barC};border-radius:2px;"></span>
@@ -309,25 +305,25 @@ function renderScanTable() {
       <td style="color:${score>0.1?'var(--green)':score<-0.1?'var(--red)':'var(--muted)'}; font-size:11px;">
         ${dirLabel[r.direction] || r.direction}</td>
       <td style="color:${regC[r.regime]||'var(--muted)'}; font-size:11px; text-transform:uppercase; letter-spacing:.3px;">
-        ${(r.regime||'—').replace(/_/g,' ')}</td>
-      <td style="font-size:11px; color:var(--muted);">${r.signal_label||'—'}</td>
+        ${(r.regime||'-').replace(/_/g,' ')}</td>
+      <td style="font-size:11px; color:var(--muted);">${r.signal_label||'-'}</td>
       <td style="color:${r.confidence>0.6?'var(--green)':r.confidence>0.35?'var(--text)':'var(--muted)'};">
-        ${r.confidence!=null ? Math.round(r.confidence*100)+'%' : '—'}</td>
+        ${r.confidence!=null ? Math.round(r.confidence*100)+'%' : '-'}</td>
       <td style="color:${rsiC(r.rsi)}; font-weight:${(r.rsi>70||r.rsi<30)?700:400};">
-        ${r.rsi!=null ? r.rsi.toFixed(1) : '—'}</td>
+        ${r.rsi!=null ? r.rsi.toFixed(1) : '-'}</td>
       <td style="color:${r.adx>25?'var(--amber)':'var(--muted)'}; font-weight:${r.adx>25?700:400};">
-        ${r.adx!=null ? r.adx.toFixed(1) : '—'}</td>
+        ${r.adx!=null ? r.adx.toFixed(1) : '-'}</td>
       <td style="color:${pctC(r.bb_position, false)};">
-        ${r.bb_position!=null ? (r.bb_position>=0?'+':'')+r.bb_position.toFixed(2) : '—'}</td>
+        ${r.bb_position!=null ? (r.bb_position>=0?'+':'')+r.bb_position.toFixed(2) : '-'}</td>
       <td style="color:${pctC(r.obv_slope)};">
-        ${r.obv_slope!=null ? (r.obv_slope>=0?'+':'')+r.obv_slope.toFixed(2) : '—'}</td>
+        ${r.obv_slope!=null ? (r.obv_slope>=0?'+':'')+r.obv_slope.toFixed(2) : '-'}</td>
       <td style="color:${r.price_vs_52w>=-2?'var(--green)':r.price_vs_52w>-10?'var(--text)':'var(--red)'};">
-        ${r.price_vs_52w!=null ? (r.price_vs_52w>=0?'+':'')+r.price_vs_52w.toFixed(1)+'%' : '—'}</td>
+        ${r.price_vs_52w!=null ? (r.price_vs_52w>=0?'+':'')+r.price_vs_52w.toFixed(1)+'%' : '-'}</td>
       <td style="color:${pctC(r.ema200_dist, false)};">
-        ${r.ema200_dist!=null ? (r.ema200_dist>=0?'+':'')+r.ema200_dist.toFixed(1)+'%' : '—'}</td>
+        ${r.ema200_dist!=null ? (r.ema200_dist>=0?'+':'')+r.ema200_dist.toFixed(1)+'%' : '-'}</td>
       <td style="color:${r.hurst>0.6?'var(--green)':r.hurst<0.4?'var(--amber)':'var(--muted)'};">
-        ${r.hurst!=null ? r.hurst.toFixed(2) : '—'}</td>
-      <!-- ── Trade Setup columns ── -->
+        ${r.hurst!=null ? r.hurst.toFixed(2) : '-'}</td>
+      <!-- Trade setup columns -->
       <td style="border-left:2px solid rgba(88,166,255,.15);">${tsSideHtml}</td>
       <td>${tsEntryHtml}</td>
       <td>${tsSlHtml}</td>
@@ -350,7 +346,6 @@ function renderScanTable() {
   });
 }
 
-// ── Sort helpers for trade_setup nested fields ──────────────────────
 const _tsSortAdapters = {
   ts_side:    r => (r.trade_setup?.side    || 'none'),
   ts_entry:   r => (r.trade_setup?.entry   ?? -9999),
@@ -365,7 +360,6 @@ const _tsSortAdapters = {
   ts_prob_tp1:r => (r.trade_setup?.prob_tp1 ?? -9999),
 };
 
-// ── Load ticker from scanner ──────────────────────────────────────
 async function loadTicker(ticker) {
   // Sync ticker + interval from scanner
   const scanInterval = document.getElementById('scan-interval').value;

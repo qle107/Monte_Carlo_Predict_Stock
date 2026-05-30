@@ -1,55 +1,4 @@
-"""
-core/zones.py — Demand / Supply zone detector
-───────────────────────────────────────────────
-Identifies key price zones where institutional buyers (demand) or sellers
-(supply) have historically stepped in, causing notable reversals.
-
-Algorithm
-─────────
-1. Find swing pivot highs / lows using a look-left / look-right window.
-   A pivot low = potential demand zone origin.
-   A pivot high = potential supply zone origin.
-
-2. Cluster pivots that fall within `cluster_atr` × ATR of each other into a
-   single zone (centred on their volume-weighted mean if volume is given,
-   plain mean otherwise).
-
-3. Score each zone (0–1):
-   • touches    : how many bars overlapped the band (excluding formation),
-                  saturating at MAX_TOUCH_COUNT touches
-   • recency    : zones formed near the right edge of the window score higher
-   • freshness  : zones that have NEVER been re-tested after formation
-                  score higher than already-tested ones
-   • depth      : the candle that formed the zone had a strong body
-                  (close far from open relative to range) → real rejection
-
-4. Remove zones that have been decisively broken by price action AFTER
-   formation. A demand zone is broken if any subsequent bar's *low* trades
-   more than `break_atr` × ATR below the zone level — using `low` (not
-   `close`) catches intraday violations that close-only filters miss.
-
-5. Select the nearest meaningful demand (below price) and supply (above
-   price) zone for the dashboard.
-
-Public API (unchanged)
-──────────────────────
-  detect_zones(df) -> ZoneResult
-  Zone, ZoneResult dataclasses
-
-Refactor notes (vs. the previous version)
-─────────────────────────────────────────
-  • Fixed: line that used undefined `touches` instead of `z.touches`,
-    which silently zeroed every zone's touch score.
-  • Fixed: depth scoring was a flat 0.1; now uses real candle body% at the
-    formation bar.
-  • Fixed: broken-zone filter now inspects intraday lows/highs, not closes.
-  • Fixed: bare `except Exception` no longer hides bugs — errors are logged.
-  • Fixed: cluster centroid is now stable (uses running mean update), so
-    spread pivots no longer drift the boundary outward unexpectedly.
-  • Improved: nearest-demand selection no longer drops a close-and-decent
-    zone in favour of a strong-but-distant one; we pick the closest zone
-    above a minimum-strength floor.
-"""
+"""Demand and supply zone detection."""
 
 from __future__ import annotations
 
@@ -64,37 +13,26 @@ from config import cfg
 
 logger = logging.getLogger(__name__)
 
-
-# ─── Tunables (read from cfg at runtime) ─────────────────────────────────────
-
-
 def _pivot_wing() -> int:
     return int(cfg.zone_pivot_window)
-
 
 def _cluster_atr() -> float:
     return float(cfg.zone_cluster_atr)
 
-
 def _touch_atr() -> float:
     return float(cfg.zone_touch_atr)
-
 
 def _break_atr() -> float:
     return float(cfg.zone_break_atr)
 
-
 def _max_demand() -> int:
     return int(cfg.zone_max_demand)
-
 
 def _max_supply() -> int:
     return int(cfg.zone_max_supply)
 
-
 def _zone_half_atr() -> float:
     return float(cfg.zone_width_atr)
-
 
 # Scoring constants. They sum to 1.0 by design so a perfect zone scores 1.0.
 _W_TOUCHES = 0.35
@@ -109,16 +47,12 @@ _MAX_TOUCH_COUNT = 4
 # Filters out near-noise zones that would otherwise win on proximity alone.
 _MIN_NEAREST_STRENGTH = 0.30
 
-
-# ─── Dataclasses ─────────────────────────────────────────────────────────────
-
-
 @dataclass
 class Zone:
     level: float
     low: float
     high: float
-    strength: float  # 0–1
+    strength: float  # 0-1
     touches: int
     fresh: bool
     zone_type: str  # "demand" | "supply"
@@ -126,7 +60,6 @@ class Zone:
 
     def to_dict(self) -> dict:
         return asdict(self)
-
 
 @dataclass
 class ZoneResult:
@@ -146,10 +79,6 @@ class ZoneResult:
             "price_context": self.price_context,
             "atr": round(self.atr, 4),
         }
-
-
-# ─── ATR helper ──────────────────────────────────────────────────────────────
-
 
 def _atr(df: pd.DataFrame, period: int = 14) -> float:
     """Average True Range as a dollar value (simple moving average over `period`)."""
@@ -171,10 +100,6 @@ def _atr(df: pd.DataFrame, period: int = 14) -> float:
     if tr.size == 0:
         return float(c[-1]) * 0.015
     return float(np.mean(tr[-period:]))
-
-
-# ─── Pivot finder ────────────────────────────────────────────────────────────
-
 
 def _find_pivots(
     highs: np.ndarray,
@@ -198,10 +123,6 @@ def _find_pivots(
         if lows[i] <= win_l.min():
             pl.append((i, float(lows[i])))
     return ph, pl
-
-
-# ─── Cluster pivots into zones ───────────────────────────────────────────────
-
 
 def _cluster(
     pivots: Sequence[tuple[int, float]],
@@ -241,7 +162,7 @@ def _cluster(
 
     for idx, price in sorted_p[1:]:
         # Compare against the seed of the *current* cluster, not its running
-        # mean — keeps cluster width bounded by `band` regardless of size.
+        # mean - keeps cluster width bounded by `band` regardless of size.
         if abs(price - seed_price) <= band:
             idxs.append(idx)
             lvls.append(price)
@@ -253,10 +174,6 @@ def _cluster(
 
     zones.append(_flush())
     return zones
-
-
-# ─── Candle body strength (for depth scoring) ────────────────────────────────
-
 
 def _body_strength(df: pd.DataFrame, bar_idx: int) -> float:
     """
@@ -274,10 +191,6 @@ def _body_strength(df: pd.DataFrame, bar_idx: int) -> float:
     except Exception:
         return 0.0
 
-
-# ─── Score zones ─────────────────────────────────────────────────────────────
-
-
 def _score_zones(
     zones: list[Zone],
     df: pd.DataFrame,
@@ -293,19 +206,17 @@ def _score_zones(
     touch_band = atr * _touch_atr()
 
     for z in zones:
-        # ── Touches (vectorised) ─────────────────────────────────────────
+
         touching = (lows <= z.level + touch_band) & (highs >= z.level - touch_band)
         if 0 <= z.bar_idx < touching.size:
             touching[z.bar_idx] = False  # exclude formation bar
         z.touches = int(touching.sum())
 
-        # ── Fresh: any touch on a bar AFTER the formation bar? ──────────
         if z.bar_idx + 1 < touching.size:
             z.fresh = not bool(touching[z.bar_idx + 1 :].any())
         else:
             z.fresh = True
 
-        # ── Strength components (each in [0, 1]) ─────────────────────────
         touch_score = min(z.touches / _MAX_TOUCH_COUNT, 1.0)
         recency_score = z.bar_idx / max(n_bars - 1, 1)  # 0 = oldest, 1 = newest
         fresh_score = 1.0 if z.fresh else 0.0
@@ -319,10 +230,6 @@ def _score_zones(
             3,
         )
 
-
-# ─── Filter broken zones ─────────────────────────────────────────────────────
-
-
 def _remove_broken(
     zones: list[Zone],
     highs: np.ndarray,
@@ -334,7 +241,7 @@ def _remove_broken(
     `break_atr` × ATR below the zone level. Supply uses subsequent *highs*.
 
     Using intraday low / high (not close) catches the common case where
-    price violates the zone, prints a long wick, and closes back inside —
+    price violates the zone, prints a long wick, and closes back inside -
     which still implies the zone is no longer a clean defended level.
     """
     if not zones:
@@ -345,7 +252,7 @@ def _remove_broken(
     for z in zones:
         after_start = z.bar_idx + 1
         if after_start >= lows.size:
-            surviving.append(z)  # nothing after — can't be broken
+            surviving.append(z)  # nothing after - can't be broken
             continue
 
         if z.zone_type == "demand":
@@ -358,10 +265,6 @@ def _remove_broken(
 
     return surviving
 
-
-# ─── Nearest-zone selection ──────────────────────────────────────────────────
-
-
 def _select_nearest(
     zones: list[Zone],
     price: float,
@@ -371,7 +274,7 @@ def _select_nearest(
     """
     Pick the closest zone on the requested side of price that meets a
     minimum strength floor. If no zone clears the floor, fall back to the
-    closest zone of any strength — the dashboard still wants something to
+    closest zone of any strength - the dashboard still wants something to
     show, but the floor stops weak noise zones from winning.
     """
     if not zones:
@@ -390,9 +293,6 @@ def _select_nearest(
     strong = [z for z in candidates if z.strength >= _MIN_NEAREST_STRENGTH]
     return strong[0] if strong else candidates[0]
 
-
-# ─── Main entry point ─────────────────────────────────────────────────────────
-
 _EMPTY = ZoneResult(
     demand_zones=[],
     supply_zones=[],
@@ -402,13 +302,12 @@ _EMPTY = ZoneResult(
     atr=0.0,
 )
 
-
 def detect_zones(df: pd.DataFrame) -> ZoneResult:
     """
     Detect demand and supply zones from OHLCV data.
 
     Parameters
-    ----------
+
     df : pd.DataFrame with columns open, high, low, close, volume (volume optional).
          At least 10 rows recommended; below that, returns an empty result.
     """
@@ -428,33 +327,26 @@ def detect_zones(df: pd.DataFrame) -> ZoneResult:
         if atr <= 0 or not np.isfinite(atr):
             return _EMPTY
 
-        # 1. Pivots
         pivot_highs, pivot_lows = _find_pivots(highs, lows, wing=_pivot_wing())
 
-        # 2. Cluster into zones
         demand_zones = _cluster(pivot_lows, atr, "demand")
         supply_zones = _cluster(pivot_highs, atr, "supply")
 
-        # 3. Score
         _score_zones(demand_zones, df, lows, highs, atr, n)
         _score_zones(supply_zones, df, lows, highs, atr, n)
 
-        # 4. Remove decisively broken zones
         demand_zones = _remove_broken(demand_zones, highs, lows, atr)
         supply_zones = _remove_broken(supply_zones, highs, lows, atr)
 
-        # 5. Limit to N strongest, but keep enough that "nearest" has options
         demand_zones.sort(key=lambda z: z.strength, reverse=True)
         supply_zones.sort(key=lambda z: z.strength, reverse=True)
         demand_zones = demand_zones[: _max_demand()]
         supply_zones = supply_zones[: _max_supply()]
 
-        # 6. Nearest zone selection
         touch_band = atr * _touch_atr()
         nearest_demand = _select_nearest(demand_zones, price, side="below", touch_band=touch_band)
         nearest_supply = _select_nearest(supply_zones, price, side="above", touch_band=touch_band)
 
-        # 7. Price context
         at_demand = nearest_demand is not None and abs(price - nearest_demand.level) <= touch_band
         at_supply = nearest_supply is not None and abs(price - nearest_supply.level) <= touch_band
 

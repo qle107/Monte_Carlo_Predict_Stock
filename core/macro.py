@@ -1,31 +1,4 @@
-"""
-core/macro.py
-Fetches macroeconomic indicators that influence stock prices.
-
-Data sources (priority order per indicator):
-  1. FRED API      — if FRED_API_KEY env var is set (best coverage, free key at fred.stlouisfed.org)
-  2. BLS Public API — CPI, PPI, Unemployment (free, no key required)
-  3. yfinance      — 10-Year Treasury (^TNX), short-term rates (^IRX)
-  4. World Bank API — GDP growth (free, no key)
-  5. N/A fallback  — gracefully returned when all sources fail
-
-Indicators returned:
-  - CPI            Consumer Price Index (YoY %)          FRED: CPIAUCSL
-  - PPI            Producer Price Index Final Demand      FRED: PPIFID / BLS: WPSFD49104
-  - Core PCE       Fed's preferred inflation gauge (YoY%) FRED: PCEPILFE
-  - Fed Rate       Federal Funds Rate                     FRED: FEDFUNDS / yfinance ^IRX
-  - 10Y Yield      10-Year Treasury Yield                 FRED: DGS10   / yfinance ^TNX
-  - GDP            Real GDP Growth QoQ annualised %       FRED: A191RL1Q225SBEA / World Bank
-  - Unemployment   Unemployment Rate                      FRED: UNRATE  / BLS: LNS14000000
-  - ISM Mfg PMI   ISM Manufacturing PMI                  FRED: NAPM
-
-Each indicator includes:
-  - current / previous  numeric values
-  - arrow               "↑" | "↓" | "→"  (vs prior reading)
-  - impact              "bullish" | "bearish" | "neutral"
-  - unit                "%" or index label
-  - description         one-sentence market-impact explanation
-"""
+"""Macroeconomic indicator fetcher."""
 
 from __future__ import annotations
 
@@ -40,15 +13,12 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-
-# ── TTL cache ─────────────────────────────────────────────────────────────────
-# Macro data is released monthly / quarterly — 4-hour TTL is generous but prevents
+# Macro data is released monthly / quarterly - 4-hour TTL is generous but prevents
 # hammering free public APIs on every poll loop pass.
 
 _CACHE_TTL = 4 * 3600.0  # seconds
 _cache_lock = threading.RLock()
 _macro_cache: dict = {}  # key → (data, expire_monotonic)
-
 
 def _cache_get(key: str):
     with _cache_lock:
@@ -61,7 +31,6 @@ def _cache_get(key: str):
             return None
         return data
 
-
 def _cache_put(key: str, data) -> None:
     with _cache_lock:
         now = time.monotonic()
@@ -70,11 +39,8 @@ def _cache_put(key: str, data) -> None:
             del _macro_cache[k]
         _macro_cache[key] = (data, now + _CACHE_TTL)
 
-
-# ── Impact classifiers ────────────────────────────────────────────────────────
 # Each function maps (current, previous) → "bullish" | "bearish" | "neutral".
 # Thresholds are based on widely-used rule-of-thumb market heuristics.
-
 
 def _cpi_impact(cur: float | None, _prev) -> str:
     """High CPI → Fed hikes → equity multiples compress → bearish."""
@@ -86,7 +52,6 @@ def _cpi_impact(cur: float | None, _prev) -> str:
         return "bullish"
     return "neutral"
 
-
 def _ppi_impact(cur: float | None, _prev) -> str:
     """High PPI → upstream cost pressure → margin squeeze → bearish."""
     if cur is None:
@@ -97,9 +62,8 @@ def _ppi_impact(cur: float | None, _prev) -> str:
         return "bullish"
     return "neutral"
 
-
 def _pce_impact(cur: float | None, _prev) -> str:
-    """Fed's 2 % target — above target → rate hikes → bearish."""
+    """Fed's 2 % target - above target → rate hikes → bearish."""
     if cur is None:
         return "neutral"
     if cur > 2.5:
@@ -107,7 +71,6 @@ def _pce_impact(cur: float | None, _prev) -> str:
     if cur < 1.8:
         return "bullish"
     return "neutral"
-
 
 def _fed_rate_impact(cur: float | None, prev: float | None) -> str:
     """High absolute level AND recent hikes → bearish; cuts → bullish."""
@@ -121,7 +84,6 @@ def _fed_rate_impact(cur: float | None, prev: float | None) -> str:
         return "bullish"
     return "neutral"
 
-
 def _yield_10y_impact(cur: float | None, prev: float | None) -> str:
     """Rising yields compress equity P/E multiples → bearish for stocks."""
     if cur is None:
@@ -134,7 +96,6 @@ def _yield_10y_impact(cur: float | None, prev: float | None) -> str:
         return "bullish"
     return "neutral"
 
-
 def _gdp_impact(cur: float | None, _prev) -> str:
     """Strong growth → earnings expansion → bullish; contraction → bearish."""
     if cur is None:
@@ -144,7 +105,6 @@ def _gdp_impact(cur: float | None, _prev) -> str:
     if cur < 0.0:
         return "bearish"
     return "neutral"
-
 
 def _unemployment_impact(cur: float | None, prev: float | None) -> str:
     """Rising unemployment → weakening consumer → bearish; tight labour → bullish."""
@@ -157,7 +117,6 @@ def _unemployment_impact(cur: float | None, prev: float | None) -> str:
         return "bullish"
     return "neutral"
 
-
 def _pmi_impact(cur: float | None, _prev) -> str:
     """PMI >50 = expansion (bullish); <50 = contraction (bearish)."""
     if cur is None:
@@ -167,7 +126,6 @@ def _pmi_impact(cur: float | None, _prev) -> str:
     if cur < 48.0:
         return "bearish"
     return "neutral"
-
 
 def _trend_arrow(cur: float | None, prev: float | None) -> str:
     """Visual arrow comparing current reading to prior period."""
@@ -179,11 +137,7 @@ def _trend_arrow(cur: float | None, prev: float | None) -> str:
         return "↓"
     return "→"
 
-
-# ── FRED API ──────────────────────────────────────────────────────────────────
-
 _FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
-
 
 def _fetch_fred_levels(series_id: str, limit: int = 14) -> list[float]:
     """
@@ -219,14 +173,12 @@ def _fetch_fred_levels(series_id: str, limit: int = 14) -> list[float]:
         logger.debug("[macro] FRED %s failed: %s", series_id, exc)
         return []
 
-
 def _fred_latest_two(series_id: str) -> tuple[float | None, float | None]:
     """Convenience: return (current, previous) from a FRED level series."""
     vals = _fetch_fred_levels(series_id, limit=2)
     cur = vals[0] if len(vals) > 0 else None
     prev = vals[1] if len(vals) > 1 else None
     return cur, prev
-
 
 def _fred_yoy(series_id: str) -> tuple[float | None, float | None]:
     """
@@ -244,8 +196,6 @@ def _fred_yoy(series_id: str) -> tuple[float | None, float | None]:
     except ZeroDivisionError:
         return None, None
 
-
-# ── BLS Public API (free, no key required) ────────────────────────────────────
 # Registration is optional for higher rate limits.
 
 _BLS_API_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
@@ -255,7 +205,6 @@ _BLS_SERIES = {
     "PPI": "WPSFD49104",  # PPI Final Demand (index level)
     "Unemployment": "LNS14000000",  # Civilian Unemployment Rate (%)
 }
-
 
 def _fetch_bls(series_key: str) -> tuple[float | None, float | None]:
     """
@@ -294,7 +243,6 @@ def _fetch_bls(series_key: str) -> tuple[float | None, float | None]:
     except Exception as exc:
         logger.debug("[macro] BLS %s failed: %s", series_key, exc)
         return None, None
-
 
 def _bls_yoy(series_key: str) -> tuple[float | None, float | None]:
     """
@@ -335,10 +283,6 @@ def _bls_yoy(series_key: str) -> tuple[float | None, float | None]:
         logger.debug("[macro] BLS YoY %s failed: %s", series_key, exc)
         return None, None
 
-
-# ── yfinance fallbacks ────────────────────────────────────────────────────────
-
-
 def _fetch_yf_rate(ticker: str) -> tuple[float | None, float | None]:
     """
     Fetch current and ~1-month-ago close from yfinance.
@@ -357,10 +301,6 @@ def _fetch_yf_rate(ticker: str) -> tuple[float | None, float | None]:
     except Exception as exc:
         logger.debug("[macro] yfinance %s failed: %s", ticker, exc)
         return None, None
-
-
-# ── World Bank (GDP) ──────────────────────────────────────────────────────────
-
 
 def _fetch_worldbank_gdp() -> tuple[float | None, float | None]:
     """
@@ -387,10 +327,6 @@ def _fetch_worldbank_gdp() -> tuple[float | None, float | None]:
         logger.debug("[macro] World Bank GDP failed: %s", exc)
         return None, None
 
-
-# ── Indicator dict builder ────────────────────────────────────────────────────
-
-
 def _indicator(
     name: str,
     full_name: str,
@@ -411,15 +347,11 @@ def _indicator(
         "arrow": _trend_arrow(cur, prev),  # "↑" | "↓" | "→"
     }
 
-
-# ── Public entry point ────────────────────────────────────────────────────────
-
-
 def fetch_macro_indicators(force_refresh: bool = False) -> dict:
     """
     Fetch all macroeconomic indicators.
 
-    Results are cached for 4 hours — macro data is released monthly/quarterly
+    Results are cached for 4 hours - macro data is released monthly/quarterly
     so re-fetching every poll cycle would be wasteful and may hit rate limits.
 
     Set force_refresh=True to bypass the cache (e.g. on user-initiated reload).
@@ -443,7 +375,6 @@ def fetch_macro_indicators(force_refresh: bool = False) -> dict:
     fred_key = bool(os.getenv("FRED_API_KEY", "").strip())
     indicators: list[dict] = []
 
-    # ── 1. CPI (Consumer Price Index — YoY %) ────────────────────────────────
     # FRED CPIAUCSL is a monthly index level; compute YoY % ourselves.
     # BLS CUUR0000SA0 is the same series via the BLS API.
     if fred_key:
@@ -462,7 +393,6 @@ def fetch_macro_indicators(force_refresh: bool = False) -> dict:
         )
     )
 
-    # ── 2. PPI (Producer Price Index — Final Demand) ──────────────────────────
     # FRED PPIFID is a level; compute MoM % change for display.
     if fred_key:
         ppi_levels = _fetch_fred_levels("PPIFID", limit=14)
@@ -478,7 +408,7 @@ def fetch_macro_indicators(force_refresh: bool = False) -> dict:
     indicators.append(
         _indicator(
             "PPI",
-            "Producer Price Index — Final Demand (YoY %)",
+            "Producer Price Index - Final Demand (YoY %)",
             ppi_cur,
             ppi_prev,
             "% YoY",
@@ -487,7 +417,6 @@ def fetch_macro_indicators(force_refresh: bool = False) -> dict:
         )
     )
 
-    # ── 3. Core PCE (YoY %) ──────────────────────────────────────────────────
     # FRED PCEPILFE is a monthly index level.
     if fred_key:
         pce_cur, pce_prev = _fred_yoy("PCEPILFE")
@@ -505,7 +434,6 @@ def fetch_macro_indicators(force_refresh: bool = False) -> dict:
         )
     )
 
-    # ── 4. Federal Funds Rate ─────────────────────────────────────────────────
     # FRED FEDFUNDS: effective federal funds rate (monthly average, %).
     # Fallback: ^IRX is the 13-week T-bill, a close proxy.
     if fred_key:
@@ -524,7 +452,6 @@ def fetch_macro_indicators(force_refresh: bool = False) -> dict:
         )
     )
 
-    # ── 5. 10-Year Treasury Yield ─────────────────────────────────────────────
     # FRED DGS10: daily 10-year constant maturity yield (%).
     # Fallback: yfinance ^TNX (10-year T-note yield %).
     if fred_key:
@@ -543,7 +470,6 @@ def fetch_macro_indicators(force_refresh: bool = False) -> dict:
         )
     )
 
-    # ── 6. Real GDP Growth (QoQ Annualised %) ────────────────────────────────
     # FRED A191RL1Q225SBEA: quarterly real GDP growth rate (annualised, %).
     # Fallback: World Bank annual GDP growth.
     if fred_key:
@@ -562,7 +488,6 @@ def fetch_macro_indicators(force_refresh: bool = False) -> dict:
         )
     )
 
-    # ── 7. Unemployment Rate ──────────────────────────────────────────────────
     # FRED UNRATE: monthly civilian unemployment rate (%).
     # BLS LNS14000000: same series via BLS API.
     if fred_key:
@@ -581,7 +506,6 @@ def fetch_macro_indicators(force_refresh: bool = False) -> dict:
         )
     )
 
-    # ── 8. ISM Manufacturing PMI ──────────────────────────────────────────────
     # FRED NAPM: ISM Manufacturing PMI (index, 50 = neutral).
     # Only available via FRED (no free public alternative).
     if fred_key:
@@ -608,7 +532,7 @@ def fetch_macro_indicators(force_refresh: bool = False) -> dict:
         "data_note": (
             "Full coverage active (FRED API key detected)."
             if fred_key
-            else "Partial coverage — set FRED_API_KEY env var for CPI/PPI/PCE/GDP/ISM data. "
+            else "Partial coverage - set FRED_API_KEY env var for CPI/PPI/PCE/GDP/ISM data. "
             "10Y yield and Fed rate proxy are sourced from yfinance (^TNX / ^IRX)."
         ),
     }

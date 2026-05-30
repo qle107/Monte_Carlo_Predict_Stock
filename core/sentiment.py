@@ -1,24 +1,4 @@
-"""
-core/sentiment.py — Social sentiment + options flow aggregator.
-
-Sources
--------
-* Reddit         — r/wallstreetbets, r/options, r/stocks, r/investing
-                   Public JSON API (no auth, no API key required)
-* Inverse Cramer — Google News RSS for Jim Cramer / CNBC Mad Money mentions
-                   Detects Cramer's buy/sell signal then INVERTS it
-* Options flow   — yfinance call/put volume & open interest (real market data)
-
-Extracted signals per post/message
------------------------------------
-* Sentiment score  [-1 bullish … +1 bearish]
-* Sentiment type   stock | options | mixed | general
-* Price mentions   list of {price, type: call/put/stock, raw, sentiment}
-* Call / Put mention counts
-
-All network I/O is async (httpx). The options flow call is blocking (yfinance)
-and is offloaded to a thread-pool executor.
-"""
+"""Social sentiment and options flow aggregation."""
 
 from __future__ import annotations
 
@@ -35,7 +15,6 @@ import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
-# ── In-memory TTL cache ───────────────────────────────────────────────────────
 # Sentiment data is slow to fetch (Reddit + Cramer/Google News + yfinance options).
 # Cache results per ticker for 5 minutes so the dashboard / scanner can call
 # get_sentiment() multiple times without hammering the public APIs.
@@ -43,7 +22,6 @@ logger = logging.getLogger(__name__)
 _SENTIMENT_TTL  = 300.0          # 5 minutes
 _sentiment_lock = threading.Lock()
 _sentiment_cache: dict[str, tuple] = {}   # ticker → (result_dict, expire_time)
-
 
 def _sentiment_cache_get(ticker: str) -> dict | None:
     with _sentiment_lock:
@@ -56,14 +34,11 @@ def _sentiment_cache_get(ticker: str) -> dict | None:
             return None
         return result
 
-
 def _sentiment_cache_put(ticker: str, result: dict) -> None:
     with _sentiment_lock:
         _sentiment_cache[ticker.upper()] = (result, time.monotonic() + _SENTIMENT_TTL)
 
-# ─────────────────────────────────────────────────────────────────────────────
 # Sentiment scoring
-# ─────────────────────────────────────────────────────────────────────────────
 
 _BULL_WORDS: list[str] = [
     "bullish", "moon", "mooning", "calls", "long", "buy", "buying",
@@ -81,7 +56,6 @@ _BEAR_WORDS: list[str] = [
     "🐻", "💀", "📉",
 ]
 
-
 def _score_text(text: str) -> float:
     """Return [-1, +1] sentiment score. Positive = bullish."""
     t = text.lower()
@@ -90,7 +64,6 @@ def _score_text(text: str) -> float:
     total = bull + bear
     return 0.0 if total == 0 else (bull - bear) / total
 
-
 def _detect_option_bias(text: str) -> tuple[int, int]:
     """Return (call_mentions, put_mentions)."""
     t = text.lower()
@@ -98,10 +71,7 @@ def _detect_option_bias(text: str) -> tuple[int, int]:
     puts  = len(re.findall(r'\bputs?\b',  t))
     return calls, puts
 
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Sentiment type classification  (stock vs options vs mixed)
-# ─────────────────────────────────────────────────────────────────────────────
 
 _OPTIONS_SIGNALS: list[str] = [
     "call", "calls", "put", "puts", "option", "options", "strike",
@@ -118,7 +88,6 @@ _STOCK_SIGNALS: list[str] = [
     "pe ratio", "market cap", "float", "short interest", "catalyst",
     "price target", "pt ", " pt$", "analyst", "upgrade", "downgrade",
 ]
-
 
 def _classify_sentiment_type(text: str) -> str:
     """
@@ -137,15 +106,12 @@ def _classify_sentiment_type(text: str) -> str:
         return "stock"
     return "mixed"
 
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Price / strike extraction
-# ─────────────────────────────────────────────────────────────────────────────
 
 # Each entry: (compiled regex, option_type or None, group_index_for_price)
 # option_type: 'call' | 'put' | 'stock'
 _PRICE_REGEXES: list[tuple[re.Pattern, str, int]] = [
-    # ── Options — highest specificity first ──────────────────────────────────
+
     # "$150c", "$200p", "$150C", "$200P"
     (re.compile(r'\$(\d{1,5}(?:\.\d{1,2})?)\s*([Cc])\b'),       'call',  1),
     (re.compile(r'\$(\d{1,5}(?:\.\d{1,2})?)\s*([Pp])\b'),       'put',   1),
@@ -160,7 +126,7 @@ _PRICE_REGEXES: list[tuple[re.Pattern, str, int]] = [
     (re.compile(r'\b(\d{1,5}(?:\.\d{1,2})?)\s+puts?\b',  re.I),  'put',   1),
     # "strike of $150 / strike 150"
     (re.compile(r'strike\s+(?:of\s+)?\$?(\d{1,5}(?:\.\d{1,2})?)', re.I), 'call', 1),
-    # ── Stock price ──────────────────────────────────────────────────────────
+
     # "PT $150", "PT: $150", "price target $150"
     (re.compile(r'(?:price\s+target|pt)[:\s]+\$?(\d{1,5}(?:\.\d{1,2})?)', re.I), 'stock', 1),
     # "target $150", "targeting $150", "target of $150"
@@ -169,13 +135,12 @@ _PRICE_REGEXES: list[tuple[re.Pattern, str, int]] = [
     (re.compile(r'(?:to|at|@|around)\s+\$(\d{1,5}(?:\.\d{1,2})?)', re.I), 'stock', 1),
     # "support at 150", "resistance at 150"
     (re.compile(r'(?:support|resistance|level)\s+(?:at\s+)?\$?(\d{1,5}(?:\.\d{1,2})?)', re.I), 'stock', 1),
-    # Generic "$NNN" fallback — lowest priority
+    # Generic "$NNN" fallback - lowest priority
     (re.compile(r'\$(\d{1,5}(?:\.\d{1,2})?)'), 'stock', 1),
 ]
 
 _PRICE_MIN = 0.5    # filter out sub-cent
 _PRICE_MAX = 25_000 # filter out obviously wrong numbers
-
 
 def _extract_price_mentions(text: str) -> list[dict]:
     """
@@ -209,20 +174,13 @@ def _extract_price_mentions(text: str) -> list[dict]:
 
     return results
 
+# X (Twitter) - per-ticker social sentiment via twikit (free, no API key)
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# X (Twitter) — per-ticker social sentiment via twikit (free, no API key)
-# ─────────────────────────────────────────────────────────────────────────────
 # Uses twikit to simulate a logged-in browser session.
 # Setup (one-time):
-#   1. pip install twikit
-#   2. Add X_USERNAME=your_handle  and  X_PASSWORD=your_password  to .env
-#   3. Use a burner/alt account — NOT your main account.
 #
 # After first login, cookies are saved to x_cookies.json in the project root
 # so subsequent restarts don't need to log in again.
-# ─────────────────────────────────────────────────────────────────────────────
 
 import os as _os  # noqa: E402
 
@@ -233,13 +191,12 @@ _TWIKIT_COOKIES = _os.path.abspath(
 _twikit_client:    object | None       = None
 _twikit_lock:      asyncio.Lock | None = None   # created lazily inside async ctx
 
-
 async def _get_twikit_client() -> object | None:
     """
     Return a logged-in twikit.Client singleton.
 
     Auth priority
-    -------------
+
     1. x_cookies.json exists → load it and skip login entirely.
        This is the recommended path: export cookies from your browser and
        place them at  <project_root>/x_cookies.json  (see README).
@@ -267,25 +224,23 @@ async def _get_twikit_client() -> object | None:
         try:
             from twikit import Client  # type: ignore
         except ImportError:
-            logger.warning("[X] twikit not installed — run: pip install twikit")
+            logger.warning("[X] twikit not installed - run: pip install twikit")
             return None
 
         import os
         client = Client('en-US')
 
-        # ── Path 1: cookie file ───────────────────────────────────────────────
         if _os.path.exists(_TWIKIT_COOKIES):
             try:
                 client.load_cookies(_TWIKIT_COOKIES)
                 _twikit_client = client
-                logger.info("[X] twikit — loaded cookies from %s", _TWIKIT_COOKIES)
+                logger.info("[X] twikit - loaded cookies from %s", _TWIKIT_COOKIES)
                 return client
             except Exception as exc:
                 logger.warning("[X] Failed to load cookie file: %s", exc)
                 # Don't auto-delete: user may have manually created the file.
                 # Just fall through to password login.
 
-        # ── Path 2: password login ────────────────────────────────────────────
         username = os.getenv('X_USERNAME', '').strip().lstrip('@')
         password = os.getenv('X_PASSWORD', '').strip().strip('"\'')
         email    = os.getenv('X_EMAIL',    '').strip()
@@ -299,14 +254,14 @@ async def _get_twikit_client() -> object | None:
             return None
 
         try:
-            logger.info("[X] twikit — attempting password login as @%s …", username)
+            logger.info("[X] twikit - attempting password login as @%s …", username)
             login_kwargs: dict = {"auth_info_1": username, "password": password}
             if email:
                 login_kwargs["auth_info_2"] = email
             await client.login(**login_kwargs)
             client.save_cookies(_TWIKIT_COOKIES)
             _twikit_client = client
-            logger.info("[X] twikit — login OK, cookies saved to %s", _TWIKIT_COOKIES)
+            logger.info("[X] twikit - login OK, cookies saved to %s", _TWIKIT_COOKIES)
             return client
         except Exception as exc:
             logger.warning(
@@ -317,28 +272,25 @@ async def _get_twikit_client() -> object | None:
             )
             return None
 
-
 def _twikit_reset() -> None:
     """
     Discard the cached client so the next call reloads cookies / re-logs in.
-    Does NOT delete the cookie file — the user may have manually created it.
+    Does NOT delete the cookie file - the user may have manually created it.
     If cookies have expired, the next search call will fail and log a warning
     prompting the user to refresh their browser cookies.
     """
     global _twikit_client
     _twikit_client = None
-    logger.debug("[X] twikit client reset — will reload on next request")
-
+    logger.debug("[X] twikit client reset - will reload on next request")
 
 # Keep Reddit fetcher available for the global market pulse feed (no key needed)
 _REDDIT_HEADERS    = {"User-Agent": "Mozilla/5.0 mc-trader-bot/1.0 (research)"}
 _REDDIT_SUBREDDITS = ["wallstreetbets", "options", "stocks", "investing"]
 
-
 async def _reddit_fetch_subreddit(
     client: httpx.AsyncClient, ticker: str, subreddit: str
 ) -> list[dict]:
-    """Used by the Global Market Pulse feed — NOT the per-ticker sentiment."""
+    """Used by the Global Market Pulse feed - NOT the per-ticker sentiment."""
     url = (
         f"https://www.reddit.com/r/{subreddit}/search.json"
         f"?q={ticker}&sort=new&limit=20&restrict_sr=on&t=day"
@@ -368,19 +320,18 @@ async def _reddit_fetch_subreddit(
         logger.debug("Reddit r/%s/%s failed: %s", subreddit, ticker, exc)
         return []
 
-
 async def fetch_x_sentiment(ticker: str) -> dict:
     """
     Fetch recent X (Twitter) posts mentioning $TICKER via twikit (free scraping).
 
     Setup (one-time)
-    ----------------
+
     1. pip install twikit
     2. Add X_USERNAME=your_handle  and  X_PASSWORD=your_pass  to .env
-    3. Use a burner account — NOT your main account.
+    3. Use a burner account - NOT your main account.
 
     Returns
-    -------
+
     {
         available       : bool,
         needs_setup     : bool,   # True when credentials are missing
@@ -414,20 +365,20 @@ async def fetch_x_sentiment(ticker: str) -> dict:
     _failed = {**_no_creds, "needs_setup": False}
 
     if not has_creds:
-        logger.debug("X_USERNAME/X_PASSWORD not set — X sentiment unavailable")
+        logger.debug("X_USERNAME/X_PASSWORD not set - X sentiment unavailable")
         return _no_creds
 
     # Check twikit is importable before trying login
     try:
         import twikit  # noqa: F401  type: ignore
     except ImportError:
-        logger.warning("[X] twikit not installed — run: pip install twikit")
-        return _no_creds   # show setup notice — package is literally missing
+        logger.warning("[X] twikit not installed - run: pip install twikit")
+        return _no_creds   # show setup notice - package is literally missing
 
     client = await _get_twikit_client()
     if client is None:
         # Credentials set, twikit installed, but login failed
-        return {**_failed, "error": "Login failed — check X_USERNAME / X_PASSWORD in .env"}
+        return {**_failed, "error": "Login failed - check X_USERNAME / X_PASSWORD in .env"}
 
     try:
         from twikit.errors import TooManyRequests  # type: ignore
@@ -440,15 +391,15 @@ async def fetch_x_sentiment(ticker: str) -> dict:
         await asyncio.sleep(random.uniform(0.5, 1.5))   # polite delay
         results = await client.search_tweet(query, product='Top', count=20)
     except TooManyRequests:
-        logger.warning("[X] Rate limited while fetching $%s — backing off", ticker)
-        return {**_failed, "error": "Rate limited — try again in a few minutes"}
+        logger.warning("[X] Rate limited while fetching $%s - backing off", ticker)
+        return {**_failed, "error": "Rate limited - try again in a few minutes"}
     except Exception as exc:
         err_str = str(exc)
         # KEY_BYTE / key_byte is a known twikit internal parse error triggered when
         # Twitter changes their internal API structure.  It is not actionable and
         # very noisy, so log at DEBUG instead of WARNING.
         if 'KEY_BYTE' in err_str or 'key_byte' in err_str.lower():
-            logger.debug("[X] twikit parse error for $%s (Twitter API drift — not actionable): %s",
+            logger.debug("[X] twikit parse error for $%s (Twitter API drift - not actionable): %s",
                          ticker, err_str[:80])
         else:
             logger.warning("[X] Search failed for $%s: %s", ticker, err_str[:120])
@@ -471,7 +422,7 @@ async def fetch_x_sentiment(ticker: str) -> dict:
         retweets = int(getattr(tw, 'retweet_count',  0) or 0)
         replies  = int(getattr(tw, 'reply_count',    0) or 0)
 
-        # Weight by engagement — high-engagement tweets carry more signal
+        # Weight by engagement - high-engagement tweets carry more signal
         weight = max(1, likes + retweets * 2)
 
         score          = _score_text(text)
@@ -525,18 +476,13 @@ async def fetch_x_sentiment(ticker: str) -> dict:
         "top_posts":       top_posts,
     }
 
+# Jim Cramer  -  Inverse Cramer sentiment  (Google News RSS, no auth required)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Jim Cramer  —  Inverse Cramer sentiment  (Google News RSS, no auth required)
-# ─────────────────────────────────────────────────────────────────────────────
 # The "Inverse Cramer" strategy: whatever Cramer says to do, do the opposite.
 # We scrape Google News RSS for "[Jim Cramer] [TICKER]" headlines, detect his
 # bullish/bearish stance per article, then flip the signal for the UI.
-# ─────────────────────────────────────────────────────────────────────────────
 
-# ─────────────────────────────────────────────────────────────────────────────
 # Cramer stance keyword lists  (ordered from strongest signal → weakest)
-# ─────────────────────────────────────────────────────────────────────────────
 
 _CRAMER_BULLISH_KW: list[str] = [
     # Superlatives / iconic Cramer phrases
@@ -607,21 +553,19 @@ _ARTICLE_TICKER_BL: set = {
     "CPI", "PPI", "PCE", "EPS", "FCF", "TTM", "YOY", "IMO", "TLDR",
 }
 
-
 def _score_cramer_text(text: str) -> tuple[int, int]:
-    """Return (buy_signals, sell_signals) — kept for backward-compat with global fn."""
+    """Return (buy_signals, sell_signals) - kept for backward-compat with global fn."""
     t = text.lower()
     buys  = sum(1 for w in _CRAMER_BULLISH_KW  if w in t)
     sells = sum(1 for w in _CRAMER_BEARISH_KW if w in t)
     return buys, sells
-
 
 def _classify_stance_from_window(window: str) -> tuple[str, str]:
     """
     Classify Cramer's stance on a stock from the text window around its mention.
 
     Returns
-    -------
+
     (stance, evidence)
     stance ∈ {'bullish', 'bearish', 'neutral', 'unknown'}
     evidence : first 120 chars of the window (for display)
@@ -641,17 +585,16 @@ def _classify_stance_from_window(window: str) -> tuple[str, str]:
         return "bearish", evidence
     return "neutral", evidence
 
-
 def _extract_cramer_picks(full_text: str) -> list[dict]:
     """
     Scan article text for ticker symbols and classify Cramer's stance on each.
 
     Strategy
-    --------
+
     1. Find every ticker via _ARTICLE_TICKER_RE  (exchange notation + $TICKER)
     2. Take ±400 chars around each match as context window
     3. Score the window against bullish/bearish/neutral keyword lists
-    4. Deduplicate per ticker — keep the strongest signal seen across all windows
+    4. Deduplicate per ticker - keep the strongest signal seen across all windows
 
     Returns list of {ticker, stance, evidence} dicts.
     """
@@ -673,7 +616,6 @@ def _extract_cramer_picks(full_text: str) -> list[dict]:
             picks[ticker] = {"ticker": ticker, "stance": stance, "evidence": evidence}
 
     return list(picks.values())
-
 
 async def _fetch_article_text(url: str, client: httpx.AsyncClient) -> str:
     """
@@ -702,10 +644,9 @@ async def _fetch_article_text(url: str, client: httpx.AsyncClient) -> str:
         text = re.sub(r"<[^>]+>", " ", html)
         # Collapse whitespace
         text = re.sub(r"\s+", " ", text).strip()
-        return text[:10_000]   # cap — enough for stance extraction
+        return text[:10_000]   # cap - enough for stance extraction
     except Exception:
         return ""
-
 
 async def fetch_cramer_sentiment(ticker: str) -> dict:
     """
@@ -720,7 +661,7 @@ async def fetch_cramer_sentiment(ticker: str) -> dict:
       4. Invert the overall signal (Inverse Cramer strategy).
 
     Returns
-    -------
+
     {
         available        : bool,
         article_count    : int,
@@ -754,7 +695,6 @@ async def fetch_cramer_sentiment(ticker: str) -> dict:
 
     async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
 
-        # ── Step 1: RSS scan ────────────────────────────────────────────────
         for rss_url in rss_urls:
             try:
                 resp = await client.get(rss_url, headers=rss_headers)
@@ -780,7 +720,6 @@ async def fetch_cramer_sentiment(ticker: str) -> dict:
             except Exception as exc:
                 logger.debug("Cramer RSS %s: %s", rss_url, exc)
 
-        # ── Step 2: Fetch full article body for top 5 items ─────────────────
         articles:    list[dict] = []
         all_picks_map: dict[str, dict] = {}   # ticker → best pick across all articles
         total_buy = total_sell = 0
@@ -847,7 +786,6 @@ async def fetch_cramer_sentiment(ticker: str) -> dict:
                 "picks": art_picks, "price_mentions": [],
             })
 
-    # ── Aggregate ─────────────────────────────────────────────────────────────
     n = len(articles)
     all_picks = sorted(all_picks_map.values(),
                        key=lambda x: strength_order[x["stance"]], reverse=True)
@@ -875,7 +813,6 @@ async def fetch_cramer_sentiment(ticker: str) -> dict:
         elif ticker_stance == "bearish":
             cramer_signal = "bearish"
 
-        # ── Inverse Cramer flip ───────────────────────────────────────────────
         if cramer_signal == "bullish":
             inverse_signal = "SELL"
             inverse_score  = -0.60
@@ -913,12 +850,11 @@ async def fetch_cramer_sentiment(ticker: str) -> dict:
         "articles":       articles[:10],
     }
 
-
 async def fetch_stocktwits_sentiment(ticker: str) -> dict:
     """
     Fetch StockTwits stream for ticker. No API key required for public data.
     # SOURCE: StockTwits API, api.stocktwits.com/api/2/streams/symbol/{TICKER}.json, Free
-    Rate limit: ~200 req/hour unauthenticated — we cache for 5 minutes.
+    Rate limit: ~200 req/hour unauthenticated - we cache for 5 minutes.
     """
     result = await _fetch_stocktwits_sentiment(ticker)
     # Alias message_count → post_count so the frontend compatibility layer
@@ -926,8 +862,6 @@ async def fetch_stocktwits_sentiment(ticker: str) -> dict:
     result.setdefault("post_count", result.get("message_count", 0))
     return result
 
-
-# ── (historical reference kept below for completeness) ──────────────────────
 async def _fetch_stocktwits_sentiment(ticker: str) -> dict:
     url = f"https://api.stocktwits.com/api/2/streams/symbol/{ticker}.json"
     try:
@@ -1014,10 +948,7 @@ async def _fetch_stocktwits_sentiment(ticker: str) -> dict:
             "price_targets":   [],
         }
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Options flow  (yfinance — blocking → run in executor)
-# ─────────────────────────────────────────────────────────────────────────────
+# Options flow  (yfinance - blocking → run in executor)
 
 def _scan_unusual_activity(
     calls_df,
@@ -1034,11 +965,9 @@ def _scan_unusual_activity(
     {expiry, dte, strike, type, volume, oi, vol_oi, premium, flow, pct_change,
      iv, in_money, leaps}.
 
-    `leaps` is True when DTE > 60 — surfaced as a separate group in the UI.
+    `leaps` is True when DTE > 60 - surfaced as a separate group in the UI.
 
-    Note: raw volume tells you contracts traded, NOT direction (buy vs sell).
-    yfinance does not expose aggressor-side, so the row carries no sentiment
-    label here; the frontend renders a "Flow direction unavailable" disclaimer.
+    yfinance has no aggressor side; UI shows a flow disclaimer.
     """
     out: list[dict] = []
     try:
@@ -1082,16 +1011,15 @@ def _scan_unusual_activity(
             })
     return out
 
-
 def _options_flow_sync(ticker: str) -> dict:
     """
     Fetch the nearest 3 expiry dates' call + put volume / open interest.
     Also identifies the top call and put strikes by volume, plus a separate
     pass that scans up to 8 expirations for **unusual activity** (high
-    volume relative to open interest — see _scan_unusual_activity).
+    volume relative to open interest - see _scan_unusual_activity).
 
     PCR < 0.7  → call-heavy (bullish crowd positioning)
-    0.7–1.0    → neutral
+    0.7-1.0    → neutral
     PCR > 1.0  → put-heavy  (bearish / hedging)
     """
     try:
@@ -1171,7 +1099,6 @@ def _options_flow_sync(ticker: str) -> dict:
                         "pct_change":  round(chg, 2),
                     })
 
-                # ── Unusual Activity scan (full chain, not just top 5) ──
                 unusual_activity.extend(
                     _scan_unusual_activity(chain.calls, chain.puts, exp, today_date)
                 )
@@ -1180,9 +1107,8 @@ def _options_flow_sync(ticker: str) -> dict:
             except Exception:
                 pass
 
-        # ── Deeper unusual-activity scan: LEAPS / longer-dated expiries ──
         # Fetch up to 5 more expirations beyond the first 3 to catch LEAPS-type
-        # unusual flow. Each chain fetch is ~0.5–1 s; the 5-min sentiment cache
+        # unusual flow. Each chain fetch is ~0.5-1 s; the 5-min sentiment cache
         # amortises the cost.
         for exp in expirations[:n_unusual_exp]:
             if exp in scanned_for_unusual:
@@ -1244,7 +1170,7 @@ def _options_flow_sync(ticker: str) -> dict:
             "hot_calls":        hot_calls[:10],
             "hot_puts":         hot_puts[:10],
             # Unusual Activity: contracts with vol > OI×1.5 AND vol > 500.
-            # Raw exchange volume — NOT aggressor-side; the UI shows a disclaimer.
+            # Raw exchange volume - NOT aggressor-side; the UI shows a disclaimer.
             "unusual_activity": unusual_activity,
             "flow_direction_available": False,  # yfinance never has aggressor side
         }
@@ -1253,10 +1179,7 @@ def _options_flow_sync(ticker: str) -> dict:
         logger.debug("Options flow %s failed: %s", ticker, exc)
         return {"available": False, "reason": str(exc)}
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Global market sentiment  (no specific ticker — overall market mood)
-# ─────────────────────────────────────────────────────────────────────────────
+# Global market sentiment  (no specific ticker - overall market mood)
 
 _GLOBAL_CACHE_TTL = 600.0   # 10 min (market-wide data changes slower)
 _global_cache_lock = threading.Lock()
@@ -1275,7 +1198,7 @@ _MARKET_THEMES = {
     "Options Flow":  ["calls", "puts", "options", "spreads", "iron condor", "theta", "gamma"],
 }
 
-# Ticker-mention regex — looks for $SYMBOL or plain uppercase 2-5 letter words near $ or %
+# Ticker-mention regex - looks for $SYMBOL or plain uppercase 2-5 letter words near $ or %
 _TICKER_RE = re.compile(r'\$([A-Z]{1,5})\b')
 
 # Junk words that get confused for tickers
@@ -1287,14 +1210,13 @@ _TICKER_BLACKLIST = {
     "YOLO", "FOMO", "TLDR", "IIRC", "AFAIK", "IMO", "IMHO",
 }
 
-
 async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
     """
     Fetch overall stock-market mood from Reddit hot posts + Google News headlines.
-    No ticker filter — covers market-wide talk (SPY/QQQ/Fed/VIX/earnings/etc.)
+    No ticker filter - covers market-wide talk (SPY/QQQ/Fed/VIX/earnings/etc.)
 
     Returns
-    -------
+
     {
         mood_score       : float [-1 bearish … +1 bullish],
         market_mood      : 'bullish'|'bearish'|'neutral',
@@ -1328,7 +1250,6 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
         "Accept": "application/rss+xml, application/xml, */*",
     }
 
-    # ── Step 1: Reddit — broad market subreddits, no ticker filter ────────────
     _GLOBAL_SUBS = [
         ("wallstreetbets", "hot"),
         ("stocks",         "hot"),
@@ -1396,7 +1317,7 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
             except Exception as exc:
                 logger.debug("Global Reddit r/%s failed: %s", sub, exc)
 
-        # Google News RSS — market-wide headlines
+        # Google News RSS - market-wide headlines
         rss_queries = [
             "stock+market+today",
             "S%26P+500+today",
@@ -1447,7 +1368,6 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
             except Exception as exc:
                 logger.debug("Global RSS %s failed: %s", q, exc)
 
-    # ── Step 1b: X (Twitter) — broad market tweets via twikit ─────────────────
     _GLOBAL_X_QUERIES = [
         "($SPY OR $QQQ OR $SPX) -filter:retweets lang:en",
         "(stock market OR wall street) -filter:retweets lang:en",
@@ -1510,8 +1430,7 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
     except Exception as exc:
         logger.debug("Global X block failed: %s", exc)
 
-    # ── Step 2: Cramer market-wide view — fetch articles + extract per-ticker picks
-    cramer_market = {"cramer_signal": "unknown", "inverse_signal": "WAIT",
+        cramer_market = {"cramer_signal": "unknown", "inverse_signal": "WAIT",
                      "confidence": "low", "article_count": 0,
                      "articles": [], "picks": []}
     try:
@@ -1557,7 +1476,7 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
                              for it in cramer_raw_items[:5]]
             g_bodies = await asyncio.gather(*g_fetch_tasks, return_exceptions=True)
 
-        # Process items — score + extract picks
+        # Process items - score + extract picks
         global_picks_map: dict[str, dict] = {}
         cramer_arts: list[dict] = []
         g_strength = {"bullish": 3, "bearish": 3, "neutral": 2, "unknown": 1}
@@ -1620,7 +1539,6 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
     except Exception as exc:
         logger.debug("Global Cramer block failed: %s", exc)
 
-    # ── Aggregate ─────────────────────────────────────────────────────────────
     n_posts    = len(all_posts)
     total_sent = total_bull + total_bear or 1
     bull_pct   = round(total_bull / total_sent * 100)
@@ -1631,7 +1549,7 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
     mood_score = max(-1.0, min(1.0, raw_score))
     market_mood = "bullish" if mood_score > 0.15 else "bearish" if mood_score < -0.15 else "neutral"
 
-    # Trending tickers — top 15 by mention count
+    # Trending tickers - top 15 by mention count
     trending = [
         {"ticker": t, "count": c,
          "sentiment": sum(
@@ -1641,7 +1559,7 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
         for t, c in ticker_counter.most_common(15)
     ]
 
-    # Hot themes — percentage of posts mentioning each theme
+    # Hot themes - percentage of posts mentioning each theme
     total_theme_posts = max(n_posts, 1)
     hot_themes = [
         {"theme": th, "count": cnt, "pct": round(cnt / total_theme_posts * 100)}
@@ -1672,40 +1590,10 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
 
     return result
 
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Options-activity sentiment scorer
-# ─────────────────────────────────────────────────────────────────────────────
 
 def _score_options_activity(options_data: dict) -> tuple[float, str, dict]:
-    """
-    Derive a directional sentiment score from live options-flow data.
-
-    Signals analysed
-    ────────────────
-    1. ATM call vs put volume  (strikes within ±1.5% of spot)
-       — Someone paying ATM premium is making a near-term directional bet.
-
-    2. OTM call stacking  (calls 0–12% above spot)
-       — Heavy OTM call volume indicates speculative bullish interest.
-
-    3. Call-ladder bonus  (≥2 distinct OTM call strikes active)
-       — Multiple OTM strikes with real volume = high-conviction bull run bets.
-
-    4. End-of-next-week expiry concentration
-       — Short-dated options = urgency / near-term conviction.
-
-    5. Overall PCR (put/call ratio by volume)
-       — <0.60 → crowd is call-heavy (bullish positioning).
-       — >1.20 → crowd is put-heavy (bearish / hedging).
-
-    Returns
-    ───────
-    (score, label, details)
-      score  ∈ [-1.0, +1.0]  positive = bullish options sentiment
-      label  ∈ {strongly_bullish, bullish, neutral, bearish, strongly_bearish}
-      details: breakdown dict for UI display
-    """
+    """Score options flow from ATM/OTM volume, expiry, and PCR. Returns (score, label, details)."""
     from datetime import date, timedelta
 
     if not options_data.get("available"):
@@ -1720,22 +1608,19 @@ def _score_options_activity(options_data: dict) -> tuple[float, str, dict]:
     if not hot_calls and not hot_puts:
         return 0.0, "neutral", {}
 
-    # ── Price zones ───────────────────────────────────────────────────────────
     atm_lo      = spot * 0.985    # ATM band: ±1.5% of spot
     atm_hi      = spot * 1.015
-    otm_call_lo = spot * 1.0     # OTM calls: 0–12% above spot
+    otm_call_lo = spot * 1.0     # OTM calls: 0-12% above spot
     otm_call_hi = spot * 1.12
-    otm_put_lo  = spot * 0.88    # OTM puts:  0–12% below spot
+    otm_put_lo  = spot * 0.88    # OTM puts:  0-12% below spot
     otm_put_hi  = spot * 1.0
 
-    # ── End-of-next-week expiry window (Thursday–Monday) ─────────────────────
     today        = date.today()
     days_to_fri  = (4 - today.weekday()) % 7 or 7   # always ≥ 1
     next_fri     = today + timedelta(days=days_to_fri)
     nw_start     = (next_fri - timedelta(days=1)).isoformat()   # Thursday
     nw_end       = (next_fri + timedelta(days=3)).isoformat()   # following Monday
 
-    # ── Volume aggregation by zone ────────────────────────────────────────────
     atm_call_vol = sum(c["volume"] for c in hot_calls
                        if atm_lo <= c["strike"] <= atm_hi)
     atm_put_vol  = sum(p["volume"] for p in hot_puts
@@ -1746,7 +1631,7 @@ def _score_options_activity(options_data: dict) -> tuple[float, str, dict]:
     otm_put_vol  = sum(p["volume"] for p in hot_puts
                        if otm_put_lo  <= p["strike"] < otm_put_hi)
 
-    # Distinct OTM call strikes — "call ladder" breadth indicator
+    # Distinct OTM call strikes - "call ladder" breadth indicator
     otm_call_strikes = sorted({
         c["strike"] for c in hot_calls
         if otm_call_lo < c["strike"] <= otm_call_hi and c["volume"] > 0
@@ -1761,20 +1646,16 @@ def _score_options_activity(options_data: dict) -> tuple[float, str, dict]:
 
     pcr = options_data.get("pcr_volume")   # None if unavailable
 
-    # ── Score components ──────────────────────────────────────────────────────
     score = 0.0
 
-    # 1. ATM call/put balance — 35% weight
     atm_total = atm_call_vol + atm_put_vol
     if atm_total > 0:
         score += ((atm_call_vol - atm_put_vol) / atm_total) * 0.35
 
-    # 2. OTM call stacking — 30% weight
     otm_total = otm_call_vol + otm_put_vol
     if otm_total > 0:
         score += ((otm_call_vol - otm_put_vol) / otm_total) * 0.30
 
-    # 3. Call-ladder bonus (multiple OTM strikes = conviction)
     if n_ladder >= 4:
         score += 0.12
     elif n_ladder == 3:
@@ -1782,12 +1663,10 @@ def _score_options_activity(options_data: dict) -> tuple[float, str, dict]:
     elif n_ladder == 2:
         score += 0.04
 
-    # 4. Next-week expiry urgency — 20% weight
     nw_total = nw_call_vol + nw_put_vol
     if nw_total > 0:
         score += ((nw_call_vol - nw_put_vol) / nw_total) * 0.20
 
-    # 5. Overall PCR — up to ±0.15
     if pcr is not None:
         if pcr < 0.35:
             score += 0.15    # extremely call-heavy
@@ -1832,10 +1711,7 @@ def _score_options_activity(options_data: dict) -> tuple[float, str, dict]:
     }
     return score, label, details
 
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Aggregate
-# ─────────────────────────────────────────────────────────────────────────────
 
 async def get_sentiment(ticker: str, force_refresh: bool = False) -> dict:
     """
@@ -1843,9 +1719,9 @@ async def get_sentiment(ticker: str, force_refresh: bool = False) -> dict:
     Returns a JSON-serialisable dict.
 
     Sources:
-      - X (Twitter) — per-ticker social posts (requires X_USERNAME + X_PASSWORD in .env)
-      - Inverse Cramer — Google News RSS, Cramer signal inverted
-      - Options flow  — yfinance call/put volume & OI
+      - X (Twitter) - per-ticker social posts (requires X_USERNAME + X_PASSWORD in .env)
+      - Inverse Cramer - Google News RSS, Cramer signal inverted
+      - Options flow  - yfinance call/put volume & OI
 
     Results are cached for _SENTIMENT_TTL seconds (default 5 min) per ticker.
     Pass force_refresh=True to bypass the cache.
@@ -1853,12 +1729,12 @@ async def get_sentiment(ticker: str, force_refresh: bool = False) -> dict:
     if not force_refresh:
         cached = _sentiment_cache_get(ticker)
         if cached is not None:
-            logger.debug("[sentiment] %s — cache hit", ticker)
+            logger.debug("[sentiment] %s - cache hit", ticker)
             return cached
 
     loop = asyncio.get_running_loop()
 
-    # SOURCE: StockTwits (replaces X/Twitter — no API key required, free)
+    # SOURCE: StockTwits (replaces X/Twitter - no API key required, free)
     x_task       = asyncio.create_task(fetch_stocktwits_sentiment(ticker))
     cramer_task  = asyncio.create_task(fetch_cramer_sentiment(ticker))
     options_coro = loop.run_in_executor(None, _options_flow_sync, ticker)
@@ -1889,11 +1765,10 @@ async def get_sentiment(ticker: str, force_refresh: bool = False) -> dict:
         logger.warning("Options exception: %s", options)
         options = {"available": False, "reason": str(options)}
 
-    # ── Weighted aggregate score ──────────────────────────────────────────────
     # Weights:
-    #   Options activity : 2.0  — real money = strongest signal
-    #   Inverse Cramer   : 1.5  — high-conviction contrarian
-    #   X / social posts : 1.0  — social mood
+    #   Options activity : 2.0  - real money = strongest signal
+    #   Inverse Cramer   : 1.5  - high-conviction contrarian
+    #   X / social posts : 1.0  - social mood
     scores, weights = [], []
 
     if x_data.get("available") and x_data.get("post_count", 0) > 0:
@@ -1901,7 +1776,7 @@ async def get_sentiment(ticker: str, force_refresh: bool = False) -> dict:
         weights.append(1.0)
 
     if cramer.get("available") and cramer.get("inverse_score", 0.0) != 0.0:
-        # Cramer score is ALREADY inverted — positive = crowd should BUY.
+        # Cramer score is ALREADY inverted - positive = crowd should BUY.
         scores.append(cramer["inverse_score"])
         weights.append(1.5)
 
@@ -1922,7 +1797,6 @@ async def get_sentiment(ticker: str, force_refresh: bool = False) -> dict:
     text_calls = x_data.get("call_mentions", 0)
     text_puts  = x_data.get("put_mentions",  0)
 
-    # ── Merge type breakdowns ─────────────────────────────────────────────────
     combined_types: Counter = Counter()
     for src in (x_data, cramer):
         for t_type, pct in src.get("type_breakdown", {}).items():
@@ -1952,8 +1826,6 @@ async def get_sentiment(ticker: str, force_refresh: bool = False) -> dict:
     _sentiment_cache_put(ticker, result)
     return result
 
-
-# ── Ticker → sector lookup table ──────────────────────────────────────────────
 # Used by the Inverse Cramer sector-fallback path: when the requested ticker
 # has no recent Cramer coverage we look up peers in the same sector and
 # return their most recent mentions.  yfinance's Ticker.info["sector"] is
@@ -1999,7 +1871,6 @@ _SECTOR_PEER_TICKERS: dict[str, list[str]] = {
     "financials": ["JPM",  "BAC",  "GS",   "MS",   "V",   "MA"],
     "healthcare": ["JNJ",  "PFE",  "MRK",  "ABBV", "UNH", "LLY"],
 }
-
 
 async def _cramer_for_sector(sector: str) -> dict:
     """
@@ -2085,7 +1956,6 @@ async def _cramer_for_sector(sector: str) -> dict:
         "type_breakdown": {},
         "source_label":   "Sector Cramer Signal",
     }
-
 
 def get_ticker_sector(ticker: str) -> str | None:
     """Return the sector for a ticker, or None if unknown."""

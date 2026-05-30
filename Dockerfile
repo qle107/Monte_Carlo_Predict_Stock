@@ -54,7 +54,6 @@ USER mctrader
 # These defaults are overridden by --env-file .env at runtime.
 ENV HOST=0.0.0.0 \
     PORT=8000 \
-    TICKER=AAPL \
     ALPACA_MODE=paper \
     MC_MODEL=garch \
     MC_SIMULATIONS=2000 \

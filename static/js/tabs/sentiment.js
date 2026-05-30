@@ -1,34 +1,13 @@
-/**
- * static/js/tabs/sentiment.js — Live News Feed + Sector Cramer fallback
- *
- * Phase 5 extraction.  Owns:
- *   • /ws/news WebSocket connection with exponential-backoff reconnect
- *   • 50-item ring buffer with client-side dedup (md5-lite via djb2 hash)
- *   • Pause / Resume: items still arrive while paused, stored in _pending[]
- *   • Filter pills: All | Company | Macro | Sector | Positive | Negative
- *   • Live "X seconds ago" timestamps (setInterval 1 s)
- *   • Sector Cramer fallback: when cramer.articles.length === 0 fires
- *     GET /api/sentiment/sector-cramer and renders "Sector Cramer Signal"
- *
- * Public surface (window.*):
- *   window.initSentimentFeed(ticker)  — call when Sentiment tab opens
- *   window.switchSentimentTicker(ticker) — call on ticker change
- *   window.renderSectorCramer(data)   — render sector-cramer card
- *
- * The module monkey-patches itself onto window after DOMContentLoaded, same
- * pattern as market-structure.js and options.js.
- */
+/** Sentiment tab: news feed and sector Cramer. */
 
 (function () {
   'use strict';
 
-  // ── Constants ────────────────────────────────────────────────────────────────
   const BUFFER_MAX   = 50;
   const BACKOFF_INIT = 1000;   // ms
   const BACKOFF_MAX  = 30000;  // ms
   const TIMESTAMP_INTERVAL = 1000; // ms
 
-  // ── Module state ─────────────────────────────────────────────────────────────
   let _ws            = null;
   let _currentTicker = '';
   let _buffer        = [];      // all received items, newest-first, max 50
@@ -41,8 +20,7 @@
   let _tsInterval    = null;
   let _wsOpen        = false;   // true when /ws/news is connected
 
-  // ── djb2 hash — fast enough dedup key (mirrors md5(title[:60]) on server) ──
-  function _hashTitle(title) {
+    function _hashTitle(title) {
     const s = title.slice(0, 60).toLowerCase();
     let h = 5381;
     for (let i = 0; i < s.length; i++) {
@@ -51,7 +29,6 @@
     return (h >>> 0).toString(16);
   }
 
-  // ── DOM helpers ──────────────────────────────────────────────────────────────
   function _el(id) { return document.getElementById(id); }
 
   function _setStatus(state) {
@@ -76,7 +53,6 @@
     if (btn) btn.textContent = paused ? '▶ Resume' : '⏸ Pause';
   }
 
-  // ── Relative timestamps ───────────────────────────────────────────────────────
   function _ago(isoString) {
     if (!isoString) return '';
     const dt  = new Date(isoString);
@@ -102,7 +78,6 @@
     }, TIMESTAMP_INTERVAL);
   }
 
-  // ── Single news item HTML ─────────────────────────────────────────────────────
   function _sentimentColor(s) {
     if (s === 'Positive') return 'var(--green)';
     if (s === 'Negative') return 'var(--red)';
@@ -145,7 +120,6 @@
       </div>`;
   }
 
-  // ── Render the visible list ───────────────────────────────────────────────────
   function _renderList() {
     const list = _el('live-news-list');
     if (!list) return;
@@ -162,7 +136,7 @@
     if (items.length === 0) {
       list.innerHTML = `<div style="text-align:center;color:var(--muted);
                           font-size:12px;padding:24px;">
-                          No headlines yet — waiting for first poll…</div>`;
+                          No headlines yet - waiting for first poll…</div>`;
       return;
     }
 
@@ -170,7 +144,6 @@
     _startTimestampUpdater();
   }
 
-  // ── Buffer management ─────────────────────────────────────────────────────────
   function _ingestItems(items) {
     // Items arrive newest-first from server; prepend to buffer maintaining that order
     for (const item of items) {
@@ -185,7 +158,6 @@
     }
   }
 
-  // ── WS message handler ────────────────────────────────────────────────────────
   function _onMessage(evt) {
     let msg;
     try { msg = JSON.parse(evt.data); } catch { return; }
@@ -194,7 +166,7 @@
     const items = msg.items || [];
 
     if (type === 'init') {
-      // Full buffer for this ticker — reset state
+      // Full buffer for this ticker - reset state
       _buffer = [];
       _seen   = new Set();
       _pending = [];
@@ -216,7 +188,6 @@
     }
   }
 
-  // ── WebSocket lifecycle ───────────────────────────────────────────────────────
   function _connect() {
     if (_ws && (_ws.readyState === WebSocket.OPEN || _ws.readyState === WebSocket.CONNECTING)) {
       return;
@@ -245,7 +216,7 @@
 
     _ws.onerror = (err) => {
       console.warn('[sentiment.js] WS error', err);
-      // onclose will follow — reconnect happens there
+      // onclose will follow - reconnect happens there
     };
   }
 
@@ -277,7 +248,6 @@
     _setStatus('disconnected');
   }
 
-  // ── Filter pills ──────────────────────────────────────────────────────────────
   function _setFilter(filter) {
     _activeFilter = filter;
     document.querySelectorAll('.lnf-filter-btn').forEach(btn => {
@@ -289,7 +259,6 @@
     _renderList();
   }
 
-  // ── Pause / Resume ────────────────────────────────────────────────────────────
   function _togglePause() {
     _paused = !_paused;
     _setPauseBtn(_paused);
@@ -300,7 +269,6 @@
     }
   }
 
-  // ── Sector Cramer fallback ────────────────────────────────────────────────────
   function _renderSectorCramerCard(data) {
     const inv   = data.inverse_signal  || 'WAIT';
     const sig   = data.cramer_signal   || 'unknown';
@@ -320,7 +288,7 @@
     if (invEl)    { invEl.textContent = inv; invEl.style.color = invColor; }
     if (rawEl)    { rawEl.textContent = sig; rawEl.style.color = invColor; }
     if (confEl)   { confEl.textContent = `${conf} confidence · ${label}`; }
-    if (tickerEl) { tickerEl.textContent = '— sector'; tickerEl.style.color = 'var(--muted)'; }
+    if (tickerEl) { tickerEl.textContent = '- sector'; tickerEl.style.color = 'var(--muted)'; }
 
     if (hlEl) {
       hlEl.innerHTML = arts.slice(0, 3).map(a => `
@@ -347,7 +315,7 @@
           hdr.dataset.sectorNote = '1';
           const note = document.createElement('div');
           note.style.cssText = 'font-size:10px;color:var(--amber);margin-top:4px;';
-          note.textContent = `⚠ No recent Cramer coverage for ${ticker} — showing ${data.sector} sector peers`;
+          note.textContent = `⚠ No recent Cramer coverage for ${ticker} - showing ${data.sector} sector peers`;
           hdr.parentNode && hdr.parentNode.insertBefore(note, hdr.nextSibling);
         }
       }
@@ -355,8 +323,6 @@
       console.warn('[sentiment.js] sector-cramer fetch failed', err);
     }
   }
-
-  // ── Public API ────────────────────────────────────────────────────────────────
 
   /**
    * Called when the Sentiment tab opens (or on first load).
@@ -410,7 +376,6 @@
     }
   }
 
-  // ── Wire pause button + filter pills after DOM ready ─────────────────────────
   document.addEventListener('DOMContentLoaded', () => {
     const pauseBtn = _el('live-news-pause-btn');
     if (pauseBtn) {
@@ -426,7 +391,6 @@
     window.addEventListener('pagehide',     _disconnect);
   });
 
-  // ── Expose on window ──────────────────────────────────────────────────────────
   window.initSentimentFeed    = initSentimentFeed;
   window.switchSentimentTicker = switchSentimentTicker;
   window.renderSectorCramer   = renderSectorCramer;

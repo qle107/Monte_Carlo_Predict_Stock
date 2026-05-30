@@ -1,29 +1,10 @@
-/**
- * static/js/alerts.js — Price alert system (Fix 9)
- *
- * Features:
- *  • Add price alerts (above / below a target price for a given ticker)
- *  • Alerts persist in localStorage under key "mc_price_alerts"
- *  • Checks each alert against the live price broadcast from the WebSocket
- *  • Fires a Browser Notification (Notification API) when price crosses target
- *  • Falls back to an in-page banner if Notification permission is denied
- *  • Alert panel is toggled by clicking the 🔔 button in the header
- *
- * Public API (attached to window):
- *   mcAlerts.add(ticker, targetPrice, direction)  — direction: 'above'|'below'
- *   mcAlerts.remove(id)
- *   mcAlerts.check(ticker, price)  — called from updateUI() on every broadcast
- *   mcAlerts.togglePanel()
- *   mcAlerts.openPanel()
- *   mcAlerts.closePanel()
- */
+/** Price alert helpers. */
 
 (function () {
   'use strict';
 
   const LS_KEY = 'mc_price_alerts';
 
-  // ── State ────────────────────────────────────────────────────────────────
   let _alerts = _load();
   let _panelOpen = false;
   let _notifPermission = Notification?.permission || 'default';
@@ -40,7 +21,6 @@
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   }
 
-  // ── Notification permission ───────────────────────────────────────────────
   async function _requestPermission() {
     if (!('Notification' in window)) return;
     if (Notification.permission === 'default') {
@@ -50,9 +30,8 @@
     }
   }
 
-  // ── Fire notification ─────────────────────────────────────────────────────
   function _notify(alert, currentPrice) {
-    const msg = `${alert.ticker} hit $${currentPrice.toFixed(2)} — your ${alert.direction} $${alert.target.toFixed(2)} alert triggered`;
+    const msg = `${alert.ticker} hit $${currentPrice.toFixed(2)} - your ${alert.direction} $${alert.target.toFixed(2)} alert triggered`;
 
     // Browser notification
     if (_notifPermission === 'granted') {
@@ -87,14 +66,13 @@
     const item = document.createElement('div');
     item.style.cssText = 'display:flex;align-items:flex-start;gap:8px;';
     item.innerHTML = `<span style="font-size:16px;flex-shrink:0;">🔔</span>
-      <div style="flex:1;"><strong style="color:#58a6ff;">${ticker}</strong> — ${msg}</div>
+      <div style="flex:1;"><strong style="color:#58a6ff;">${ticker}</strong> - ${msg}</div>
       <button onclick="this.parentNode.remove()" style="background:none;border:none;color:#8b949e;cursor:pointer;font-size:14px;flex-shrink:0;padding:0;">✕</button>`;
     banner.appendChild(item);
     // Auto-dismiss after 8 seconds
     setTimeout(() => { try { item.remove(); } catch (_) {} }, 8000);
   }
 
-  // ── Core: add alert ───────────────────────────────────────────────────────
   function add(ticker, targetPrice, direction) {
     if (!ticker || isNaN(targetPrice)) return null;
     const alert = {
@@ -112,14 +90,12 @@
     return alert;
   }
 
-  // ── Core: remove alert ────────────────────────────────────────────────────
   function remove(id) {
     _alerts = _alerts.filter(a => a.id !== id);
     _save();
     _renderPanel();
   }
 
-  // ── Core: check price broadcast against all active alerts ─────────────────
   // Called from updateUI() on every full broadcast.
   function check(ticker, price) {
     if (!ticker || price == null) return;
@@ -138,7 +114,6 @@
     });
   }
 
-  // ── Panel HTML ────────────────────────────────────────────────────────────
   function _renderPanel() {
     const panel = document.getElementById('mc-alerts-panel');
     if (!panel) return;
@@ -159,7 +134,7 @@
       </div>`;
 
     const notifNote = _notifPermission === 'denied'
-      ? `<div class="mc-alert-notif-note">⚠ Browser notifications blocked — in-page banners only.</div>`
+      ? `<div class="mc-alert-notif-note">⚠ Browser notifications blocked - in-page banners only.</div>`
       : _notifPermission === 'default'
       ? `<div class="mc-alert-notif-note">Click "Add" to enable browser notifications.</div>`
       : `<div class="mc-alert-notif-note mc-alert-notif-ok">✓ Browser notifications enabled.</div>`;
@@ -218,7 +193,6 @@
     _renderPanel();
   }
 
-  // ── Panel toggle / open / close ───────────────────────────────────────────
   function togglePanel() {
     _panelOpen ? closePanel() : openPanel();
   }
@@ -255,7 +229,6 @@
     }
   }
 
-  // ── Expose public API ─────────────────────────────────────────────────────
   window.mcAlerts = { add, remove, check, togglePanel, openPanel, closePanel,
                       clearFired, _submitForm };
 

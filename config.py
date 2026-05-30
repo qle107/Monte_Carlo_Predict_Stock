@@ -1,13 +1,10 @@
-"""config.py — single source of truth for all runtime settings.
-
-Import `cfg` anywhere; mutate via POST /api/config.
-Out-of-range env values fall back to defaults with a warning.
-"""
+"""Runtime configuration."""
 
 from __future__ import annotations
 
 import logging
 import os
+import threading
 from dataclasses import asdict, dataclass, field
 
 from dotenv import load_dotenv
@@ -27,6 +24,8 @@ VALID_MC_MODELS: list[str] = [
     "microstructure",  # GARCH + Student-t + volume profile + CVD + Hurst
 ]
 
+# Startup ticker (not read from .env). Change here or via POST /api/config / dashboard.
+DEFAULT_TICKER = "PLTR"
 
 def _env_int(name: str, default: int, lo: int, hi: int) -> int:
     raw = os.getenv(name)
@@ -42,14 +41,12 @@ def _env_int(name: str, default: int, lo: int, hi: int) -> int:
         return default
     return v
 
-
 def _env_str_choice(name: str, default: str, choices: list[str]) -> str:
     raw = os.getenv(name, default)
     if raw not in choices:
         logger.warning("config: %s=%r not in %s, using default %s", name, raw, choices, default)
         return default
     return raw
-
 
 def _env_float(name: str, default: float, lo: float, hi: float) -> float:
     raw = os.getenv(name)
@@ -65,20 +62,18 @@ def _env_float(name: str, default: float, lo: float, hi: float) -> float:
         return default
     return v
 
-
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
     if raw is None:
         return default
     return raw.strip().lower() in ("1", "true", "yes", "on", "y", "t")
 
-
 @dataclass
 class Config:
     # Server
-    ticker: str = field(default_factory=lambda: os.getenv("TICKER", "PLTR").upper().strip())
+    ticker: str = field(default_factory=lambda: DEFAULT_TICKER.upper().strip())
     interval: str = field(default_factory=lambda: _env_str_choice("CANDLE_INTERVAL", "15m", VALID_INTERVALS))
-    # Poll every 120 s by default — yfinance has soft rate-limits and the MC
+    # Poll every 120 s by default - yfinance has soft rate-limits and the MC
     # analysis itself takes a few seconds; polling faster wastes CPU/network.
     poll_seconds: int = field(default_factory=lambda: _env_int("POLL_SECONDS", 120, 10, 3600))
     extended: bool = field(default_factory=lambda: _env_bool("EXTENDED_HOURS", False))
@@ -86,17 +81,6 @@ class Config:
     db_path: str = field(default_factory=lambda: os.getenv("DB_PATH", "mc_trader.db"))
 
     # Monte Carlo
-    # ── Performance note ──────────────────────────────────────────────────────
-    # n_sim=2000 gives stable probabilities (< 1 % Monte-Carlo error) and runs
-    # in ~2 s on a modern CPU.  10 000 adds only marginal accuracy (~0.3 %)
-    # but multiplies wall time 5×.  Raise n_sim when you need research-grade
-    # output; keep it at 2000 for a live trading dashboard.
-    #
-    # mc_model default changed to "garch": the "microstructure" model runs the
-    # per-step gravity computation for every path at every step and is 4–8×
-    # slower.  Switch to "microstructure" explicitly via Settings or MCMODEL env
-    # when you want volume-profile gravity in the simulation.
-    # ─────────────────────────────────────────────────────────────────────────
     n_sim: int = field(default_factory=lambda: _env_int("MC_SIMULATIONS", 2000, 50, 50000))
     n_forward: int = field(default_factory=lambda: _env_int("MC_FORWARD_CANDLES", 5, 1, 100))
     lookback: int = field(default_factory=lambda: _env_int("LOOKBACK", 50, 20, 500))
@@ -174,16 +158,6 @@ class Config:
     regime_donchian_n: int = field(default_factory=lambda: _env_int("REGIME_DONCHIAN_N", 20, 5, 200))
     regime_pivot_wing: int = field(default_factory=lambda: _env_int("REGIME_PIVOT_WING", 3, 1, 20))
 
-    # ── Optional heavy-analysis feature flags ────────────────────────────────
-    # These modules each add 5–20 s to every analysis cycle.  They are
-    # disabled by default so the dashboard loads quickly.  Enable them via
-    # Settings → POST /api/config or the env vars below.
-    #
-    #  HMM regime:   adds ~5 s (hmmlearn fitting on every call)
-    #  Hawkes:       adds ~3 s (numerical optimisation of excitation params)
-    #
-    # Both are still available on demand via the 🔬 Market Structure tab which
-    # calls /api/market-structure directly and has its own loading spinner.
     hmm_enabled: bool = field(default_factory=lambda: _env_bool("HMM_ENABLED", False))
     hawkes_enabled: bool = field(default_factory=lambda: _env_bool("HAWKES_ENABLED", False))
 
@@ -203,23 +177,28 @@ class Config:
 
         if self.ema_fast >= self.ema_slow:
             logger.warning(
-                "config: ema_fast (%d) ≥ ema_slow (%d) — signals unreliable.", self.ema_fast, self.ema_slow
+                "config: ema_fast (%d) ≥ ema_slow (%d) - signals unreliable.", self.ema_fast, self.ema_slow
             )
         if self.ema_slow >= self.ema_long:
             logger.warning(
-                "config: ema_slow (%d) ≥ ema_long (%d) — EMA200 signal wrong.", self.ema_slow, self.ema_long
+                "config: ema_slow (%d) ≥ ema_long (%d) - EMA200 signal wrong.", self.ema_slow, self.ema_long
             )
         if self.macd_fast >= self.macd_slow:
             logger.warning(
-                "config: macd_fast (%d) ≥ macd_slow (%d) — MACD inverted.", self.macd_fast, self.macd_slow
+                "config: macd_fast (%d) ≥ macd_slow (%d) - MACD inverted.", self.macd_fast, self.macd_slow
             )
         if self.rsi_oversold >= self.rsi_overbought:
-            logger.warning("config: rsi_oversold ≥ rsi_overbought — RSI gates inverted.")
+            logger.warning("config: rsi_oversold ≥ rsi_overbought - RSI gates inverted.")
         if self.zone_touch_atr > self.zone_cluster_atr:
-            logger.warning("config: zone_touch_atr > zone_cluster_atr — zones may merge unexpectedly.")
+            logger.warning("config: zone_touch_atr > zone_cluster_atr - zones may merge unexpectedly.")
 
     def to_dict(self) -> dict:
         return asdict(self)
 
-
+# Thread-safe config singleton
 cfg = Config()
+_cfg_lock = threading.RLock()
+
+def _lock_cfg() -> threading.RLock:
+    """Return the config lock for use in api/server.py POST /api/config handler."""
+    return _cfg_lock
