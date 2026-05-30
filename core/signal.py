@@ -69,7 +69,7 @@ def _score_macd(hist_pct: float) -> float:
 
 
 def _score_bollinger(bb_pos: float) -> float:
-    """Mean-reversion: at upper band → bearish, at lower → bullish."""
+    """Mean-reversion: at upper band -> bearish, at lower -> bullish."""
     return float(np.clip(-bb_pos * 0.4, -0.6, 0.6))
 
 
@@ -104,8 +104,8 @@ def _score_rsi_divergence(div: float) -> float:
 
 def _score_ema200_dist(dist_pct: float) -> float:
     """
-    Price far above EMA200 → mildly bearish (overbought long-term).
-    Price far below EMA200 → mildly bullish (oversold long-term).
+    Price far above EMA200 -> mildly bearish (overbought long-term).
+    Price far below EMA200 -> mildly bullish (oversold long-term).
     Capped at ±0.25 - this is a slow signal.
     """
     return float(np.clip(-dist_pct * 0.012, -0.25, 0.25))
@@ -429,14 +429,14 @@ def compute_signal(ind: Indicators, regime: Regime | None = None) -> Signal:
         if ind.rsi > 65
         else f"RSI {ind.rsi:.0f} neutral"
     )
-    macd_dir = "↑" if ind.macd_hist > 0 else "↓" if ind.macd_hist < 0 else "·"
+    macd_dir = "up" if ind.macd_hist > 0 else "down" if ind.macd_hist < 0 else "flat"
     drift_pct = drift_bias * 100
-    regime_part = f"regime: {regime.regime} · " if regime is not None else ""
+    regime_part = f"regime {regime.regime}, " if regime is not None else ""
     reasoning = (
-        f"{regime_part}{rsi_desc} · EMA {ind.ema_cross} · "
-        f"MACD {macd_dir} · ADX {ind.adx:.0f} · "
-        f"drift {drift_pct:+.3f}%/c · "
-        f"conf {confidence:.0%} · "
+        f"{regime_part}{rsi_desc}, EMA {ind.ema_cross}, "
+        f"MACD {macd_dir}, ADX {ind.adx:.0f}, "
+        f"drift {drift_pct:+.3f}%/c, "
+        f"conf {confidence:.0%}, "
         f"vol {ind.vol_regime}"
     )
 

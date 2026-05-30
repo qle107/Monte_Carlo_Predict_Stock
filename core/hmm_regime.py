@@ -175,7 +175,7 @@ def _baum_welch(
 
 
 def _label_states(mus: np.ndarray, sigs: np.ndarray) -> list[str]:
-    """Auto-label states: highest σ → volatile, highest |μ| → trending, rest → ranging."""
+    """Auto-label states: highest σ -> volatile, highest |μ| -> trending, rest -> ranging."""
     K = len(mus)
     labels = ["unknown"] * K
     remaining = set(range(K))
@@ -258,9 +258,9 @@ def _heuristic_regime(returns: np.ndarray) -> HMMResult:
     """
     Volatility/momentum 3-way classifier - O(n), no fitting needed.
 
-    • Recent σ > 75th-percentile rolling σ  →  volatile
-    • |recent mean| > 0.8 × recent σ        →  trending
-    • otherwise                              →  ranging
+    • Recent σ > 75th-percentile rolling σ  ->  volatile
+    • |recent mean| > 0.8 × recent σ        ->  trending
+    • otherwise                              ->  ranging
     """
     n = len(returns)
     w = min(20, n // 2)
@@ -371,7 +371,7 @@ def blend_zone_probability(
     else:
         blended = base.copy()
 
-    # Zone strength nudge: stronger zone → tilt toward bounce (max ±7.5%)
+    # Zone strength nudge: stronger zone -> tilt toward bounce (max ±7.5%)
     bonus = (zone_strength - 0.5) * 0.15
     blended["bounce"] = min(1.0, max(0.0, blended["bounce"] + bonus))
     blended["break"] = min(1.0, max(0.0, blended["break"] - bonus * 0.6))

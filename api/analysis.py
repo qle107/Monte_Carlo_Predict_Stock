@@ -194,7 +194,7 @@ async def _run_analysis() -> dict:
 
             sig = result["signal"]
             reg = result.get("regime", {}) or {}
-            warn_str = f"  ⚠ {result['warnings'][0]}" if result.get("warnings") else ""
+            warn_str = f"  Warning: {result['warnings'][0]}" if result.get("warnings") else ""
             logger.info(
                 "%s %s [%s]  price=%.2f  regime=%s  pot up/dn/flat=%.0f/%.0f/%.0f  signal=%s (conf=%.0f%%)%s",
                 cfg.ticker,

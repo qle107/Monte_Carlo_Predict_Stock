@@ -25,6 +25,7 @@ env/
 # ----------------------------
 .env
 .env.*
+!.env.example
 config.local.py
 secrets.json
 *_secret*.json
@@ -64,6 +65,7 @@ htmlcov/
 Thumbs.db
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 

@@ -18,7 +18,7 @@
 //  • A retry button that re-invokes `runMarketStructure()`.
 //
 //  • Console.debug logs at each pipeline step:
-//        request → response → render-hmm → render-hawkes → render-zones
+//        request -> response -> render-hmm -> render-hawkes -> render-zones
 //
 //  • Monkey-patch override of `_renderHMM` / `_renderHawkes` /
 //    `_renderBlendedZones` / `_renderMarketStructure` to wrap them in
@@ -34,7 +34,7 @@
   // Produces the *inside* of a card body - caller decides which IDs to wipe.
   function _emptyStateHtml(opts) {
     const {
-      icon       = '⚠',
+      icon       = 'Warning:',
       color      = 'var(--amber)',
       title      = 'Unavailable',
       message    = '',
@@ -98,7 +98,7 @@
       });
     } else if (state === 'error') {
       cardBody.innerHTML = _emptyStateHtml({
-        icon: '⚠',
+        icon: 'Warning:',
         color: 'var(--red)',
         title: 'Market Regime - Error',
         message: `Baum-Welch fit failed: <code>${(hmm.error || 'unknown')}</code>`,
@@ -154,7 +154,7 @@
       });
     } else if (state === 'error') {
       cardBody.innerHTML = _emptyStateHtml({
-        icon: '⚠',
+        icon: 'Warning:',
         color: 'var(--red)',
         title: 'Price Activity - Error',
         message: `Hawkes fit failed: <code>${(hk.error || 'unknown')}</code>`,
@@ -220,7 +220,7 @@
       const bannerTicker = document.getElementById('ms-banner-ticker');
       const bannerMeta   = document.getElementById('ms-banner-meta');
       if (bannerTicker) bannerTicker.textContent = (d.ticker || '-').toUpperCase();
-      if (bannerMeta)   bannerMeta.textContent   = `${d.interval || ''} · Updated ${new Date(d.updated_at).toLocaleTimeString()}`;
+      if (bannerMeta)   bannerMeta.textContent   = `${d.interval || ''}, Updated ${new Date(d.updated_at).toLocaleTimeString()}`;
 
       // Each section runs in its own try/catch - a crash in one cannot
 

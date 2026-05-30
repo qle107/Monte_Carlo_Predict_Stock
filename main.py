@@ -1,10 +1,4 @@
-"""Application entry point.
-
-Runs the FastAPI backend (uvicorn) and, by default, also launches the Next.js
-frontend dev server (`npm run dev`) so a single `python main.py` starts both.
-
-Disable the frontend with `--no-frontend` or `NO_FRONTEND=1`.
-"""
+"""Application entry point."""
 
 import atexit
 import logging
@@ -58,9 +52,6 @@ def start_frontend() -> None:
             logger.info("Frontend deps missing - running `npm install` (first run, may take a minute)...")
             subprocess.run([npm, "install"], cwd=_FRONTEND_DIR, check=True)
         elif not next_bin.exists():
-            # node_modules exists but looks partial/broken. Do NOT auto-install:
-            # a manual `npm install` may be mid-flight, and racing it corrupts
-            # the tree (Windows EPERM/ENOTEMPTY). Tell the user and skip frontend.
             logger.warning(
                 "Frontend node_modules looks incomplete (next not found). "
                 "Skipping frontend launch. Fix it manually:\n"

@@ -54,7 +54,7 @@ See `docs/math.md` for the full derivations of all existing models.
 
 - Line length: 110 characters (enforced by ruff).
 - Use `from __future__ import annotations` at the top of every new module.
-- Greek letters in docstrings and comments are intentional (α, σ, μ, κ …); don't replace them with ASCII.
+- Greek letters in docstrings and comments are intentional (α, σ, μ, κ ...); don't replace them with ASCII.
 - All new public functions must have a docstring with at least one sentence of explanation.
 
 ## Pull request checklist

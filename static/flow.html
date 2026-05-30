@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Options Flow — Sweeps & Blocks</title>
+<title>Options Flow - Sweeps &amp; Blocks</title>
 <style>
   :root{
     --bg:#0b0e11; --panel:#11161c; --row:#0e1318; --row-alt:#0c1116;
@@ -96,7 +96,7 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>Options Flow <span class="sub">sweeps &amp; blocks · ask-side conviction</span></h1>
+    <h1>Options Flow <span class="sub">sweeps &amp; blocks, ask-side only</span></h1>
     <div class="spacer"></div>
     <div class="ctl">
       <span><span class="dot" id="live"></span><span id="status" style="color:var(--muted);font-size:12px">idle</span></span>
@@ -122,8 +122,8 @@
   </header>
 
   <div class="chips">
-    <span class="chip on">Sweeps ≥ <b>$50K</b></span>
-    <span class="chip on">Blocks ≥ <b>$100K</b></span>
+    <span class="chip on">Sweeps &gt;= <b>$50K</b></span>
+    <span class="chip on">Blocks &gt;= <b>$100K</b></span>
     <span class="chip on">Excl. high-volume ETFs</span>
     <span class="chip on">Ask-side only <span style="color:var(--dim)">(bid-side hidden)</span></span>
   </div>
@@ -135,7 +135,7 @@
     <table>
       <thead>
         <tr>
-          <th class="l" data-k="time">Time ↓</th>
+          <th class="l" data-k="time">Time</th>
           <th data-k="value">Value</th>
           <th class="l" data-k="ticker">Ticker</th>
           <th data-k="spot">Spot</th>
@@ -148,7 +148,7 @@
           <th data-k="size">Size</th>
           <th data-k="sig">SigScore</th>
           <th data-k="ret">Peak Return</th>
-          <th data-k="delta">Δ</th>
+          <th data-k="delta">Delta</th>
           <th data-k="vol">Volume</th>
         </tr>
       </thead>
@@ -161,9 +161,9 @@
   <div class="foot">
     <b>Data notes.</b> Built on the app's <code>/api/options/unusual</code> snapshot scan (yfinance).
     <b>Sweep vs Block</b> is approximated from volume/OI (true tape conditions need a flow provider).
-    <b>X</b> (Ask/Bid) is a last-vs-bid/ask lean, not an exchange flag — bid-side prints are filtered out server-side.
+    <b>X</b> (Ask/Bid) is a last-vs-bid/ask lean, not an exchange flag. Bid-side prints are filtered out server-side.
     <b>Time</b> is the scan timestamp (snapshot feed, not per-trade tape).
-    <b>Size</b> = contract day volume; <b>Volume</b> = open interest (context). <b>Δ</b> is Black–Scholes, computed client-side.
+    <b>Size</b> = contract day volume; <b>Volume</b> = open interest. <b>Delta</b> is Black-Scholes, computed client-side.
   </div>
 </div>
 
@@ -173,7 +173,7 @@ let RAWS = [];
 let sortKey = 'value', sortDir = -1, autoTimer = null;
 
 const $ = s => document.querySelector(s);
-const ncdf = x => { // standard normal CDF (Abramowitz–Stegun)
+const ncdf = x => { // standard normal CDF (Abramowitz-Stegun)
   const t = 1/(1+0.2316419*Math.abs(x));
   const d = 0.3989423*Math.exp(-x*x/2);
   let p = d*t*(0.3193815+t*(-0.3565638+t*(1.781478+t*(-1.821256+t*1.330274))));
@@ -191,7 +191,7 @@ function fmtVal(v){
   if(v>=1e3) return '$'+(v/1e3).toFixed(1)+'K';
   return '$'+(v||0).toFixed(0);
 }
-function fmtExp(s){ if(!s) return '—'; const p=s.split('-'); return p.length===3 ? p[0].slice(2)+'-'+p[1]+'-'+p[2] : s; }
+function fmtExp(s){ if(!s) return '-'; const p=s.split('-'); return p.length===3 ? p[0].slice(2)+'-'+p[1]+'-'+p[2] : s; }
 function sigColor(v){ return v>=0.65?'var(--bar-hi)':v>=0.55?'var(--bar-mid)':'var(--bar-low)'; }
 function nowHMS(iso){ const d=iso?new Date(iso):new Date(); return d.toTimeString().slice(0,8); }
 
@@ -256,11 +256,11 @@ function ingest(data, scannedAt){
   const s = data.summary||{};
   $('#summary').innerHTML =
     `<span><b>${s.total_hits??hits.length}</b> prints</span>`+
-    `<span class="sw"><b>${s.sweep_count??'–'}</b> sweeps</span>`+
-    `<span class="bl"><b>${s.block_count??'–'}</b> blocks</span>`+
-    `<span class="g"><b>${s.bullish_count??'–'}</b> bullish</span>`+
-    `<span class="r"><b>${s.bearish_count??'–'}</b> bearish</span>`+
-    `<span><b>${s.tickers_scanned??'–'}</b> scanned</span>`+
+    `<span class="sw"><b>${s.sweep_count??'-'}</b> sweeps</span>`+
+    `<span class="bl"><b>${s.block_count??'-'}</b> blocks</span>`+
+    `<span class="g"><b>${s.bullish_count??'-'}</b> bullish</span>`+
+    `<span class="r"><b>${s.bearish_count??'-'}</b> bearish</span>`+
+    `<span><b>${s.tickers_scanned??'-'}</b> scanned</span>`+
     (s.excluded_etf_count?`<span><b>${s.excluded_etf_count}</b> ETFs excluded</span>`:'')+
     `<span style="color:var(--dim)">@ ${nowHMS(scannedAt)}</span>`;
   render();
@@ -274,7 +274,7 @@ async function scan(){
   });
   if(wl) params.set('watchlist', wl);
   const url = `${API_BASE}/api/options/unusual?${params}`;
-  $('#status').textContent='scanning…'; $('#live').classList.add('live');
+  $('#status').textContent='scanning...'; $('#live').classList.add('live');
   $('#banner').classList.remove('show');
   try{
     const res = await fetch(url);
@@ -285,7 +285,7 @@ async function scan(){
   }catch(err){
     $('#status').textContent='offline'; $('#live').classList.remove('live');
     $('#banner').classList.add('show');
-    $('#banner').innerHTML = `Couldn't reach <code>${url}</code> (${err.message}). Showing sample layout — start the API (<code>uvicorn api.server:app</code>) and Scan again for live flow.`;
+    $('#banner').innerHTML = `Could not reach <code>${url}</code> (${err.message}). Showing sample data. Start the API (<code>uvicorn api.server:app</code>) and scan again.`;
     ingest(SAMPLE, new Date().toISOString());
   }
 }
@@ -295,7 +295,7 @@ document.querySelectorAll('thead th').forEach(th=>{
     const k = th.dataset.k;
     if(sortKey===k) sortDir*=-1; else { sortKey=k; sortDir = (k==='ticker'||k==='pc'||k==='type'||k==='side')?1:-1; }
     document.querySelectorAll('thead th .ar').forEach(a=>a.remove());
-    const ar=document.createElement('span'); ar.className='ar'; ar.textContent=sortDir<0?'▼':'▲'; th.appendChild(ar);
+    const ar=document.createElement('span'); ar.className='ar'; ar.textContent=sortDir<0?'v':'^'; th.appendChild(ar);
     render();
   });
 });

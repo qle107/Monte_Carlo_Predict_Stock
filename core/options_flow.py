@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-# Sector mapping - tags each UnusualOption hit so the frontend can filter by sector.
+# Sector labels for unusual-options hits.
 _SECTOR_MAP: dict[str, str] = {
     # Mega-cap / Mixed-use tech
     "AAPL": "Tech",
@@ -535,8 +535,7 @@ _cache: dict = {}  # key -> (result, expire_time)
 _CACHE_TTL = 300.0  # 5 minutes
 
 # yfinance rate-limit guard
-# Limits simultaneous yfinance HTTP connections across all threads.
-# Even when the executor has N workers, only _YF_SEM_SLOTS connections run at once.
+# yfinance connection limit
 _YF_SEM_SLOTS = 4
 _yf_semaphore = threading.Semaphore(_YF_SEM_SLOTS)
 

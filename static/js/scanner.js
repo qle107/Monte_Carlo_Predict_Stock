@@ -25,7 +25,7 @@ function _startFakeProgress() {
   wrap.style.display = 'block'; txt.style.display = 'block';
   bar.style.width = '0%';
   let pct = 0;
-  const msgs = ['Fetching price data…', 'Computing indicators…', 'Running regime detection…', 'Scoring signals…'];
+  const msgs = ['Fetching price data...', 'Computing indicators...', 'Running regime detection...', 'Scoring signals...'];
   let mi = 0;
   txt.textContent = msgs[0];
   _scanFakeProgress = setInterval(() => {
@@ -55,7 +55,7 @@ async function runScanner() {
   const spin = document.getElementById('scan-spin');
   const lbl  = document.getElementById('scan-label');
 
-  btn.disabled = true; spin.style.display = 'block'; lbl.textContent = 'Scanning…';
+  btn.disabled = true; spin.style.display = 'block'; lbl.textContent = 'Scanning...';
 
   document.getElementById('scan-empty-state').style.display = 'none';
   document.getElementById('scan-error-state').style.display = 'none';
@@ -72,7 +72,7 @@ async function runScanner() {
     if (!tickers.length) {
       _stopFakeProgress(false);
       document.getElementById('scan-error-state').style.display = 'block';
-      document.getElementById('scan-error-state').textContent = '⚠ Enter at least one ticker in the custom field.';
+      document.getElementById('scan-error-state').textContent = 'Warning: Enter at least one ticker in the custom field.';
       btn.disabled=false; spin.style.display='none'; lbl.textContent='▶ Run Scanner';
       return;
     }
@@ -91,12 +91,12 @@ async function runScanner() {
     if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
     _stopFakeProgress(true);
     processScanResult(data);
-    log(`Scanner: ${data.scanned} scanned · ${data.breakouts.length} breakouts · ${data.breakdowns.length} breakdowns · ${data.elapsed_ms}ms`, 'var(--green)');
+    log(`Scanner: ${data.scanned} scanned, ${data.breakouts.length} breakouts, ${data.breakdowns.length} breakdowns, ${data.elapsed_ms}ms`, 'var(--green)');
   } catch(e) {
     _stopFakeProgress(false);
     const errEl = document.getElementById('scan-error-state');
     errEl.style.display = 'block';
-    errEl.textContent = '⚠ Scanner failed: ' + e.message;
+    errEl.textContent = 'Warning: Scanner failed: ' + e.message;
     log('Scanner error: ' + e, 'var(--red)');
   } finally {
     btn.disabled = false; spin.style.display = 'none'; lbl.textContent = '▶ Run Scanner';
@@ -110,17 +110,17 @@ function processScanResult(data) {
   _scanFilter  = 'all';
 
   // Pills
-  const info = `${data.scanned} scanned · ${data.succeeded} OK · ${data.elapsed_ms}ms`;
+  const info = `${data.scanned} scanned, ${data.succeeded} OK, ${data.elapsed_ms}ms`;
   document.getElementById('sc-info').textContent   = info;
   document.getElementById('sc-up').textContent     = `↑ ${data.breakouts.length} bullish`;
   document.getElementById('sc-down').textContent   = `↓ ${data.breakdowns.length} bearish`;
-  document.getElementById('sc-neut').textContent   = `→ ${data.neutral.length} neutral`;
+  document.getElementById('sc-neut').textContent   = `-> ${data.neutral.length} neutral`;
   document.getElementById('sc-all').classList.add('active');
 
   const errEl2 = document.getElementById('sc-errors');
   if (data.failed > 0) {
     errEl2.style.display = 'inline-block';
-    errEl2.textContent = `⚠ ${data.failed} failed`;
+    errEl2.textContent = `Warning: ${data.failed} failed`;
   } else {
     errEl2.style.display = 'none';
   }
@@ -155,7 +155,7 @@ function buildTopCards(data) {
       </div>
       <div class="stc-score"  style="color:${isUp ? 'var(--green)' : 'var(--red)'}">Score ${scoreStr}</div>
       <div class="stc-regime">${regDisp}</div>
-      <div class="stc-price">$${typeof r.price === 'number' ? r.price.toFixed(2) : '-'}  · RSI ${(r.rsi||0).toFixed(0)}</div>
+      <div class="stc-price">$${typeof r.price === 'number' ? r.price.toFixed(2) : '-'} , RSI ${(r.rsi||0).toFixed(0)}</div>
     `;
     wrap.appendChild(card);
   });
@@ -233,7 +233,7 @@ function renderScanTable() {
   const dirLabel = {
     breakout_up:  '🚀 Breakout ↑', trending_up:  '📈 Trending ↑', bullish: '↑ Bullish',
     breakdown:    '💥 Breakdown ↓', trending_down:'📉 Trending ↓', bearish: '↓ Bearish',
-    neutral: '→ Neutral', error: '⚠ Error',
+    neutral: '-> Neutral', error: 'Warning: Error',
   };
 
   rows.forEach(r => {
@@ -249,7 +249,7 @@ function renderScanTable() {
     if (!tsValid) {
       // No entry - show reason as tooltip
       const reason = ts.reason || 'Criteria not met';
-      const shortReason = reason.length > 28 ? reason.slice(0, 28) + '…' : reason;
+      const shortReason = reason.length > 28 ? reason.slice(0, 28) + '...' : reason;
       tsSideHtml  = `<span title="${reason}" style="color:var(--muted);font-size:10px;cursor:help;">⊘ No Entry</span>`;
       tsEntryHtml = `<span style="color:var(--muted);">-</span>`;
       tsSlHtml    = `<span style="color:var(--muted);">-</span>`;
@@ -261,7 +261,7 @@ function renderScanTable() {
       const side   = ts.side || 'long';
       const isLong = side === 'long';
       const sideColor = isLong ? 'var(--green)' : 'var(--red)';
-      const sideIcon  = isLong ? '▲ LONG' : '▼ SHORT';
+      const sideIcon  = isLong ? '^ LONG' : 'v SHORT';
 
       const fmt = v => v != null ? '$' + Number(v).toFixed(2) : '-';
       const fmtPct = v => v != null ? (v >= 0 ? '+' : '') + Number(v).toFixed(1) + '%' : '-';
@@ -278,14 +278,14 @@ function renderScanTable() {
       const recSL   = ts.sl_recommended === 'pct' ? ts.sl_pct : ts.sl_atr;
       const recDist = ts.sl_recommended === 'pct' ? ts.sl_pct_dist : ts.sl_atr_dist;
       const recType = ts.sl_recommended === 'pct' ? `Fixed ${ts.sl_pct_used}%` : `ATR ×${ts.atr_mult?.toFixed(1)}`;
-      const capWarn = ts.atr_capped ? ' ⚠' : '';
+      const capWarn = ts.atr_capped ? ' Warning:' : '';
       const slDistStr = recDist != null ? ` (${recDist.toFixed(1)}%)` : '';
       const tp1Dist = ts.tp1_dist != null ? ` (+${ts.tp1_dist.toFixed(1)}%)` : '';
       const tp2Dist = ts.tp2_dist != null ? ` (+${ts.tp2_dist.toFixed(1)}%)` : '';
 
       tsSideHtml  = `<span style="color:${sideColor}; font-weight:700; font-size:11px;">${sideIcon}</span>`;
       tsEntryHtml = `<span style="color:var(--blue); font-weight:600;">${fmt(ts.entry)}</span>`;
-      tsSlHtml    = `<span style="color:var(--red);" title="${recType} stop | ATR: ${fmt(ts.sl_atr)} (${ts.sl_atr_dist?.toFixed(1)}%) | Fixed: ${fmt(ts.sl_pct)} (${ts.sl_pct_dist?.toFixed(1)}%)${ts.atr_capped?' | ⚠ ATR was capped':''}">${fmt(recSL)}<span style="font-size:9px; color:var(--muted);">${slDistStr}${capWarn}</span></span>`;
+      tsSlHtml    = `<span style="color:var(--red);" title="${recType} stop | ATR: ${fmt(ts.sl_atr)} (${ts.sl_atr_dist?.toFixed(1)}%) | Fixed: ${fmt(ts.sl_pct)} (${ts.sl_pct_dist?.toFixed(1)}%)${ts.atr_capped?' | Warning: ATR was capped':''}">${fmt(recSL)}<span style="font-size:9px; color:var(--muted);">${slDistStr}${capWarn}</span></span>`;
       tsTp1Html   = `<span style="color:var(--green);" title="P75 target">${fmt(ts.tp1)}<span style="font-size:9px; color:var(--muted);">${tp1Dist}</span></span>`;
       tsTp2Html   = `<span style="color:rgba(63,185,80,.7);" title="P90 runner">${fmt(ts.tp2)}<span style="font-size:9px; color:var(--muted);">${tp2Dist}</span></span>`;
       tsRrHtml    = `<span style="color:${rrC}; font-weight:700;" title="Best R:R using tighter stop | ATR R:R: ${rr_atr.toFixed(1)}R | Fixed R:R: ${rr_pct.toFixed(1)}R">${rr.toFixed(1)}R</span>`;
@@ -378,7 +378,7 @@ async function loadTicker(ticker) {
   if (currentConfig.lookback)     document.getElementById('s-lookback').value= currentConfig.lookback;
   if (currentConfig.mc_model)     document.getElementById('s-model').value   = currentConfig.mc_model || 'microstructure';
 
-  log(`Loading ${ticker} @ ${scanInterval} (n_sim=${currentConfig.n_sim||'?'}, fwd=${currentConfig.n_forward||'?'})…`);
+  log(`Loading ${ticker} @ ${scanInterval} (n_sim=${currentConfig.n_sim||'?'}, fwd=${currentConfig.n_forward||'?'})...`);
   await applySettings();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }

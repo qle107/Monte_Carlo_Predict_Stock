@@ -175,25 +175,25 @@ class Config:
         if self.garch_alpha + self.garch_beta >= 1.0:
             safe_beta = max(0.10, 0.94 - self.garch_alpha)
             logger.warning(
-                "config: garch_alpha+garch_beta ≥ 1 (non-stationary). Clamping garch_beta → %.3f",
+                "config: garch_alpha+garch_beta >= 1 (non-stationary). Clamping garch_beta -> %.3f",
                 safe_beta,
             )
             self.garch_beta = safe_beta
 
         if self.ema_fast >= self.ema_slow:
             logger.warning(
-                "config: ema_fast (%d) ≥ ema_slow (%d) - signals unreliable.", self.ema_fast, self.ema_slow
+                "config: ema_fast (%d) >= ema_slow (%d) - signals unreliable.", self.ema_fast, self.ema_slow
             )
         if self.ema_slow >= self.ema_long:
             logger.warning(
-                "config: ema_slow (%d) ≥ ema_long (%d) - EMA200 signal wrong.", self.ema_slow, self.ema_long
+                "config: ema_slow (%d) >= ema_long (%d) - EMA200 signal wrong.", self.ema_slow, self.ema_long
             )
         if self.macd_fast >= self.macd_slow:
             logger.warning(
-                "config: macd_fast (%d) ≥ macd_slow (%d) - MACD inverted.", self.macd_fast, self.macd_slow
+                "config: macd_fast (%d) >= macd_slow (%d) - MACD inverted.", self.macd_fast, self.macd_slow
             )
         if self.rsi_oversold >= self.rsi_overbought:
-            logger.warning("config: rsi_oversold ≥ rsi_overbought - RSI gates inverted.")
+            logger.warning("config: rsi_oversold >= rsi_overbought - RSI gates inverted.")
         if self.zone_touch_atr > self.zone_cluster_atr:
             logger.warning("config: zone_touch_atr > zone_cluster_atr - zones may merge unexpectedly.")
 

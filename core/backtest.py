@@ -132,7 +132,7 @@ def walk_forward(
         }
 
     if n < min_history + n_forward + 5:
-        return _empty(f"need ≥ {min_history + n_forward + 5} bars, got {n}")
+        return _empty(f"need >= {min_history + n_forward + 5} bars, got {n}")
 
     last_eval = n - n_forward - 1  # last index where we have a future to compare
     indices = list(range(min_history, last_eval + 1, max(1, step)))

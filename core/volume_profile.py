@@ -67,7 +67,7 @@ def compute_volume_profile(
     Compute Volume Profile from OHLCV DataFrame.
 
     Volume is distributed uniformly across the high-low range of each candle
-    (TPO-style approximation - fine for bars ≥ 1m).
+    (TPO-style approximation - fine for bars >= 1m).
 
     Returns None if df is too small or malformed.
     """
@@ -154,7 +154,7 @@ def _compute(df: pd.DataFrame, n_bins: int) -> VolumeProfile:
     hvn_thresh = float(np.percentile(bucket, _HVN_PERCENTILE))
     lvn_thresh = float(np.percentile(bucket, _LVN_PERCENTILE))
 
-    # Local maxima in smoothed histogram → HVN candidates
+    # Local maxima in smoothed histogram -> HVN candidates
     hvn_prices, lvn_prices = [], []
     for i in range(1, n_bins - 1):
         if smooth[i] > smooth[i - 1] and smooth[i] > smooth[i + 1] and bucket[i] >= hvn_thresh:

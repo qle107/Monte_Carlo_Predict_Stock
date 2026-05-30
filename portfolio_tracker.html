@@ -255,7 +255,7 @@
     <div class="sidebar-title">My Portfolios</div>
     <div id="portfolioList"></div>
     <div class="new-portfolio-form">
-      <input type="text" id="newPortfolioName" placeholder="New portfolio…" maxlength="30" onkeydown="if(event.key==='Enter')createPortfolio()" />
+      <input type="text" id="newPortfolioName" placeholder="New portfolio..." maxlength="30" onkeydown="if(event.key==='Enter')createPortfolio()" />
       <button class="btn btn-primary btn-sm" onclick="createPortfolio()">+</button>
     </div>
     <div class="sidebar-footer">
@@ -271,7 +271,7 @@
       <div class="settings-grid">
         <div class="form-group">
           <label>API Key ID</label>
-          <input type="text" id="alpacaKeyId" placeholder="PKXXXXXX…" style="min-width:220px" />
+          <input type="text" id="alpacaKeyId" placeholder="PKXXXXXX..." style="min-width:220px" />
         </div>
         <div class="form-group">
           <label>Secret Key</label>
@@ -281,7 +281,7 @@
         <button class="btn btn-secondary" onclick="clearApiKeys()">Clear</button>
       </div>
       <div style="font-size:12px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:6px;padding:8px 12px;margin-top:10px;color:var(--red)">
-        ⚠️ <strong>Security notice:</strong> API keys are stored <strong>in memory only</strong>
+        Warning: <strong>Security notice:</strong> API keys are stored <strong>in memory only</strong>
         and will be lost on page refresh. Never enter live-account keys in a browser.
         Use a paper-trading key for this tool.
       </div>
@@ -301,7 +301,7 @@
       <div class="add-form">
         <div class="form-group">
           <label>Ticker Symbol</label>
-          <input type="text" id="inputTicker" placeholder="AAPL, TSLA…" maxlength="10"
+          <input type="text" id="inputTicker" placeholder="AAPL, TSLA..." maxlength="10"
             oninput="this.value=this.value.toUpperCase()" />
         </div>
         <div class="form-group">
@@ -501,7 +501,7 @@ async function fetchHistoricalPrice() {
 
   const hint = document.getElementById('priceHint');
   const btn = document.getElementById('fetchBtn');
-  hint.textContent = 'Fetching…';
+  hint.textContent = 'Fetching...';
   hint.className = 'price-hint loading';
   btn.disabled = true;
 
@@ -610,7 +610,7 @@ async function addPosition() {
   let price = parseFloat(priceRaw);
   if (!price || price <= 0) {
     // Auto-fetch
-    toast('Fetching price…', 'info');
+    toast('Fetching price...', 'info');
     await fetchHistoricalPrice();
     price = parseFloat(document.getElementById('inputPrice').value);
     if (!price || price <= 0) { toast('Could not determine price - enter manually', 'error'); return; }
@@ -670,7 +670,7 @@ async function refreshLiveForPosition(pos) {
 async function refreshAllLive() {
   const p = getActive();
   if (!p || p.positions.length === 0) return;
-  toast('Refreshing live prices…', 'info');
+  toast('Refreshing live prices...', 'info');
   await Promise.all(p.positions.map(pos => refreshLiveForPosition(pos)));
   toast('Live prices updated', 'success');
 }
@@ -744,7 +744,7 @@ function renderTable() {
     let alertBadge = '';
     if (live && Math.abs(changeFromEntry) >= threshold) {
       const dir = changeFromEntry >= 0 ? 'up' : 'down';
-      alertBadge = `<span class="alert-badge ${dir}">${changeFromEntry >= 0 ? '▲' : '▼'} ${Math.abs(changeFromEntry).toFixed(1)}%</span>`;
+      alertBadge = `<span class="alert-badge ${dir}">${changeFromEntry >= 0 ? '^' : 'v'} ${Math.abs(changeFromEntry).toFixed(1)}%</span>`;
     }
 
     const liveCell = live
@@ -787,7 +787,7 @@ function renderTable() {
   // Top movers
   const topDiv = document.getElementById('topMovers');
   if (movers.length === 0) {
-    topDiv.innerHTML = '<div style="color:var(--text2);font-size:13px">Waiting for live prices…</div>';
+    topDiv.innerHTML = '<div style="color:var(--text2);font-size:13px">Waiting for live prices...</div>';
     return;
   }
   movers.sort((a,b) => Math.abs(b.pct) - Math.abs(a.pct));

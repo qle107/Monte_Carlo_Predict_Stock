@@ -18,7 +18,7 @@ def dfa(
         1-D array of values. For price-level inputs pass ``np.log(prices)``;
         for log-return inputs pass the returns directly.
     min_box:
-        Smallest box size (default 4).  Must be ≥ 4.
+        Smallest box size (default 4).  Must be >= 4.
     max_box:
         Largest box size (default ``len(series) // 4``).
 

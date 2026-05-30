@@ -26,11 +26,11 @@ from .signal import Signal
 
 _GARCH_CACHE_TTL = 300.0  # seconds (5 min)
 _garch_cache_lock = threading.RLock()
-_garch_cache: dict = {}  # hash → ((omega, alpha, beta), expire_mono)
+_garch_cache: dict = {}  # hash -> ((omega, alpha, beta), expire_mono)
 
 
 def _garch_cache_key(returns: np.ndarray) -> str:
-    """Cheap fingerprint: last 90 values rounded to 6 dp → MD5."""
+    """Cheap fingerprint: last 90 values rounded to 6 dp -> MD5."""
     tail = np.round(returns[-90:], 6).tobytes()
     return hashlib.md5(tail).hexdigest()
 
@@ -77,7 +77,7 @@ class _MSParams:
     sigma_lvn_boost: float = 1.20  # +20% σ inside an LVN
     lvn_accel_extra: float = 1.25  # additional +25% σ acceleration in LVN
 
-    # Raw-volume → σ scaling & drift validation
+    # Raw-volume -> σ scaling & drift validation
     vol_high_ratio: float = 1.5
     vol_low_ratio: float = 0.7
     sigma_high_vol: float = 1.25
@@ -115,8 +115,8 @@ class _MSParams:
 
     # Volume-profile structure derivation
     value_area_pct: float = 0.70
-    hvn_rel_threshold: float = 0.50  # HVN ≥ 50 % of POC volume
-    lvn_rel_threshold: float = 0.30  # LVN ≤ 30 % of median volume
+    hvn_rel_threshold: float = 0.50  # HVN >= 50 % of POC volume
+    lvn_rel_threshold: float = 0.30  # LVN <= 30 % of median volume
 
 
 _PARAMS = _MSParams()
@@ -162,7 +162,7 @@ class MCResult:
     ms_key_levels: dict | None = field(default=None)
 
 
-# Existing model helpers (untouched - proven & tested)
+# Existing model helpers
 
 
 def _calibrate_garch(
@@ -365,8 +365,8 @@ def _simulate_ensemble(
 
     Weights are now driven by the *empirical* characteristics of the
     recent return series:
-      • higher excess kurtosis           → more weight on jumps
-      • higher vol-of-vol (regime drift) → more weight on GARCH
+      • higher excess kurtosis           -> more weight on jumps
+      • higher vol-of-vol (regime drift) -> more weight on GARCH
       • otherwise the bootstrap (real distribution) dominates
 
     This replaces the previous hard-coded 0.45/0.35/0.20 split that
@@ -376,7 +376,7 @@ def _simulate_ensemble(
     kurt_norm = float(np.clip(kurtosis_excess / 4.0, 0.0, 1.0))
 
     # Vol-of-vol proxy: how much does rolling 10-bar std swing inside the
-    # recent window? High = unstable regime → GARCH carries more weight.
+    # recent window? High = unstable regime -> GARCH carries more weight.
     vov_norm = 0.0
     if has_history:
         arr = np.asarray(recent_returns, dtype=float)
@@ -464,8 +464,8 @@ def _normalise_volume_profile(
     Accepts:
       • core.volume_profile.VolumeProfile dataclass      (preferred)
       • {"POC":..., "VAH":..., "VAL":..., "HVNs":[...], "LVNs":[...]}  pre-computed
-      • {price_level: volume_at_level}                   raw histogram → derive here
-      • None                                             → skip
+      • {price_level: volume_at_level}                   raw histogram -> derive here
+      • None                                             -> skip
     """
     if vp is None:
         return None
@@ -647,11 +647,11 @@ def _compute_cvd_state(
     Returns (drift_bias, accumulation, distribution).
 
     Logic:
-      flat   CVD slope    → drift_bias = 0  (gravity dominates)
-      both rising         → strong positive bias
-      both falling        → strong negative bias
-      CVD up, price down  → accumulation (mild + bias)
-      CVD down, price up  → distribution (mild − bias)
+      flat   CVD slope    -> drift_bias = 0  (gravity dominates)
+      both rising         -> strong positive bias
+      both falling        -> strong negative bias
+      CVD up, price down  -> accumulation (mild + bias)
+      CVD down, price up  -> distribution (mild − bias)
     Bias is halved when volume doesn't validate the price trend.
     """
     if cvd_history is None or price_history is None:
@@ -699,7 +699,7 @@ def _compute_regime_state(
     Returns (regime_label, dfa_alpha, drift_mult, gravity_mult, sigma_mult).
 
     Uses DFA on the log-return series (stationary) rather than price levels.
-    Thresholds: α > 0.55 → trending, α < 0.45 → mean-reverting.
+    Thresholds: α > 0.55 -> trending, α < 0.45 -> mean-reverting.
     """
     if rets.size >= p.hurst_window:
         H, _ = dfa(rets[-p.hurst_window :])
@@ -1055,7 +1055,7 @@ def run(
     elif model == "ensemble":
         returns = _simulate_ensemble(rng, n_sim, n_step, sigma, drift, recent_returns, kurtosis_excess)
     else:
-        # unknown → gaussian fallback
+        # unknown -> gaussian fallback
         returns = (drift - 0.5 * sigma**2) + sigma * _innov_gaussian(rng, n_sim, n_step)
 
     # Build price paths from log-returns using exp().
@@ -1104,7 +1104,7 @@ def _build_mc_result(
     max(1, paths.shape[1] - 1)
     rets_final = final / current_price - 1.0
     horizon_std = float(np.std(rets_final))
-    band_frac = max(0.0025, 0.25 * horizon_std)  # ≥ 25 bps floor
+    band_frac = max(0.0025, 0.25 * horizon_std)  # >= 25 bps floor
     band = current_price * band_frac
     prob_up = float(np.mean(final > current_price + band))
     prob_down = float(np.mean(final < current_price - band))
@@ -1136,8 +1136,8 @@ def _build_mc_result(
     # (= most central = least distorted by a 0.1 pp nudge).
     #
     # Example:  raw [50.05, 24.95, 25.00]
-    #   rounded [50.1, 25.0, 25.0] → sum 100.1  → error = -0.1
-    #   largest is 50.1 → adjusted to 50.0  → sum exactly 100.0  ✓
+    #   rounded [50.1, 25.0, 25.0] -> sum 100.1  -> error = -0.1
+    #   largest is 50.1 -> adjusted to 50.0  -> sum exactly 100.0  ✓
     pu_r = round(prob_up * 100, 1)
     pf_r = round(prob_flat * 100, 1)
     pd_r = round(prob_down * 100, 1)

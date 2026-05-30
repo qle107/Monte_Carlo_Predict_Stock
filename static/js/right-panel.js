@@ -98,7 +98,7 @@
     const isLong = ts.side === 'long';
     banner.classList.add(ts.side);
     set('ts-banner-label',  el => el.textContent =
-      isLong ? '▲  LONG - Entry Confirmed' : '▼  SHORT - Entry Confirmed');
+      isLong ? '^  LONG - Entry Confirmed' : 'v  SHORT - Entry Confirmed');
     set('ts-banner-reason', el => {
       el.textContent          = ts.reason || '';
       el.title                = '';
@@ -131,12 +131,12 @@
     const recLabel = ts.sl_recommended === 'pct' ? 'Fixed %' : 'ATR';
     set('ts-sl-main', el => el.textContent = f2(recSL));
     set('ts-sl-sub',  el => el.textContent =
-      recDist != null ? `${recDist.toFixed(1)}% risk · ${recLabel} stop` : '');
+      recDist != null ? `${recDist.toFixed(1)}% risk, ${recLabel} stop` : '');
 
     // Dual SL detail
     const atrVal  = f2(ts.sl_atr) + (ts.sl_atr_dist != null ? ` (${ts.sl_atr_dist.toFixed(1)}%)` : '');
     const pctVal  = f2(ts.sl_pct) + (ts.sl_pct_dist != null ? ` (${ts.sl_pct_dist.toFixed(1)}%)` : '');
-    const capNote = ts.atr_capped ? ' ⚠ capped' : '';
+    const capNote = ts.atr_capped ? ' Warning: capped' : '';
 
     set('ts-sl-atr-val', el => {
       el.textContent = atrVal + capNote;
@@ -258,7 +258,7 @@
     const status = _el('bt-status');
     if (!btn || !status) return;
     btn.disabled     = true;
-    status.textContent = 'Running walk-forward…';
+    status.textContent = 'Running walk-forward...';
     status.style.color = '';
     try {
       const res = await fetch('/api/backtest', {
@@ -279,8 +279,8 @@
         status.style.color = 'var(--muted)';
         const mpu = j.mean_prob_up    != null ? Number(j.mean_prob_up).toFixed(1) : '?';
         const rur = j.real_up_rate    != null ? Number(j.real_up_rate).toFixed(1) : '?';
-        status.textContent = `${j.n_evaluated} evaluations · ${j.n_called} buy/sell calls` +
-          ` · mean prob_up ${mpu}% · realised up ${rur}%`;
+        status.textContent = `${j.n_evaluated} evaluations, ${j.n_called} buy/sell calls` +
+          `, mean prob_up ${mpu}%, realised up ${rur}%`;
       }
     } catch (e) {
       status.textContent = 'Failed: ' + e;

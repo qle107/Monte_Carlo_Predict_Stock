@@ -333,7 +333,7 @@ async def _zone_scan_one(
             zone_tp1, zone_tp2 = _supply_tps(price)
             zone_sl = round(nd.low - atr * 0.25, 4)
 
-        # LONG B: supply break (price just crossed above supply → flip to demand)
+        # LONG B: supply break (price just crossed above supply -> flip to demand)
         elif long_ok and ns and ns.level <= price * 1.01 and ns.level >= price * 0.98:
             setup_type = "supply_break"
             side = "long"
@@ -443,14 +443,14 @@ async def _zone_scan_one(
         }
         if side != "none":
             reason = (
-                f"{setup_labels.get(setup_type, setup_type)} · "
-                f"{ema_labels.get(ema_stack, ema_stack)} · "
-                f"Zone str {zone_strength:.0%} · "
-                f"Setup score {setup_score:.0%} · "
-                f"RSI {ind.rsi:.0f} · ADX {ind.adx:.0f}"
+                f"{setup_labels.get(setup_type, setup_type)}, "
+                f"{ema_labels.get(ema_stack, ema_stack)}, "
+                f"zone str {zone_strength:.0%}, "
+                f"setup score {setup_score:.0%}, "
+                f"RSI {ind.rsi:.0f}, ADX {ind.adx:.0f}"
             )
         else:
-            reason = f"No zone setup - {ema_labels.get(ema_stack, '?')} · price not near any zone"
+            reason = f"No zone setup; {ema_labels.get(ema_stack, '?')}, price not near any zone"
 
         elapsed = (time.monotonic() - t0) * 1000
 

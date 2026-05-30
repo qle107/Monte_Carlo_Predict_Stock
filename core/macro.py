@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 _CACHE_TTL = 4 * 3600.0  # seconds
 _cache_lock = threading.RLock()
-_macro_cache: dict = {}  # key → (data, expire_monotonic)
+_macro_cache: dict = {}  # key -> (data, expire_monotonic)
 
 
 def _cache_get(key: str):
@@ -42,12 +42,12 @@ def _cache_put(key: str, data) -> None:
         _macro_cache[key] = (data, now + _CACHE_TTL)
 
 
-# Each function maps (current, previous) → "bullish" | "bearish" | "neutral".
+# Each function maps (current, previous) -> "bullish" | "bearish" | "neutral".
 # Thresholds are based on widely-used rule-of-thumb market heuristics.
 
 
 def _cpi_impact(cur: float | None, _prev) -> str:
-    """High CPI → Fed hikes → equity multiples compress → bearish."""
+    """High CPI -> Fed hikes -> equity multiples compress -> bearish."""
     if cur is None:
         return "neutral"
     if cur > 3.5:
@@ -58,7 +58,7 @@ def _cpi_impact(cur: float | None, _prev) -> str:
 
 
 def _ppi_impact(cur: float | None, _prev) -> str:
-    """High PPI → upstream cost pressure → margin squeeze → bearish."""
+    """High PPI -> upstream cost pressure -> margin squeeze -> bearish."""
     if cur is None:
         return "neutral"
     if cur > 3.0:
@@ -69,7 +69,7 @@ def _ppi_impact(cur: float | None, _prev) -> str:
 
 
 def _pce_impact(cur: float | None, _prev) -> str:
-    """Fed's 2 % target - above target → rate hikes → bearish."""
+    """Fed's 2 % target - above target -> rate hikes -> bearish."""
     if cur is None:
         return "neutral"
     if cur > 2.5:
@@ -80,7 +80,7 @@ def _pce_impact(cur: float | None, _prev) -> str:
 
 
 def _fed_rate_impact(cur: float | None, prev: float | None) -> str:
-    """High absolute level AND recent hikes → bearish; cuts → bullish."""
+    """High absolute level AND recent hikes -> bearish; cuts -> bullish."""
     if cur is None:
         return "neutral"
     if cur > 5.0:
@@ -93,7 +93,7 @@ def _fed_rate_impact(cur: float | None, prev: float | None) -> str:
 
 
 def _yield_10y_impact(cur: float | None, prev: float | None) -> str:
-    """Rising yields compress equity P/E multiples → bearish for stocks."""
+    """Rising yields compress equity P/E multiples -> bearish for stocks."""
     if cur is None:
         return "neutral"
     rising = prev is not None and cur > prev + 0.15
@@ -106,7 +106,7 @@ def _yield_10y_impact(cur: float | None, prev: float | None) -> str:
 
 
 def _gdp_impact(cur: float | None, _prev) -> str:
-    """Strong growth → earnings expansion → bullish; contraction → bearish."""
+    """Strong growth -> earnings expansion -> bullish; contraction -> bearish."""
     if cur is None:
         return "neutral"
     if cur > 3.0:
@@ -117,7 +117,7 @@ def _gdp_impact(cur: float | None, _prev) -> str:
 
 
 def _unemployment_impact(cur: float | None, prev: float | None) -> str:
-    """Rising unemployment → weakening consumer → bearish; tight labour → bullish."""
+    """Rising unemployment -> weakening consumer -> bearish; tight labour -> bullish."""
     if cur is None:
         return "neutral"
     rising = prev is not None and cur > prev + 0.2
@@ -142,12 +142,12 @@ def _pmi_impact(cur: float | None, _prev) -> str:
 def _trend_arrow(cur: float | None, prev: float | None) -> str:
     """Visual arrow comparing current reading to prior period."""
     if cur is None or prev is None:
-        return "→"
+        return "->"
     if cur > prev * 1.001:
-        return "↑"
+        return "up"
     if cur < prev * 0.999:
-        return "↓"
-    return "→"
+        return "down"
+    return "flat"
 
 
 _FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
@@ -366,7 +366,7 @@ def _indicator(
         "unit": unit,
         "description": description,
         "impact": impact_fn(cur, prev),  # "bullish" | "bearish" | "neutral"
-        "arrow": _trend_arrow(cur, prev),  # "↑" | "↓" | "→"
+        "arrow": _trend_arrow(cur, prev),  # "↑" | "↓" | "->"
     }
 
 
@@ -394,7 +394,7 @@ def fetch_macro_indicators(force_refresh: bool = False) -> dict:
             logger.debug("[macro] returning cached indicators")
             return cached
 
-    logger.info("[macro] fetching fresh macro indicators …")
+    logger.info("[macro] fetching fresh macro indicators ...")
     fred_key = bool(os.getenv("FRED_API_KEY", "").strip())
     indicators: list[dict] = []
 
@@ -411,7 +411,7 @@ def fetch_macro_indicators(force_refresh: bool = False) -> dict:
             cpi_cur,
             cpi_prev,
             "% YoY",
-            "Measures consumer price inflation. High CPI → Fed raises rates → equity valuations fall.",
+            "Measures consumer price inflation. High CPI -> Fed raises rates -> equity valuations fall.",
             _cpi_impact,
         )
     )

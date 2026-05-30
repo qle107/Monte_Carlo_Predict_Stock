@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 _SENTIMENT_TTL = 300.0
 _sentiment_lock = threading.Lock()
-_sentiment_cache: dict[str, tuple] = {}  # ticker → (result_dict, expire_time)
+_sentiment_cache: dict[str, tuple] = {}  # ticker -> (result_dict, expire_time)
 
 
 def _sentiment_cache_get(ticker: str) -> dict | None:
@@ -218,7 +218,7 @@ _PRICE_REGEXES: list[tuple[re.Pattern, str, int]] = [
     # "$150c", "$200p", "$150C", "$200P"
     (re.compile(r"\$(\d{1,5}(?:\.\d{1,2})?)\s*([Cc])\b"), "call", 1),
     (re.compile(r"\$(\d{1,5}(?:\.\d{1,2})?)\s*([Pp])\b"), "put", 1),
-    # "150c", "200p", "150C", "200P" (bare chain notation ≥2 digits)
+    # "150c", "200p", "150C", "200P" (bare chain notation >=2 digits)
     (re.compile(r"\b(\d{2,5})([Cc])\b"), "call", 1),
     (re.compile(r"\b(\d{2,5})([Pp])\b"), "put", 1),
     # "$150 calls", "$200 puts", "$150 call"
@@ -296,10 +296,10 @@ async def _get_twikit_client() -> object | None:
 
     Auth priority
 
-    1. x_cookies.json exists → load it and skip login entirely.
+    1. x_cookies.json exists -> load it and skip login entirely.
        This is the recommended path: export cookies from your browser and
        place them at  <project_root>/x_cookies.json  (see README).
-    2. x_cookies.json not found AND X_USERNAME + X_PASSWORD are set → do a
+    2. x_cookies.json not found AND X_USERNAME + X_PASSWORD are set -> do a
        fresh password login and save the resulting cookies for next time.
 
     Cookie file format (create manually from browser if password login fails):
@@ -307,7 +307,7 @@ async def _get_twikit_client() -> object | None:
             "auth_token": "<value of auth_token cookie on x.com>",
             "ct0":        "<value of ct0 cookie on x.com>"
         }
-    Get these from: Chrome F12 → Application → Cookies → https://x.com
+    Get these from: Chrome F12 -> Application -> Cookies -> https://x.com
     """
     global _twikit_client, _twikit_lock
     if _twikit_client is not None:
@@ -354,7 +354,7 @@ async def _get_twikit_client() -> object | None:
             return None
 
         try:
-            logger.info("[X] twikit - attempting password login as @%s …", username)
+            logger.info("[X] twikit - attempting password login as @%s ...", username)
             login_kwargs: dict = {"auth_info_1": username, "password": password}
             if email:
                 login_kwargs["auth_info_2"] = email
@@ -366,8 +366,8 @@ async def _get_twikit_client() -> object | None:
         except Exception as exc:
             logger.warning(
                 "[X] twikit password login failed for @%s: %s\n"
-                "  → Fix: export cookies from your browser and save to %s\n"
-                "  → Get auth_token + ct0 from: F12 → Application → Cookies → x.com",
+                "  -> Fix: export cookies from your browser and save to %s\n"
+                "  -> Get auth_token + ct0 from: F12 -> Application -> Cookies -> x.com",
                 username,
                 exc,
                 _TWIKIT_COOKIES,
@@ -387,7 +387,7 @@ def _twikit_reset() -> None:
     logger.debug("[X] twikit client reset - will reload on next request")
 
 
-# Keep Reddit fetcher available for the global market pulse feed (no key needed)
+# Keep Reddit fetcher for global market pulse.
 _REDDIT_HEADERS = {"User-Agent": "Mozilla/5.0 mc-trader-bot/1.0 (research)"}
 _REDDIT_SUBREDDITS = ["wallstreetbets", "options", "stocks", "investing"]
 
@@ -469,7 +469,7 @@ async def fetch_x_sentiment(ticker: str) -> dict:
         "type_breakdown": {},
         "top_posts": [],
     }
-    # credentials present but something went wrong → needs_setup stays False
+    # credentials present but something went wrong -> needs_setup stays False
     _failed = {**_no_creds, "needs_setup": False}
 
     if not has_creds:
@@ -732,8 +732,7 @@ _CRAMER_NEUTRAL_KW: list[str] = [
     "considering",
 ]
 
-# Regex to find stock tickers embedded in article text
-# Covers:  (NYSE: AAPL)  (Nasdaq: NVDA)  (NYSEARCA: SPY)  $AAPL
+# Ticker regex for article text.
 _ARTICLE_TICKER_RE = re.compile(
     r"(?:"
     r"\((?:NYSE|NASDAQ|Nasdaq|AMEX|NYSEARCA|NYSEMKT|BATS):\s*([A-Z]{1,5})\)"
@@ -915,7 +914,7 @@ async def fetch_cramer_sentiment(ticker: str) -> dict:
         article_count    : int,
         cramer_signal    : 'bullish'|'bearish'|'mixed'|'unknown',
         inverse_signal   : 'BUY'|'SELL'|'WAIT',
-        inverse_score    : float [-1 … +1],
+        inverse_score    : float [-1 ... +1],
         confidence       : 'high'|'medium'|'low',
         ticker_stance    : 'bullish'|'bearish'|'neutral'|'unknown',
         buy_signals      : int,
@@ -967,7 +966,7 @@ async def fetch_cramer_sentiment(ticker: str) -> dict:
                 logger.debug("Cramer RSS %s: %s", rss_url, exc)
 
         articles: list[dict] = []
-        all_picks_map: dict[str, dict] = {}  # ticker → best pick across all articles
+        all_picks_map: dict[str, dict] = {}  # ticker -> best pick across all articles
         total_buy = total_sell = 0
         type_counts: Counter = Counter()
         strength_order = {"bullish": 3, "bearish": 3, "neutral": 2, "unknown": 1}
@@ -1194,7 +1193,7 @@ async def _fetch_stocktwits_sentiment(ticker: str) -> dict:
         }
 
 
-# Options flow  (yfinance - blocking → run in executor)
+# Options flow  (yfinance - blocking -> run in executor)
 
 
 def _scan_unusual_activity(
@@ -1268,9 +1267,9 @@ def _options_flow_sync(ticker: str) -> dict:
     pass that scans up to 8 expirations for **unusual activity** (high
     volume relative to open interest - see _scan_unusual_activity).
 
-    PCR < 0.7  → call-heavy (bullish crowd positioning)
-    0.7-1.0    → neutral
-    PCR > 1.0  → put-heavy  (bearish / hedging)
+    PCR < 0.7  -> call-heavy (bullish crowd positioning)
+    0.7-1.0    -> neutral
+    PCR > 1.0  -> put-heavy  (bearish / hedging)
     """
     try:
         t = yf.Ticker(ticker)
@@ -1434,11 +1433,11 @@ def _options_flow_sync(ticker: str) -> dict:
         return {"available": False, "reason": str(exc)}
 
 
-# Global market sentiment  (no specific ticker - overall market mood)
+# Global market sentiment (no ticker).
 
 _GLOBAL_CACHE_TTL = 600.0  # 10 min (market-wide data changes slower)
 _global_cache_lock = threading.Lock()
-_global_cache: dict[str, tuple] = {}  # 'GLOBAL' → (result, expire)
+_global_cache: dict[str, tuple] = {}  # 'GLOBAL' -> (result, expire)
 
 # Hot market themes to detect in posts
 _MARKET_THEMES = {
@@ -1518,7 +1517,7 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
     Returns
 
     {
-        mood_score       : float [-1 bearish … +1 bullish],
+        mood_score       : float [-1 bearish ... +1 bullish],
         market_mood      : 'bullish'|'bearish'|'neutral',
         post_count       : int,
         call_mentions    : int,
@@ -1944,7 +1943,7 @@ def _score_options_activity(options_data: dict) -> tuple[float, str, dict]:
     otm_put_hi = spot * 1.0
 
     today = date.today()
-    days_to_fri = (4 - today.weekday()) % 7 or 7  # always ≥ 1
+    days_to_fri = (4 - today.weekday()) % 7 or 7  # always >= 1
     next_fri = today + timedelta(days=days_to_fri)
     nw_start = (next_fri - timedelta(days=1)).isoformat()  # Thursday
     nw_end = (next_fri + timedelta(days=3)).isoformat()  # following Monday
@@ -2155,7 +2154,7 @@ async def get_sentiment(ticker: str, force_refresh: bool = False) -> dict:
     return result
 
 
-# Sector → ticker map for Cramer sector fallback.
+# Sector -> ticker map for Cramer sector fallback.
 
 _TICKER_SECTOR_MAP: dict[str, str] = {
     # Technology
@@ -2250,7 +2249,7 @@ _TICKER_SECTOR_MAP: dict[str, str] = {
     "NVAX": "healthcare",
 }
 
-# Sector → representative tickers to search Cramer coverage for
+# Sector -> representative tickers to search Cramer coverage for
 _SECTOR_PEER_TICKERS: dict[str, list[str]] = {
     "tech": ["AAPL", "MSFT", "NVDA", "GOOG", "META", "AMZN", "TSLA"],
     "energy": ["XOM", "CVX", "COP", "OXY", "SLB"],
@@ -2267,7 +2266,7 @@ async def _cramer_for_sector(sector: str) -> dict:
     Returns a lightweight dict shaped like fetch_cramer_sentiment() but with
     source_label set to "Sector Cramer Signal".
 
-    The function tries peers in order and stops once it has ≥ 3 articles.
+    The function tries peers in order and stops once it has >= 3 articles.
     """
     peers = _SECTOR_PEER_TICKERS.get(sector, [])
     if not peers:

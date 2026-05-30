@@ -21,8 +21,8 @@ class Regime:
     potential_down: float
     potential_flat: float
 
-    trend_score: float  # −1 (strong down) … +1 (strong up)
-    range_score: float  #  0 (trending)    …  1 (range-bound)
+    trend_score: float  # −1 (strong down) ... +1 (strong up)
+    range_score: float  #  0 (trending)    ...  1 (range-bound)
     breakout_up: bool
     breakout_down: bool
 
@@ -357,7 +357,7 @@ def detect_regime(df: pd.DataFrame, adx: float = 0.0, obv_slope: float = 0.0) ->
 
     comp["donchian"] = float(np.clip(don_pos, -1.0, 1.0))
 
-    # HH/HL → up bias; LH/LL → down bias
+    # HH/HL -> up bias; LH/LL -> down bias
     n_pivots_h = max(1, hh + lh)
     n_pivots_l = max(1, hl + ll)
     pattern_up = (hh / n_pivots_h) * 0.5 + (hl / n_pivots_l) * 0.5

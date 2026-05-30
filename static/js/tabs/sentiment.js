@@ -38,7 +38,7 @@
     const map = {
       connected:     { color: 'var(--green)',  text: 'Connected'     },
       disconnected:  { color: 'var(--red)',    text: 'Disconnected'  },
-      reconnecting:  { color: 'var(--amber)',  text: 'Reconnecting…' },
+      reconnecting:  { color: 'var(--amber)',  text: 'Reconnecting...' },
     };
     const s = map[state] || map.disconnected;
     dot.style.background   = s.color;
@@ -136,7 +136,7 @@
     if (items.length === 0) {
       list.innerHTML = `<div style="text-align:center;color:var(--muted);
                           font-size:12px;padding:24px;">
-                          No headlines yet - waiting for first poll…</div>`;
+                          No headlines yet - waiting for first poll...</div>`;
       return;
     }
 
@@ -287,7 +287,7 @@
 
     if (invEl)    { invEl.textContent = inv; invEl.style.color = invColor; }
     if (rawEl)    { rawEl.textContent = sig; rawEl.style.color = invColor; }
-    if (confEl)   { confEl.textContent = `${conf} confidence · ${label}`; }
+    if (confEl)   { confEl.textContent = `${conf} confidence, ${label}`; }
     if (tickerEl) { tickerEl.textContent = '- sector'; tickerEl.style.color = 'var(--muted)'; }
 
     if (hlEl) {
@@ -315,7 +315,7 @@
           hdr.dataset.sectorNote = '1';
           const note = document.createElement('div');
           note.style.cssText = 'font-size:10px;color:var(--amber);margin-top:4px;';
-          note.textContent = `⚠ No recent Cramer coverage for ${ticker} - showing ${data.sector} sector peers`;
+          note.textContent = `Warning: No recent Cramer coverage for ${ticker} - showing ${data.sector} sector peers`;
           hdr.parentNode && hdr.parentNode.insertBefore(note, hdr.nextSibling);
         }
       }

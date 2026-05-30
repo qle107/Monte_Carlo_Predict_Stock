@@ -91,13 +91,13 @@ class TradeSetup:
     entry: float | None = None
     sl_atr: float | None = None  # ATR-based stop loss
     sl_pct: float | None = None  # Fixed-% stop loss
-    sl_atr_dist: float | None = None  # distance entry → sl_atr in %
-    sl_pct_dist: float | None = None  # distance entry → sl_pct in %
+    sl_atr_dist: float | None = None  # distance entry -> sl_atr in %
+    sl_pct_dist: float | None = None  # distance entry -> sl_pct in %
 
     tp1: float | None = None  # first target  (P75 long / P25 short)
     tp2: float | None = None  # runner target (P90 long / P10 short)
-    tp1_dist: float | None = None  # % distance entry → tp1
-    tp2_dist: float | None = None  # % distance entry → tp2
+    tp1_dist: float | None = None  # % distance entry -> tp1
+    tp2_dist: float | None = None  # % distance entry -> tp2
 
     rr_atr: float | None = None  # RR using ATR stop
     rr_pct: float | None = None  # RR using fixed-% stop
@@ -115,7 +115,7 @@ class TradeSetup:
     zone_tp1: float | None = None  # nearest supply zone above (long TP)
     zone_tp2: float | None = None  # second supply zone (runner target)
     zone_sl: float | None = None  # zone-based SL: edge of nearest demand zone
-    zone_tp1_dist: float | None = None  # % distance entry → zone_tp1
+    zone_tp1_dist: float | None = None  # % distance entry -> zone_tp1
     zone_tp2_dist: float | None = None  # % from entry
     zone_sl_dist: float | None = None  # % risk to zone_sl
     zone_rr: float | None = None  # R:R using zone_tp1 / zone_sl
@@ -204,7 +204,7 @@ def compute_trade_setup(
     # MC probs may be 0-100 or 0-1
     _prob_u = prob_up / 100.0 if prob_up > 1.0 else prob_up
     _prob_d = prob_down / 100.0 if prob_down > 1.0 else prob_down
-    mc_available = (_prob_u + _prob_d) > 0.50  # sum > 50% → real MC data present
+    mc_available = (_prob_u + _prob_d) > 0.50  # sum > 50% -> real MC data present
     mc_dir_prob = _prob_u if is_long else _prob_d
     if mc_available and mc_dir_prob < cfg.min_mc_prob:
         return TradeSetup(
@@ -420,7 +420,7 @@ def compute_trade_setup(
             regime=regime,
             score=round(score, 4),
             confidence=round(confidence, 3),
-            reason=f"R:R too low - ATR:{rr_atr:.1f}R, Fixed:{rr_pct:.1f}R (need ≥{cfg.min_rr}R). TP targets not far enough.",
+            reason=f"R:R too low - ATR:{rr_atr:.1f}R, Fixed:{rr_pct:.1f}R (need >={cfg.min_rr}R). TP targets not far enough.",
         )
 
     # Path-aware SL/TP hit rates when full MC paths exist
@@ -429,7 +429,7 @@ def compute_trade_setup(
 
     if have_paths:
         arr = np.asarray(mc_paths_arr, dtype=float)
-        # Detect shape: if 2-D → full paths; if 1-D → just final prices
+        # Detect shape: if 2-D -> full paths; if 1-D -> just final prices
         if arr.ndim == 2:
             if is_long:
                 touched_tp1 = np.any(arr >= tp1, axis=1)
@@ -505,7 +505,7 @@ def compute_trade_setup(
     direction_label = (direction or "unknown").replace("_", " ").title()
     cap_note = f" [ATR capped at {max_atr_pct * 100:.0f}%]" if atr_was_capped else ""
     zone_note = (
-        f" · Zone: {zone_type_str.replace('_', ' ')} (str={zone_strength_val:.2f})"
+        f"; zone {zone_type_str.replace('_', ' ')} (str={zone_strength_val:.2f})"
         if zone_type_str is not None and zone_strength_val is not None
         else ""
     )
@@ -517,7 +517,7 @@ def compute_trade_setup(
         f"MC {side} prob {mc_dir_prob:.0%}",
         f"Best R:R {best_rr:.1f}R ({sl_recommended.upper()} stop){cap_note}",
     ]
-    reason = " · ".join(reason_parts) + zone_note
+    reason = "; ".join(reason_parts) + zone_note
 
     return TradeSetup(
         ticker=ticker,
@@ -713,7 +713,7 @@ def trade_setup_from_scan(
         raw_tp1_down = atr_d * 1.5
         raw_tp2_down = atr_d * 2.5
 
-        # Cap so TP1 ≤ tp1_cap% above entry, TP2 ≤ tp2_cap%
+        # Cap so TP1 <= tp1_cap% above entry, TP2 <= tp2_cap%
         max_tp1_dist = price * _tp1_cap
         max_tp2_dist = price * _tp2_cap
         tp1_up = min(raw_tp1_up, max_tp1_dist)

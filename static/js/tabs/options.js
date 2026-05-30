@@ -52,16 +52,16 @@
   // the top of the Options tab makes this explicit.
   function _sentimentTag(c) {
     const ratio = c.vol_oi || 0;
-    const itm   = c.in_money ? ' · ITM' : '';
+    const itm   = c.in_money ? ', ITM' : '';
     // Pure type-based labels with intensity from vol/OI ratio.
     if (c.type === 'call') {
-      if (ratio >= 5)  return { label: '📞 Call · Extreme',     color: 'var(--green)', weight: 800 };
-      if (ratio >= 3)  return { label: '📞 Call · Heavy' + itm, color: 'var(--green)', weight: 700 };
-      return                  { label: '📞 Call' + itm,         color: 'var(--green)', weight: 600 };
+      if (ratio >= 5)  return { label: 'Call, extreme',     color: 'var(--green)', weight: 800 };
+      if (ratio >= 3)  return { label: 'Call, heavy' + itm, color: 'var(--green)', weight: 700 };
+      return                  { label: 'Call' + itm,         color: 'var(--green)', weight: 600 };
     }
-    if (ratio >= 5)    return { label: '🔻 Put · Extreme',      color: 'var(--red)',   weight: 800 };
-    if (ratio >= 3)    return { label: '🔻 Put · Heavy' + itm,  color: 'var(--red)',   weight: 700 };
-    return                    { label: '🔻 Put' + itm,          color: 'var(--red)',   weight: 600 };
+    if (ratio >= 5)    return { label: 'Put, extreme',      color: 'var(--red)',   weight: 800 };
+    if (ratio >= 3)    return { label: 'Put, heavy' + itm,  color: 'var(--red)',   weight: 700 };
+    return                    { label: 'Put' + itm,          color: 'var(--red)',   weight: 600 };
   }
 
   function renderUnusualActivity(data) {
@@ -110,7 +110,7 @@
 
     tbody.innerHTML = rows.map(c => {
       const typeColor = c.type === 'call' ? 'var(--green)' : 'var(--red)';
-      const typeIcon  = c.type === 'call' ? '📞 Call' : '🔻 Put';
+      const typeIcon  = c.type === 'call' ? 'Call' : 'Put';
       const itmStr    = c.in_money ? ' ✅' : '';
       const ratioColor =
         c.vol_oi >= 5 ? 'var(--amber)' :

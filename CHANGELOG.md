@@ -8,7 +8,7 @@ Starting state after
 codebase. Applied auto-fixes in batch then resolved the remaining 40 manually:
 
 - **`core/sentiment.py`** (largest surface): auto-fixed `UP006`/`UP035`/`UP045`
-  (deprecated `typing.List`, `typing.Dict`, `typing.Optional` → lowercase builtins
+  (deprecated `typing.List`, `typing.Dict`, `typing.Optional` -> lowercase builtins
   and `X | None`), `I001` import ordering, `E401` multiple-imports-per-line.
   Manual fixes for `E701`/`E702` one-liner `if`/`elif`/`else` and semicoloned
   statements (~25 locations), `B905` `zip()` missing `strict=False` (3 calls),
@@ -20,7 +20,7 @@ codebase. Applied auto-fixes in batch then resolved the remaining 40 manually:
 - **`api/server.py`**: removed 6 stale `# noqa: B904` directives on `raise
   HTTPException(...)` statements that were not inside `except` blocks (RUF100).
 - **`core/__init__.py`**: removed unused `import numpy as np` and two unused
-  `from .fetcher import …` lines; renamed loop variable `l` → `lo` (E741).
+  `from .fetcher import …` lines; renamed loop variable `l` -> `lo` (E741).
 - **`core/store.py`**: added `suppress` to contextlib import; replaced bare
   `try/except/pass` with `with suppress(sqlite3.OperationalError):`.
 - **`api/__init__.py`**: changed `from .server import app` to
@@ -98,7 +98,7 @@ module:
 | Range | Colour |
 |---|---|
 | `confidence < 30%` | `var(--muted)` - grey |
-| `30% ≤ confidence ≤ 50%` | `var(--amber)` - amber |
+| `30% <= confidence <= 50%` | `var(--amber)` - amber |
 | `confidence > 50%` | `var(--green)` - green |
 
 ### B - Trade Setup confidence gate
@@ -114,7 +114,7 @@ Three render states:
 
 - **Invalid setup** (`!ts.valid`): banner shows `⊘  No Entry Right Now` with
   amber background; the levels grid is hidden.
-- **Valid but low confidence** (`ts.valid && confPct ≤ 40`): banner shows
+- **Valid but low confidence** (`ts.valid && confPct <= 40`): banner shows
   `⊘  No Edge` with grey background; the levels grid is hidden.
 - **Valid + confident** (`ts.valid && confPct > 40`): entry / stop / target
   levels render normally in the grid.
@@ -177,7 +177,7 @@ inline block so `right-panel.js` can delegate to them without duplication.
    entry / stop / target rows.
 5. Click **Run Backtest** in the Backtest card - four KPI cells should
    populate within a few seconds.
-6. Open browser DevTools → Sources → confirm `right-panel.js` loads without
+6. Open browser DevTools -> Sources -> confirm `right-panel.js` loads without
    errors; confirm no double-call to `_updateMicrostructureCard` in the
    Network tab.
 
@@ -191,7 +191,7 @@ All live-news-feed logic was extracted from the inline `<script>` block into
 an IIFE at `/static/js/tabs/sentiment.js`. Key capabilities owned by the
 module:
 
-- **`/ws/news` WebSocket** with exponential-backoff reconnect (1 s → 30 s
+- **`/ws/news` WebSocket** with exponential-backoff reconnect (1 s -> 30 s
   ceiling). Reconnect is suppressed on intentional teardown (see 
   WS audit).
 - **50-item ring buffer** with client-side dedup via a djb2-hash fingerprint
@@ -275,8 +275,8 @@ the message was actually "no HMM data, so I can't blend".
   "hmm", "hawkes", "fallback"}` so the UI can caveat low-confidence rows.
   Previously the table was empty whenever HMM was missing; now it renders
   the zones with neutral 40/30/30 priors and a `fallback` tag.
-- **Pipeline-step debug logs** at `data-fetch → preprocess → model-fit →
-  classify → render-ready` (visible at log level DEBUG).
+- **Pipeline-step debug logs** at `data-fetch -> preprocess -> model-fit ->
+  classify -> render-ready` (visible at log level DEBUG).
 - HMM init order was audited and is correct: `pi`, `A`, `mus`, `sigs` are
   all initialised before the first `_forward` / `_backward` call inside
   `_baum_welch`. No bug there.
@@ -290,10 +290,10 @@ as `*_original` for the happy path; the new code wraps every section in
 a try/catch error boundary and routes the new `state` contract to a
 state-aware empty/error renderer.
 
-- **Insufficient data** → "📊 Market Regime - Need more candles … HMM
+- **Insufficient data** -> "📊 Market Regime - Need more candles … HMM
   requires at least 40 bars; 22 available. Switch to a longer timeframe."
-- **Error** → "⚠ Market Regime - Error: Baum-Welch fit failed: ..."
-- **No zones** → "🔍 Price Activity - No zones. Hawkes excitation needs
+- **Error** -> "⚠ Market Regime - Error: Baum-Welch fit failed: ..."
+- **No zones** -> "🔍 Price Activity - No zones. Hawkes excitation needs
   demand/supply zones to score reactions at."
 - Every error state includes a **↻ Retry** button that re-invokes
   `runMarketStructure()`.
@@ -315,7 +315,7 @@ state-aware empty/error renderer.
 ### How to verify
 
 1. `python main.py`, open `http://localhost:8000`.
-2. Click the 🔬 Market Structure tab → click **Analyse**.
+2. Click the 🔬 Market Structure tab -> click **Analyse**.
 3. On a normal ticker (AAPL daily): **Market Regime** should show one of
    Trending / Ranging / Volatile with a probability breakdown; **Price
    Activity** should show Quiet / Normal / High Activity; **Zone Reaction
@@ -383,7 +383,7 @@ inside the Options tab. It has:
 - LEAPS rows (DTE > 60) get a purple `LEAPS` chip next to the DTE column so
   the eye picks them out even when "All" is selected.
 - The Sentiment column uses **type-based** labels (📞 Call / 🔻 Put) with
-  intensity from Vol/OI ratio (Heavy at ≥3×, Extreme at ≥5×). It deliberately
+  intensity from Vol/OI ratio (Heavy at >=3×, Extreme at >=5×). It deliberately
   does NOT say bullish / bearish - the disclaimer at the top of the tab
   explains why. ITM contracts get a trailing dot.
 
@@ -406,9 +406,9 @@ right after the three CSS extraction comments.
 ### How to verify
 
 1. `python main.py`, open `http://localhost:8000`.
-2. Click the 📈 Options tab → click **Fetch Options**.
+2. Click the 📈 Options tab -> click **Fetch Options**.
 3. Confirm the amber **Flow direction unavailable** banner shows at the top.
-4. Hover the Calls Vol / Puts Vol KPI cells → tooltip should appear.
+4. Hover the Calls Vol / Puts Vol KPI cells -> tooltip should appear.
 5. Scroll to **🚨 Unusual Activity** - verify the table populates for any
    ticker with active options (try AAPL, NVDA, TSLA).
 6. Click DTE filter pills and column headers - list updates in place.
@@ -447,17 +447,17 @@ handlers continue to work, and defer per-tab JS extraction into Phases 3-7
 
 **`templates/dashboard.html` edits**
 
-- Inline `<style>` block 1 (head, lines 9-745) → replaced by
+- Inline `<style>` block 1 (head, lines 9-745) -> replaced by
   `<link rel="stylesheet" href="/static/css/dashboard.css">`. The original
   block is wrapped in an HTML comment (`<!-- legacy-css-1 … end-legacy-css-1 -->`)
   so the diff is auditable. The user can delete the commented region once
   the refactor is verified.
-- Inline `<style>` block 2 (inside `#portfolio-drawer`) → replaced by
+- Inline `<style>` block 2 (inside `#portfolio-drawer`) -> replaced by
   `<link rel="stylesheet" href="/static/css/portfolio.css">`, original
   wrapped in `legacy-css-2` comment.
-- Inline `<style>` block 3 (body, lines 2743-2985) → merged into
+- Inline `<style>` block 3 (body, lines 2743-2985) -> merged into
   `dashboard.css` and original wrapped in `legacy-css-3` comment.
-- Inline scanner `<script>` (block 1, ~385 lines) → replaced by two
+- Inline scanner `<script>` (block 1, ~385 lines) -> replaced by two
   external script tags: `<script src="/static/js/index.js">` and
   `<script src="/static/js/scanner.js">`. The original inline block now has
   `type="text/x-disabled-legacy"` so the browser parses but doesn't execute

@@ -124,7 +124,7 @@ def _hawkes_loglik(params: np.ndarray, times: np.ndarray) -> float:
             return 1e10
         ll += math.log(lam_i)
 
-    # Compensator integral ∫₀ᵀ λ(t) dt = μT + α/β · Σ_i (1 - exp(-β(T-tᵢ)))
+    # Compensator integral ∫₀ᵀ λ(t) dt = μT + α/β, Σ_i (1 - exp(-β(T-tᵢ)))
     integral = mu * T + (alpha / beta) * sum(1.0 - math.exp(-beta * (times[-1] - t)) for t in times)
 
     return -(ll - integral)
@@ -231,7 +231,7 @@ def _zone_probs(
 
     Logic:
       Calm market (λ near baseline): clean bounce at demand / clean rejection at supply.
-      Excited market (λ very high): zones tend to get overwhelmed → break-through.
+      Excited market (λ very high): zones tend to get overwhelmed -> break-through.
       Moderate: consolidation / chop.
     """
     # Percentile of current λ in historical distribution

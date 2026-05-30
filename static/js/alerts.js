@@ -126,7 +126,7 @@
         <div class="mc-alert-row-main">
           <span class="mc-alert-ticker">${a.ticker}</span>
           <span class="mc-alert-dir ${a.direction === 'above' ? 'above' : 'below'}">
-            ${a.direction === 'above' ? '▲' : '▼'} $${a.target.toFixed(2)}
+            ${a.direction === 'above' ? '^' : 'v'} $${a.target.toFixed(2)}
           </span>
           ${a.triggered ? '<span class="mc-alert-fired">✓ Fired</span>' : ''}
         </div>
@@ -134,7 +134,7 @@
       </div>`;
 
     const notifNote = _notifPermission === 'denied'
-      ? `<div class="mc-alert-notif-note">⚠ Browser notifications blocked - in-page banners only.</div>`
+      ? `<div class="mc-alert-notif-note">Warning: Browser notifications blocked - in-page banners only.</div>`
       : _notifPermission === 'default'
       ? `<div class="mc-alert-notif-note">Click "Add" to enable browser notifications.</div>`
       : `<div class="mc-alert-notif-note mc-alert-notif-ok">✓ Browser notifications enabled.</div>`;
@@ -152,8 +152,8 @@
                oninput="this.value=this.value.toUpperCase()"
                value="${(window.currentConfig && window.currentConfig.ticker) || ''}" />
         <select id="mc-alert-dir" class="mc-alerts-input">
-          <option value="above">▲ Above</option>
-          <option value="below">▼ Below</option>
+          <option value="above">^ Above</option>
+          <option value="below">v Below</option>
         </select>
         <input id="mc-alert-price" class="mc-alerts-input" type="number"
                placeholder="$0.00" step="0.01" min="0" style="width:80px;" />
@@ -178,7 +178,7 @@
     const dir    = document.getElementById('mc-alert-dir')?.value || 'above';
     const price  = parseFloat(document.getElementById('mc-alert-price')?.value || '');
     if (!ticker || isNaN(price) || price <= 0) {
-      _showInPageBanner('Please enter a valid ticker and price.', '⚠');
+      _showInPageBanner('Please enter a valid ticker and price.', 'Warning:');
       return;
     }
     add(ticker, price, dir);

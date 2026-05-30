@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 _CACHE_TTL = 30.0  # seconds before a cached DataFrame is evicted
 _cache_lock = threading.RLock()
-_cache: dict = {}  # key → (df, expire_time)
+_cache: dict = {}  # key -> (df, expire_time)
 
 # If two threads request the same (ticker, interval, lookback, extended) within
 # milliseconds of each other (both miss the TTL cache) the second thread waits
@@ -29,7 +29,7 @@ _cache: dict = {}  # key → (df, expire_time)
 # also calling _run_analysis() immediately.
 
 _inflight_lock = threading.RLock()
-_inflight: dict = {}  # key → threading.Event
+_inflight: dict = {}  # key -> threading.Event
 
 
 def _cache_get(key: tuple) -> pd.DataFrame | None:
@@ -136,7 +136,7 @@ def _lookback_days(interval: str, n_candles: int, buffer: float = 1.6) -> int:
     """
     if interval == "1d":
         # Each trading day = 1 bar; ~5/7 calendar days are trading days.
-        needed = max(int(n_candles * 1.5) + 10, 14)  # always ≥14 calendar days
+        needed = max(int(n_candles * 1.5) + 10, 14)  # always >=14 calendar days
         return min(needed, _YF_MAX_DAYS.get("1d", 3650))
 
     mins = _INTERVAL_MINUTES.get(interval, 15)
@@ -156,7 +156,7 @@ def current_session() -> str:
         et = datetime.now(timezone.utc) - timedelta(hours=5)
 
     h, m = et.hour, et.minute
-    weekday = et.weekday()  # 0=Mon … 6=Sun
+    weekday = et.weekday()  # 0=Mon ... 6=Sun
 
     if weekday >= 5:
         return "closed"
@@ -351,7 +351,7 @@ def fetch_candles(
     the regular session (pre-market or after-hours) so live data is never
     missed - regardless of the user's extended setting.
 
-    Priority: Alpaca → Polygon → yfinance (always falls back).
+    Priority: Alpaca -> Polygon -> yfinance (always falls back).
     """
 
     use_extended = should_use_extended(extended)

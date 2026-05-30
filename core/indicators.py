@@ -33,7 +33,7 @@ class Indicators:
     macd: float
     macd_signal: float
     macd_hist: float
-    bb_position: float  # -1 (below lower band) … +1 (above upper)
+    bb_position: float  # -1 (below lower band) ... +1 (above upper)
     adx: float  # 0..100; >25 ≈ trending
     obv_slope: float  # %/candle of OBV slope (volume momentum)
     vwap_dist: float  # (price - vwap) / price * 100
@@ -401,7 +401,7 @@ def _rsi_divergence(closes: np.ndarray, period: int = 14, lookback: int = 30) ->
 def _vol_of_vol(rets: np.ndarray, window: int = 10, n_windows: int = 5) -> float:
     """
     Volatility of volatility: std of rolling realized vols.
-    High VoV = unstable vol regime → regime change warning.
+    High VoV = unstable vol regime -> regime change warning.
     Normalised to [0..1] using a rough empirical scale.
     """
     if len(rets) < window * n_windows:
