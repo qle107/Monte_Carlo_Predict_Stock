@@ -30,8 +30,10 @@ _BARS_PER_YEAR = {
     "1mo": 12,
 }
 
+
 def _safe_log(p: float) -> float:
     return math.log(max(min(p, 1 - 1e-9), 1e-9))
+
 
 def _max_drawdown_equity(equity: np.ndarray) -> float:
     """
@@ -44,6 +46,7 @@ def _max_drawdown_equity(equity: np.ndarray) -> float:
     running_peak = np.maximum.accumulate(equity)
     dd = (running_peak - equity) / running_peak
     return float(dd.max())
+
 
 def _sharpe_annualised(trade_returns: list[float], trade_duration_bars: int, bars_per_year: float) -> float:
     """
@@ -61,6 +64,7 @@ def _sharpe_annualised(trade_returns: list[float], trade_duration_bars: int, bar
     trades_per_year = bars_per_year / float(trade_duration_bars)
     return float(mean / std * math.sqrt(trades_per_year))
 
+
 def _max_consec_losses(hits: list[bool]) -> int:
     max_run = cur_run = 0
     for h in hits:
@@ -70,6 +74,7 @@ def _max_consec_losses(hits: list[bool]) -> int:
         else:
             cur_run = 0
     return max_run
+
 
 def walk_forward(
     df: pd.DataFrame,

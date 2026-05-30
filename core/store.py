@@ -46,6 +46,7 @@ _MIGRATIONS = [
     "ALTER TABLE signals ADD COLUMN potential_flat REAL",
 ]
 
+
 class SignalStore:
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -60,12 +61,11 @@ class SignalStore:
         return conn
 
     def _init_schema(self):
-        with self._write_lock:
-            with self._connect() as conn:
-                conn.executescript(_SCHEMA)
-                for stmt in _MIGRATIONS:
-                    with suppress(sqlite3.OperationalError):  # column already exists
-                        conn.execute(stmt)
+        with self._write_lock, self._connect() as conn:
+            conn.executescript(_SCHEMA)
+            for stmt in _MIGRATIONS:
+                with suppress(sqlite3.OperationalError):  # column already exists
+                    conn.execute(stmt)
 
     @contextmanager
     def _write_cur(self):

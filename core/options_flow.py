@@ -14,161 +14,519 @@ logger = logging.getLogger(__name__)
 # Sector mapping - tags each UnusualOption hit so the frontend can filter by sector.
 _SECTOR_MAP: dict[str, str] = {
     # Mega-cap / Mixed-use tech
-    "AAPL": "Tech",    "MSFT": "Tech",    "GOOGL": "Tech",   "GOOG": "Tech",
-    "META": "Tech",    "AMZN": "Tech",    "NFLX": "Media",
+    "AAPL": "Tech",
+    "MSFT": "Tech",
+    "GOOGL": "Tech",
+    "GOOG": "Tech",
+    "META": "Tech",
+    "AMZN": "Tech",
+    "NFLX": "Media",
     # Semiconductors
-    "NVDA": "Semis",   "AMD":  "Semis",   "INTC": "Semis",   "QCOM": "Semis",
-    "AMAT": "Semis",   "MU":   "Semis",   "MRVL": "Semis",   "ARM":  "Semis",
-    "TSM":  "Semis",   "ASML": "Semis",   "AVGO": "Semis",   "TXN":  "Semis",
-    "SMCI": "Semis",   "KLAC": "Semis",   "LRCX": "Semis",   "ADI":  "Semis",
-    "QRVO": "Semis",   "SWKS": "Semis",   "MPWR": "Semis",   "ON":   "Semis",
-    "WOLF": "Semis",   "ACLS": "Semis",   "COHU": "Semis",
+    "NVDA": "Semis",
+    "AMD": "Semis",
+    "INTC": "Semis",
+    "QCOM": "Semis",
+    "AMAT": "Semis",
+    "MU": "Semis",
+    "MRVL": "Semis",
+    "ARM": "Semis",
+    "TSM": "Semis",
+    "ASML": "Semis",
+    "AVGO": "Semis",
+    "TXN": "Semis",
+    "SMCI": "Semis",
+    "KLAC": "Semis",
+    "LRCX": "Semis",
+    "ADI": "Semis",
+    "QRVO": "Semis",
+    "SWKS": "Semis",
+    "MPWR": "Semis",
+    "ON": "Semis",
+    "WOLF": "Semis",
+    "ACLS": "Semis",
+    "COHU": "Semis",
     # Software / Cloud
-    "CRM":  "Software","ORCL": "Software","NOW":  "Software","SNOW": "Software",
-    "CRWD": "Software","PANW": "Software","ZS":   "Software",
-    "DDOG": "Software","NET":  "Software","MDB":  "Software","OKTA": "Software",
-    "ZM":   "Software","DOCU": "Software","TWLO": "Software","HUBS": "Software",
-    "SHOP": "Software","ADBE": "Software","INTU": "Software","SAP":  "Software",
-    "ACN":  "Software","IBM":  "Software","CSCO": "Software","ANET": "Software",
-    "FFIV": "Software","CIEN": "Software","PSTG": "Software",
+    "CRM": "Software",
+    "ORCL": "Software",
+    "NOW": "Software",
+    "SNOW": "Software",
+    "CRWD": "Software",
+    "PANW": "Software",
+    "ZS": "Software",
+    "DDOG": "Software",
+    "NET": "Software",
+    "MDB": "Software",
+    "OKTA": "Software",
+    "ZM": "Software",
+    "DOCU": "Software",
+    "TWLO": "Software",
+    "HUBS": "Software",
+    "SHOP": "Software",
+    "ADBE": "Software",
+    "INTU": "Software",
+    "SAP": "Software",
+    "ACN": "Software",
+    "IBM": "Software",
+    "CSCO": "Software",
+    "ANET": "Software",
+    "FFIV": "Software",
+    "CIEN": "Software",
+    "PSTG": "Software",
     # Quantum
-    "IONQ": "Quantum", "RGTI": "Quantum", "QUBT": "Quantum",
-    "BBAI": "AI",      "SOUN": "AI",      "AI":   "AI",
+    "IONQ": "Quantum",
+    "RGTI": "Quantum",
+    "QUBT": "Quantum",
+    "BBAI": "AI",
+    "SOUN": "AI",
+    "AI": "AI",
     "PLTR": "Defense",
     # FinTech / Payments
-    "V":    "Finance", "MA":   "Finance", "PYPL": "FinTech", "SQ":   "FinTech",
-    "COIN": "Crypto",  "HOOD": "Crypto",  "SOFI": "FinTech", "AFRM": "FinTech",
-    "ENVA": "FinTech", "LC":   "FinTech", "UPST": "FinTech",
+    "V": "Finance",
+    "MA": "Finance",
+    "PYPL": "FinTech",
+    "XYZ": "FinTech",  # Block, Inc. (renamed from SQ, Jan 2025)
+    "COIN": "Crypto",
+    "HOOD": "Crypto",
+    "SOFI": "FinTech",
+    "AFRM": "FinTech",
+    "ENVA": "FinTech",
+    "LC": "FinTech",
+    "UPST": "FinTech",
     # Financials
-    "JPM":  "Finance", "GS":   "Finance", "MS":   "Finance", "BAC":  "Finance",
-    "C":    "Finance", "WFC":  "Finance", "BX":   "Finance", "KKR":  "Finance",
-    "APO":  "Finance", "CG":   "Finance", "ARES": "Finance", "OWL":  "Finance",
-    "BRK-B":"Finance", "AXP":  "Finance", "COF":  "Finance", "SYF":  "Finance",
-    "USB":  "Finance", "PNC":  "Finance", "TFC":  "Finance", "STT":  "Finance",
-    "SCHW": "Finance", "CME":  "Finance", "ICE":  "Finance", "CBOE": "Finance",
-    "MSCI": "Finance", "MCO":  "Finance", "FIS":  "Finance", "FISV": "Finance",
-    "GPN":  "Finance", "AIG":  "Finance", "MET":  "Finance", "PRU":  "Finance",
-    "AFL":  "Finance", "TRV":  "Finance", "CB":   "Finance", "ALL":  "Finance",
-    "HIG":  "Finance", "SPGI": "Finance", "VRT":  "Finance",
+    "JPM": "Finance",
+    "GS": "Finance",
+    "MS": "Finance",
+    "BAC": "Finance",
+    "C": "Finance",
+    "WFC": "Finance",
+    "BX": "Finance",
+    "KKR": "Finance",
+    "APO": "Finance",
+    "CG": "Finance",
+    "ARES": "Finance",
+    "OWL": "Finance",
+    "BRK-B": "Finance",
+    "AXP": "Finance",
+    "COF": "Finance",
+    "SYF": "Finance",
+    "USB": "Finance",
+    "PNC": "Finance",
+    "TFC": "Finance",
+    "STT": "Finance",
+    "SCHW": "Finance",
+    "CME": "Finance",
+    "ICE": "Finance",
+    "CBOE": "Finance",
+    "MSCI": "Finance",
+    "MCO": "Finance",
+    "FIS": "Finance",
+    "FISV": "Finance",
+    "GPN": "Finance",
+    "AIG": "Finance",
+    "MET": "Finance",
+    "PRU": "Finance",
+    "AFL": "Finance",
+    "TRV": "Finance",
+    "CB": "Finance",
+    "ALL": "Finance",
+    "HIG": "Finance",
+    "SPGI": "Finance",
+    "VRT": "Finance",
     # Biotech / Pharma
-    "MRNA": "Biotech", "BNTX": "Biotech", "GILD": "Biotech", "VRTX": "Biotech",
-    "BIIB": "Biotech", "REGN": "Biotech", "AMGN": "Biotech", "ALNY": "Biotech",
-    "BMRN": "Biotech", "SRPT": "Biotech", "EXEL": "Biotech", "ACAD": "Biotech",
-    "INCY": "Biotech", "RARE": "Biotech", "BEAM": "Biotech", "NTLA": "Biotech",
-    "CRSP": "Biotech", "EDIT": "Biotech", "RXRX": "Biotech", "FATE": "Biotech",
-    "KYMR": "Biotech", "IMVT": "Biotech", "ABBV": "Pharma",  "LLY":  "Pharma",
-    "PFE":  "Pharma",  "MRK":  "Pharma",  "AZN":  "Pharma",  "NVO":  "Pharma",
-    "SNY":  "Pharma",  "GSK":  "Pharma",  "BMY":  "Pharma",
-    "JNJ":  "Health",  "UNH":  "Health",  "CVS":  "Health",  "HUM":  "Health",
-    "CNC":  "Health",  "MOH":  "Health",  "ELV":  "Health",  "CI":   "Health",
-    "HCA":  "Health",  "THC":  "Health",  "UHS":  "Health",  "CLOV": "Health",
-    "ISRG": "Robotics","EW":   "MedTech", "DXCM": "MedTech", "PODD": "MedTech",
-    "HOLX": "MedTech", "IDXX": "MedTech", "SYK":  "MedTech", "ZTS":  "MedTech",
-    "BSX":  "MedTech", "MDT":  "MedTech", "ABT":  "MedTech", "TMO":  "MedTech",
-    "DHR":  "MedTech", "A":    "MedTech", "BIO":  "MedTech", "IQV":  "MedTech",
-    "RVTY": "MedTech", "PRCT": "MedTech", "NTRA": "MedTech",
+    "MRNA": "Biotech",
+    "BNTX": "Biotech",
+    "GILD": "Biotech",
+    "VRTX": "Biotech",
+    "BIIB": "Biotech",
+    "REGN": "Biotech",
+    "AMGN": "Biotech",
+    "ALNY": "Biotech",
+    "BMRN": "Biotech",
+    "SRPT": "Biotech",
+    "EXEL": "Biotech",
+    "ACAD": "Biotech",
+    "INCY": "Biotech",
+    "RARE": "Biotech",
+    "BEAM": "Biotech",
+    "NTLA": "Biotech",
+    "CRSP": "Biotech",
+    "EDIT": "Biotech",
+    "RXRX": "Biotech",
+    "FATE": "Biotech",
+    "KYMR": "Biotech",
+    "IMVT": "Biotech",
+    "ABBV": "Pharma",
+    "LLY": "Pharma",
+    "PFE": "Pharma",
+    "MRK": "Pharma",
+    "AZN": "Pharma",
+    "NVO": "Pharma",
+    "SNY": "Pharma",
+    "GSK": "Pharma",
+    "BMY": "Pharma",
+    "JNJ": "Health",
+    "UNH": "Health",
+    "CVS": "Health",
+    "HUM": "Health",
+    "CNC": "Health",
+    "MOH": "Health",
+    "ELV": "Health",
+    "CI": "Health",
+    "HCA": "Health",
+    "THC": "Health",
+    "UHS": "Health",
+    "CLOV": "Health",
+    "ISRG": "Robotics",
+    "EW": "MedTech",
+    "DXCM": "MedTech",
+    "PODD": "MedTech",
+    "HOLX": "MedTech",
+    "IDXX": "MedTech",
+    "SYK": "MedTech",
+    "ZTS": "MedTech",
+    "BSX": "MedTech",
+    "MDT": "MedTech",
+    "ABT": "MedTech",
+    "TMO": "MedTech",
+    "DHR": "MedTech",
+    "A": "MedTech",
+    "BIO": "MedTech",
+    "IQV": "MedTech",
+    "RVTY": "MedTech",
+    "PRCT": "MedTech",
+    "NTRA": "MedTech",
     # Traditional energy (oil & gas)
-    "XOM":  "Energy",  "CVX":  "Energy",  "COP":  "Energy",  "OXY":  "Energy",
-    "DVN":  "Energy",  "FANG": "Energy",  "HAL":  "Energy",  "SLB":  "Energy",
-    "BKR":  "Energy",  "NOV":  "Energy",  "HP":   "Energy",  "PTEN": "Energy",
-    "LNG":  "Energy",  "CQP":  "Energy",  "ET":   "Energy",  "EPD":  "Energy",
-    "MPLX": "Energy",  "WMB":  "Energy",  "OKE":  "Energy",  "KMI":  "Energy",
-    "VLO":  "Energy",  "MPC":  "Energy",  "PSX":  "Energy",  "DK":   "Energy",
-    "DINO": "Energy",  "EOG":  "Energy",  "APA":  "Energy",  "PR":   "Energy",
-    "SM":   "Energy",  "CIVI": "Energy",  "WHD":  "Energy",
+    "XOM": "Energy",
+    "CVX": "Energy",
+    "COP": "Energy",
+    "OXY": "Energy",
+    "DVN": "Energy",
+    "FANG": "Energy",
+    "HAL": "Energy",
+    "SLB": "Energy",
+    "BKR": "Energy",
+    "NOV": "Energy",
+    "HP": "Energy",
+    "PTEN": "Energy",
+    "LNG": "Energy",
+    "CQP": "Energy",
+    "ET": "Energy",
+    "EPD": "Energy",
+    "MPLX": "Energy",
+    "WMB": "Energy",
+    "OKE": "Energy",
+    "KMI": "Energy",
+    "VLO": "Energy",
+    "MPC": "Energy",
+    "PSX": "Energy",
+    "DK": "Energy",
+    "DINO": "Energy",
+    "EOG": "Energy",
+    "APA": "Energy",
+    "PR": "Energy",
+    "SM": "Energy",
+    "CIVI": "Energy",
+    "WHD": "Energy",
     # Nuclear power
-    "OKLO": "Nuclear", "SMR":  "Nuclear", "CEG":  "Nuclear", "VST":  "Nuclear",
-    "NRG":  "Nuclear", "BWXT": "Nuclear",
+    "OKLO": "Nuclear",
+    "SMR": "Nuclear",
+    "CEG": "Nuclear",
+    "VST": "Nuclear",
+    "NRG": "Nuclear",
+    "BWXT": "Nuclear",
     # Uranium (fuel cycle)
-    "CCJ":  "Uranium", "UEC":  "Uranium", "UUUU": "Uranium", "LEU":  "Uranium",
+    "CCJ": "Uranium",
+    "UEC": "Uranium",
+    "UUUU": "Uranium",
+    "LEU": "Uranium",
     # Clean / Renewable energy
-    "FSLR": "Solar",   "ENPH": "Solar",   "TE":  "Solar",        "PLUG": "CleanEnergy", "BE": "CleanEnergy",
+    "FSLR": "Solar",
+    "ENPH": "Solar",
+    "PLUG": "CleanEnergy",
+    "BE": "CleanEnergy",
     # Consumer / Retail
-    "NKE":  "Consumer","LULU": "Consumer","RL":   "Consumer","PVH":  "Consumer",
-    "HBI":  "Consumer","UAA":  "Consumer","UA":   "Consumer","TGT":  "Consumer",
-    "LOW":  "Consumer","BBY":  "Consumer","BBWI": "Consumer","M":    "Consumer",
-    "KSS":  "Consumer","CMG":  "Consumer","YUM":  "Consumer","QSR":  "Consumer",
-    "DRI":  "Consumer","TXRH": "Consumer","SHAK": "Consumer","WING": "Consumer",
-    "ETSY": "Consumer","CHWY": "Consumer","W":    "Consumer","WMT":  "Consumer",
-    "COST": "Consumer","SBUX": "Consumer","MCD":  "Consumer","PG":   "Consumer",
-    "KO":   "Consumer","PEP":  "Consumer","MO":   "Consumer","PM":   "Consumer",
-    "CL":   "Consumer","GIS":  "Consumer","CPB":  "Consumer","HSY":  "Consumer",
-    "MKC":  "Consumer","CHD":  "Consumer","CLX":  "Consumer","SJM":  "Consumer",
+    "NKE": "Consumer",
+    "LULU": "Consumer",
+    "RL": "Consumer",
+    "PVH": "Consumer",
+    "HBI": "Consumer",
+    "UAA": "Consumer",
+    "UA": "Consumer",
+    "TGT": "Consumer",
+    "LOW": "Consumer",
+    "BBY": "Consumer",
+    "BBWI": "Consumer",
+    "M": "Consumer",
+    "KSS": "Consumer",
+    "CMG": "Consumer",
+    "YUM": "Consumer",
+    "QSR": "Consumer",
+    "DRI": "Consumer",
+    "TXRH": "Consumer",
+    "SHAK": "Consumer",
+    "WING": "Consumer",
+    "ETSY": "Consumer",
+    "CHWY": "Consumer",
+    "W": "Consumer",
+    "WMT": "Consumer",
+    "COST": "Consumer",
+    "SBUX": "Consumer",
+    "MCD": "Consumer",
+    "PG": "Consumer",
+    "KO": "Consumer",
+    "PEP": "Consumer",
+    "MO": "Consumer",
+    "PM": "Consumer",
+    "CL": "Consumer",
+    "GIS": "Consumer",
+    "CPB": "Consumer",
+    "HSY": "Consumer",
+    "MKC": "Consumer",
+    "CHD": "Consumer",
+    "CLX": "Consumer",
+    "SJM": "Consumer",
     # Auto / EV
-    "TSLA": "Auto/EV", "GM":   "Auto/EV", "F":    "Auto/EV", "RIVN": "Auto/EV",
-    "LCID": "Auto/EV", "NIO":  "Auto/EV", "XPEV": "Auto/EV", "LI":   "Auto/EV",
-    "BLNK": "Auto/EV", "CHPT": "Auto/EV", "EVGO": "Auto/EV",
+    "TSLA": "Auto/EV",
+    "GM": "Auto/EV",
+    "F": "Auto/EV",
+    "RIVN": "Auto/EV",
+    "LCID": "Auto/EV",
+    "NIO": "Auto/EV",
+    "XPEV": "Auto/EV",
+    "LI": "Auto/EV",
+    "BLNK": "Auto/EV",
+    "CHPT": "Auto/EV",
+    "EVGO": "Auto/EV",
     # Platforms / Gig
-    "UBER": "Platform","LYFT": "Platform","ABNB": "Platform","DASH": "Platform",
-    "RBLX": "Platform","SNAP": "Social",  "PINS": "Social",  "SPOT": "Media",
-    "MTCH": "Platform","YELP": "Platform","TRIP": "Platform","OPEN": "Platform",
+    "UBER": "Platform",
+    "LYFT": "Platform",
+    "ABNB": "Platform",
+    "DASH": "Platform",
+    "RBLX": "Platform",
+    "SNAP": "Social",
+    "PINS": "Social",
+    "SPOT": "Media",
+    "MTCH": "Platform",
+    "YELP": "Platform",
+    "TRIP": "Platform",
+    "OPEN": "Platform",
     # Hardware / Storage
-    "HPQ":  "Hardware","HPE":  "Hardware","DELL": "Hardware","WDC":  "Hardware",
-    "STX":  "Hardware","NTAP": "Hardware","LITE": "Hardware","VIAV": "Hardware",
+    "HPQ": "Hardware",
+    "HPE": "Hardware",
+    "DELL": "Hardware",
+    "WDC": "Hardware",
+    "STX": "Hardware",
+    "NTAP": "Hardware",
+    "LITE": "Hardware",
+    "VIAV": "Hardware",
     # Defense / Aerospace
-    "BA":   "Defense", "LMT":  "Defense", "NOC":  "Defense", "GD":   "Defense",
-    "RTX":  "Defense", "LHX":  "Defense", "HEI":  "Defense", "TDG":  "Defense",
-    "HWM":  "Defense", "KTOS": "Defense", "AVAV": "Defense", "DRS":  "Defense",
-    "LDOS": "Defense", "SAIC": "Defense", "BAH":  "Defense", "CACI": "Defense",
+    "BA": "Defense",
+    "LMT": "Defense",
+    "NOC": "Defense",
+    "GD": "Defense",
+    "RTX": "Defense",
+    "LHX": "Defense",
+    "HEI": "Defense",
+    "TDG": "Defense",
+    "HWM": "Defense",
+    "KTOS": "Defense",
+    "AVAV": "Defense",
+    "DRS": "Defense",
+    "LDOS": "Defense",
+    "SAIC": "Defense",
+    "BAH": "Defense",
+    "CACI": "Defense",
     "AXON": "Defense",
     # Robotics / Automation
-    "TER":  "Robotics","CGNX": "Robotics","ROK":  "Robotics","ABB":  "Robotics",
-    "IRBT": "Robotics","PATH": "Robotics","SYM":  "Robotics","ZBRA": "Robotics",
-    "AZTA": "Robotics","BOTZ": "Robotics",
+    "TER": "Robotics",
+    "CGNX": "Robotics",
+    "ROK": "Robotics",
+    "ABB": "Robotics",
+    "IRBT": "Robotics",
+    "PATH": "Robotics",
+    "SYM": "Robotics",
+    "ZBRA": "Robotics",
+    "AZTA": "Robotics",
+    "BOTZ": "Robotics",
     # Space / Satellite
-    "ASTS": "SpaceTech","RKLB":"SpaceTech","SPCE":"SpaceTech","IRDM":"SpaceTech",
-    "GSAT": "SpaceTech","VSAT":"SpaceTech",
+    "ASTS": "SpaceTech",
+    "RKLB": "SpaceTech",
+    "SPCE": "SpaceTech",
+    "IRDM": "SpaceTech",
+    "GSAT": "SpaceTech",
+    "VSAT": "SpaceTech",
     # Industrial / Utilities
-    "CAT":  "Industrial","DE":  "Industrial","EMR": "Industrial",
-    "PH":   "Industrial","ITW": "Industrial","GWW": "Industrial","CMI": "Industrial",
-    "ETN":  "Industrial","DOV": "Industrial","UPS": "Industrial","FDX": "Industrial",
-    "NSC":  "Industrial","MMM": "Industrial","HON": "Industrial",
-    "NEE":  "Utilities", "SO":  "Utilities", "DUK": "Utilities", "AEP": "Utilities",
-    "EXC":  "Utilities", "D":   "Utilities", "SRE": "Utilities", "PCG": "Utilities",
-    "PEG":  "Utilities", "ECL": "Materials", "APD": "Materials", "DD":  "Materials",
-    "PPG":  "Materials", "SHW": "Materials",
+    "CAT": "Industrial",
+    "DE": "Industrial",
+    "EMR": "Industrial",
+    "PH": "Industrial",
+    "ITW": "Industrial",
+    "GWW": "Industrial",
+    "CMI": "Industrial",
+    "ETN": "Industrial",
+    "DOV": "Industrial",
+    "UPS": "Industrial",
+    "FDX": "Industrial",
+    "NSC": "Industrial",
+    "MMM": "Industrial",
+    "HON": "Industrial",
+    "NEE": "Utilities",
+    "SO": "Utilities",
+    "DUK": "Utilities",
+    "AEP": "Utilities",
+    "EXC": "Utilities",
+    "D": "Utilities",
+    "SRE": "Utilities",
+    "PCG": "Utilities",
+    "PEG": "Utilities",
+    "ECL": "Materials",
+    "APD": "Materials",
+    "DD": "Materials",
+    "PPG": "Materials",
+    "SHW": "Materials",
     # Airlines / Transport / Travel
-    "AAL":  "Transport","DAL":  "Transport","UAL":  "Transport","LUV":  "Transport",
-    "JBLU": "Transport","ALK":  "Transport","CCL":  "Travel",   "RCL":  "Travel",
-    "NCLH": "Travel",   "BKNG": "Travel",
+    "AAL": "Transport",
+    "DAL": "Transport",
+    "UAL": "Transport",
+    "LUV": "Transport",
+    "JBLU": "Transport",
+    "ALK": "Transport",
+    "CCL": "Travel",
+    "RCL": "Travel",
+    "NCLH": "Travel",
+    "BKNG": "Travel",
     # Media / Telecom
-    "DIS":  "Media",   "CMCSA":"Media",    "CHTR": "Media",   "WBD":  "Media",
-    "FOXA": "Media",   "FOX":  "Media",   "PARA": "Media",   "SIRI": "Media",
-    "NYT":  "Media",   "NWS":  "Media",   "NWSA": "Media",   "IAC":  "Media",
-    "T":    "Telecom", "VZ":   "Telecom", "TMUS": "Telecom", "LUMN": "Telecom",
+    "DIS": "Media",
+    "CMCSA": "Media",
+    "CHTR": "Media",
+    "WBD": "Media",
+    "FOXA": "Media",
+    "FOX": "Media",
+    "PARA": "Media",
+    "SIRI": "Media",
+    "NYT": "Media",
+    "NWS": "Media",
+    "NWSA": "Media",
+    "IAC": "Media",
+    "T": "Telecom",
+    "VZ": "Telecom",
+    "TMUS": "Telecom",
+    "LUMN": "Telecom",
     # REIT / Real Estate
-    "AMT":  "REIT",    "CCI":  "REIT",    "SBAC": "REIT",    "EQIX": "REIT",
-    "DLR":  "REIT",    "PLD":  "REIT",    "SPG":  "REIT",    "O":    "REIT",
-    "WPC":  "REIT",    "NNN":  "REIT",    "VICI": "REIT",    "VNQ":  "ETF",
+    "AMT": "REIT",
+    "CCI": "REIT",
+    "SBAC": "REIT",
+    "EQIX": "REIT",
+    "DLR": "REIT",
+    "PLD": "REIT",
+    "SPG": "REIT",
+    "O": "REIT",
+    "WPC": "REIT",
+    "NNN": "REIT",
+    "VICI": "REIT",
+    "VNQ": "ETF",
     # Gaming / Casinos
-    "MGM":  "Gaming",  "LVS":  "Gaming",  "WYNN": "Gaming",  "CZR":  "Gaming",
-    "DKNG": "Gaming",  "PENN": "Gaming",
+    "MGM": "Gaming",
+    "LVS": "Gaming",
+    "WYNN": "Gaming",
+    "CZR": "Gaming",
+    "DKNG": "Gaming",
+    "PENN": "Gaming",
     # Materials / Mining
-    "GOLD": "Mining",  "NEM":  "Mining",  "AEM":  "Mining",  "WPM":  "Mining",
-    "PAAS": "Mining",  "AG":   "Mining",  "BHP":  "Mining",  "RIO":  "Mining",
-    "VALE": "Mining",  "MT":   "Materials","STLD": "Materials","NUE":  "Materials",
-    "X":    "Materials","CLF":  "Materials","AA":   "Materials","CF":   "Materials",
-    "MOS":  "Materials","FCX":  "Mining",
+    "GOLD": "Mining",
+    "NEM": "Mining",
+    "AEM": "Mining",
+    "WPM": "Mining",
+    "PAAS": "Mining",
+    "AG": "Mining",
+    "BHP": "Mining",
+    "RIO": "Mining",
+    "VALE": "Mining",
+    "MT": "Materials",
+    "STLD": "Materials",
+    "NUE": "Materials",
+    "CLF": "Materials",
+    "AA": "Materials",
+    "CF": "Materials",
+    "MOS": "Materials",
+    "FCX": "Mining",
     # Crypto / Bitcoin miners
-    "MSTR": "Crypto",  "MARA": "Crypto",  "RIOT": "Crypto",  "HUT":  "Crypto",
-    "CLSK": "Crypto",  "BTBT": "Crypto",  "CIFR": "Crypto",
-    "CORZ": "Crypto",  "WULF": "Crypto",  "IREN": "Crypto",  "BITF": "Crypto",
+    "MSTR": "Crypto",
+    "MARA": "Crypto",
+    "RIOT": "Crypto",
+    "HUT": "Crypto",
+    "CLSK": "Crypto",
+    "BTBT": "Crypto",
+    "CIFR": "Crypto",
+    "CORZ": "Crypto",
+    "WULF": "Crypto",
+    "IREN": "Crypto",
+    "BITF": "Crypto",
     # Meme / Speculative
-    "GME":  "Meme",    "AMC":  "Meme",    "NKLA": "Meme",    "WKHS": "Meme",
+    "GME": "Meme",
+    "AMC": "Meme",
+    "WKHS": "Meme",
     # Cannabis
-    "TLRY": "Cannabis","CGC":  "Cannabis","ACB":  "Cannabis","SNDL": "Cannabis",
+    "TLRY": "Cannabis",
+    "CGC": "Cannabis",
+    "ACB": "Cannabis",
+    "SNDL": "Cannabis",
     # ETFs
-    "SPY":  "ETF", "QQQ":  "ETF", "IWM":  "ETF", "DIA":  "ETF", "VTI":  "ETF",
-    "VOO":  "ETF", "TQQQ": "ETF", "SQQQ": "ETF", "GLD":  "ETF", "GDX":  "ETF",
-    "GDXJ": "ETF", "SLV":  "ETF", "USO":  "ETF", "UNG":  "ETF", "TLT":  "ETF",
-    "IEF":  "ETF", "SHY":  "ETF", "HYG":  "ETF", "LQD":  "ETF", "JNK":  "ETF",
-    "XLE":  "ETF", "URA":  "ETF", "XLF":  "ETF", "XLK":  "ETF", "XLV":  "ETF",
-    "XLI":  "ETF", "XLU":  "ETF", "XLP":  "ETF", "XLB":  "ETF", "XLRE": "ETF",
-    "EEM":  "ETF", "EFA":  "ETF", "FXI":  "ETF", "EWZ":  "ETF", "EWJ":  "ETF",
-    "KWEB": "ETF", "ARKK": "ETF", "ARKG": "ETF", "ARKW": "ETF", "ARKF": "ETF",
-    "REET": "ETF", "KBWB": "ETF", "KRE":  "ETF", "XHB":  "ETF", "XRT":  "ETF",
-    "IBB":  "ETF", "XBI":  "ETF", "SMH":  "ETF", "SOXX": "ETF", "VXX":  "ETF",
-    "UVXY": "ETF", "SVXY": "ETF", "TPVG": "ETF", "GLAD": "ETF", "PSEC": "ETF",
+    "SPY": "ETF",
+    "QQQ": "ETF",
+    "IWM": "ETF",
+    "DIA": "ETF",
+    "VTI": "ETF",
+    "VOO": "ETF",
+    "TQQQ": "ETF",
+    "SQQQ": "ETF",
+    "GLD": "ETF",
+    "GDX": "ETF",
+    "GDXJ": "ETF",
+    "SLV": "ETF",
+    "USO": "ETF",
+    "UNG": "ETF",
+    "TLT": "ETF",
+    "IEF": "ETF",
+    "SHY": "ETF",
+    "HYG": "ETF",
+    "LQD": "ETF",
+    "JNK": "ETF",
+    "XLE": "ETF",
+    "URA": "ETF",
+    "XLF": "ETF",
+    "XLK": "ETF",
+    "XLV": "ETF",
+    "XLI": "ETF",
+    "XLU": "ETF",
+    "XLP": "ETF",
+    "XLB": "ETF",
+    "XLRE": "ETF",
+    "EEM": "ETF",
+    "EFA": "ETF",
+    "FXI": "ETF",
+    "EWZ": "ETF",
+    "EWJ": "ETF",
+    "KWEB": "ETF",
+    "ARKK": "ETF",
+    "ARKG": "ETF",
+    "ARKW": "ETF",
+    "ARKF": "ETF",
+    "REET": "ETF",
+    "KBWB": "ETF",
+    "KRE": "ETF",
+    "XHB": "ETF",
+    "XRT": "ETF",
+    "IBB": "ETF",
+    "XBI": "ETF",
+    "SMH": "ETF",
+    "SOXX": "ETF",
+    "VXX": "ETF",
+    "UVXY": "ETF",
+    "SVXY": "ETF",
+    "TPVG": "ETF",
+    "GLAD": "ETF",
+    "PSEC": "ETF",
 }
 
 # Cache (avoid hammering yfinance - 5 min TTL)
@@ -184,9 +542,11 @@ _yf_semaphore = threading.Semaphore(_YF_SEM_SLOTS)
 
 _RATE_LIMIT_PHRASES = ("too many requests", "rate limit", "429")
 
+
 def _is_rate_limit(exc: Exception) -> bool:
     msg = str(exc).lower()
     return any(p in msg for p in _RATE_LIMIT_PHRASES)
+
 
 def _yf_call(fn, *args, retries: int = 3, base_delay: float = 2.0, **kwargs):
     """
@@ -206,10 +566,11 @@ def _yf_call(fn, *args, retries: int = 3, base_delay: float = 2.0, **kwargs):
             except Exception as exc:
                 last_exc = exc
                 if _is_rate_limit(exc) and attempt < retries:
-                    continue   # retry after backoff
-                raise          # non-rate-limit error or out of retries
+                    continue  # retry after backoff
+                raise  # non-rate-limit error or out of retries
 
     raise last_exc  # type: ignore[misc]
+
 
 def _cache_get(key):
     with _cache_lock:
@@ -218,11 +579,14 @@ def _cache_get(key):
             return entry[0]
     return None
 
+
 def _cache_put(key, value):
     with _cache_lock:
         _cache[key] = (value, time.monotonic() + _CACHE_TTL)
 
+
 # Dataclasses
+
 
 @dataclass
 class GEXBar:
@@ -230,6 +594,7 @@ class GEXBar:
     gex: float  # net GEX at this strike (calls positive, puts negative)
     call_oi: int
     put_oi: int
+
 
 @dataclass
 class OptionsFlow:
@@ -270,10 +635,13 @@ class OptionsFlow:
             ],
         }
 
+
 # Black-Scholes helpers
+
 
 def _norm_pdf(x: float) -> float:
     return math.exp(-0.5 * x * x) / math.sqrt(2 * math.pi)
+
 
 def _bs_gamma(S: float, K: float, T: float, sigma: float, r: float = 0.05) -> float:
     """Black-Scholes gamma. Returns 0 on bad inputs.
@@ -286,7 +654,9 @@ def _bs_gamma(S: float, K: float, T: float, sigma: float, r: float = 0.05) -> fl
     except (ValueError, ZeroDivisionError):
         return 0.0
 
+
 # Max Pain
+
 
 def _compute_max_pain(calls_df, puts_df) -> float:
     """
@@ -299,7 +669,7 @@ def _compute_max_pain(calls_df, puts_df) -> float:
         return 0.0
 
     call_oi = {float(r["strike"]): _safe_int(r["openInterest"]) for _, r in calls_df.iterrows()}
-    put_oi  = {float(r["strike"]): _safe_int(r["openInterest"]) for _, r in puts_df.iterrows()}
+    put_oi = {float(r["strike"]): _safe_int(r["openInterest"]) for _, r in puts_df.iterrows()}
 
     min_pain = float("inf")
     max_pain_strike = all_strikes[len(all_strikes) // 2]
@@ -315,7 +685,9 @@ def _compute_max_pain(calls_df, puts_df) -> float:
 
     return float(max_pain_strike)
 
+
 # GEX profile
+
 
 def _compute_gex_profile(
     calls_df,
@@ -342,9 +714,9 @@ def _compute_gex_profile(
     merged = pd.merge(c, p, on="strike", how="outer").fillna(0)
     # fillna(0) handles NaN from outer join; replace any residual NaN/Inf safely
     merged["call_oi"] = merged["call_oi"].apply(lambda x: _safe_int(x))
-    merged["put_oi"]  = merged["put_oi"].apply(lambda x: _safe_int(x))
+    merged["put_oi"] = merged["put_oi"].apply(lambda x: _safe_int(x))
     merged["call_iv"] = merged["call_iv"].apply(lambda x: _safe_float(x))
-    merged["put_iv"]  = merged["put_iv"].apply(lambda x: _safe_float(x))
+    merged["put_iv"] = merged["put_iv"].apply(lambda x: _safe_float(x))
 
     # Fallback average IV
     avg_iv = float(merged[["call_iv", "put_iv"]].replace(0, float("nan")).stack().mean()) or 0.3
@@ -383,6 +755,7 @@ def _compute_gex_profile(
 
     return bars
 
+
 def _find_gamma_flip(bars: list[GEXBar], spot: float) -> float:
     """
     Find the strike closest to where cumulative net GEX crosses zero
@@ -407,7 +780,9 @@ def _find_gamma_flip(bars: list[GEXBar], spot: float) -> float:
         prev_strike = strike
     return below[-1][0]  # no flip found - return lowest strike
 
+
 # Public entry point
+
 
 def fetch_options_flow(ticker: str, spot: float | None = None) -> OptionsFlow:
     """
@@ -423,6 +798,7 @@ def fetch_options_flow(ticker: str, spot: float | None = None) -> OptionsFlow:
     result = _fetch(key, spot)
     _cache_put(key, result)
     return result
+
 
 def _fetch(ticker: str, spot_override: float | None) -> OptionsFlow:
     _empty = OptionsFlow(
@@ -495,8 +871,18 @@ def _fetch(ticker: str, spot_override: float | None) -> OptionsFlow:
         for exp in candidates:
             try:
                 ch = t.option_chain(exp)
-                c_oi = ch.calls[(ch.calls["strike"] >= lo_scan) & (ch.calls["strike"] <= hi_scan)]["openInterest"].fillna(0).sum()
-                p_oi = ch.puts[(ch.puts["strike"] >= lo_scan) & (ch.puts["strike"] <= hi_scan)]["openInterest"].fillna(0).sum()
+                c_oi = (
+                    ch.calls[(ch.calls["strike"] >= lo_scan) & (ch.calls["strike"] <= hi_scan)][
+                        "openInterest"
+                    ]
+                    .fillna(0)
+                    .sum()
+                )
+                p_oi = (
+                    ch.puts[(ch.puts["strike"] >= lo_scan) & (ch.puts["strike"] <= hi_scan)]["openInterest"]
+                    .fillna(0)
+                    .sum()
+                )
                 total = int(c_oi) + int(p_oi)
                 if total > best_oi:
                     best_oi = total
@@ -519,7 +905,7 @@ def _fetch(ticker: str, spot_override: float | None) -> OptionsFlow:
         # Focus on strikes within ±30% of spot (wider than ±20% to catch illiquid/small-cap chains)
         lo, hi = spot * 0.70, spot * 1.30
         calls = calls[(calls["strike"] >= lo) & (calls["strike"] <= hi)]
-        puts  = puts[(puts["strike"]  >= lo) & (puts["strike"]  <= hi)]
+        puts = puts[(puts["strike"] >= lo) & (puts["strike"] <= hi)]
 
         if calls.empty or puts.empty:
             _empty.error = "no_near_strikes"
@@ -572,41 +958,32 @@ def _fetch(ticker: str, spot_override: float | None) -> OptionsFlow:
         _empty.error = str(exc)[:120]
         return _empty
 
-# Unusual Options Activity Scanner
-#
-# Detects statistically unusual options activity across a list of tickers.
-# Each signal is scored 0-1 and combined into a composite "unusual_score":
-#
-#   vol_oi_ratio  - contract Volume / OI > threshold (new money flowing in)
-#   iv_spike      - implied vol significantly above chain average (fear/conviction)
-#   otm_bias      - large volume on deep OTM strikes (speculative/event-driven bets)
-#   premium_size  - notional premium (contracts * 100 * mid) in top decile
-#   cp_divergence - call/put volume ratio far from 1 (directional sweep)
-#
-# Each hit gets a "flags" list and a directional sentiment: bullish/bearish/mixed.
 
 @dataclass
 class UnusualOption:
     """A single unusual options contract."""
+
     ticker: str
     expiry: str
     strike: float
-    option_type: str          # "call" | "put"
+    option_type: str  # "call" | "put"
     volume: int
     open_interest: int
     vol_oi_ratio: float
     implied_vol: float
-    avg_chain_iv: float       # average IV across the chain for context
+    avg_chain_iv: float  # average IV across the chain for context
     in_the_money: bool
-    premium_per_contract: float   # mid-price * 100
-    total_premium: float          # volume * premium_per_contract
-    unusual_score: float          # 0-1 composite
-    flags: list                   # e.g. ["high_vol_oi", "iv_spike", "otm_sweep"]
-    sentiment: str                # "bullish" | "bearish" | "mixed"
+    premium_per_contract: float  # mid-price * 100
+    total_premium: float  # volume * premium_per_contract
+    unusual_score: float  # 0-1 composite
+    flags: list  # e.g. ["high_vol_oi", "iv_spike", "otm_sweep"]
+    sentiment: str  # "bullish" | "bearish" | "mixed"
     spot: float
     days_to_expiry: float
-    percent_change: float = 0.0   # option contract % price change today
-    sector: str = "Other"         # sector label from _SECTOR_MAP
+    percent_change: float = 0.0  # option contract % price change today
+    sector: str = "Other"  # sector label from _SECTOR_MAP
+    trade_style: str = "block"  # "sweep" | "block" (snapshot approximation)
+    exec_side: str = "mid"  # "ask" | "bid" | "mid" (lit-execution lean estimate)
 
     def to_dict(self) -> dict:
         return {
@@ -617,7 +994,7 @@ class UnusualOption:
             "volume": self.volume,
             "open_interest": self.open_interest,
             "vol_oi_ratio": round(self.vol_oi_ratio, 2),
-            "implied_vol": round(self.implied_vol * 100, 2),   # as %
+            "implied_vol": round(self.implied_vol * 100, 2),  # as %
             "avg_chain_iv": round(self.avg_chain_iv * 100, 2),
             "in_the_money": self.in_the_money,
             "percent_change": round(self.percent_change, 2),
@@ -629,7 +1006,119 @@ class UnusualOption:
             "sentiment": self.sentiment,
             "spot": round(self.spot, 4),
             "days_to_expiry": round(self.days_to_expiry, 1),
+            "trade_style": self.trade_style,
+            "exec_side": self.exec_side,
         }
+
+
+# Liquid ETFs excluded from unusual-options feed by default.
+HIGH_VOLUME_ETFS: frozenset[str] = frozenset(
+    {
+        "SPY",
+        "QQQ",
+        "IWM",
+        "DIA",
+        "VTI",
+        "VOO",
+        "TQQQ",
+        "SQQQ",
+        "QID",
+        "SDS",
+        "UPRO",
+        "SPXU",
+        "SPXL",
+        "GLD",
+        "SLV",
+        "GDX",
+        "GDXJ",
+        "USO",
+        "UNG",
+        "URA",
+        "TLT",
+        "IEF",
+        "SHY",
+        "HYG",
+        "LQD",
+        "JNK",
+        "XLE",
+        "XLF",
+        "XLK",
+        "XLV",
+        "XLI",
+        "XLU",
+        "XLP",
+        "XLB",
+        "XLRE",
+        "XLC",
+        "XLY",
+        "EEM",
+        "EFA",
+        "FXI",
+        "EWZ",
+        "EWJ",
+        "KWEB",
+        "SMH",
+        "SOXX",
+        "SOXL",
+        "SOXS",
+        "VXX",
+        "UVXY",
+        "SVXY",
+        "VIXY",
+        "ARKK",
+        "ARKG",
+        "ARKW",
+        "ARKF",
+        "KRE",
+        "KBWB",
+        "XHB",
+        "XRT",
+        "IBB",
+        "XBI",
+        "VNQ",
+        "REET",
+    }
+)
+
+
+def _estimate_exec_side(last: float, bid: float, ask: float) -> str:
+    """
+    Estimate whether a print leaned buyer-initiated ("ask") or seller-initiated
+    ("bid") from the contract snapshot (last vs bid/ask). yfinance gives no true
+    trade-condition tape, so this is a lit-execution lean, not an exchange flag.
+
+      last at/above ask          -> "ask"
+      last at/below bid          -> "bid"
+      last above bid/ask midpoint-> "ask"  (lean buy)
+      last below midpoint        -> "bid"  (lean sell)
+      otherwise / unknown spread -> "mid"
+    """
+    if bid > 0 and ask > 0 and ask >= bid:
+        mid = (bid + ask) / 2.0
+        if last >= ask * 0.999:
+            return "ask"
+        if last <= bid * 1.001:
+            return "bid"
+        if last > mid:
+            return "ask"
+        if last < mid:
+            return "bid"
+        return "mid"
+    return "mid"
+
+
+def _classify_trade_style(vol_oi: float, vol_oi_threshold: float) -> str:
+    """
+    Approximate sweep vs block from a chain snapshot.
+
+    A *sweep* is aggressive, opening, new-money flow: traded volume far exceeds
+    standing open interest (high vol/OI). A *block* is a large single negotiated
+    print that trades against existing OI (moderate vol/OI). True sweep/block
+    tagging needs the trade tape (multi-exchange / single-print conditions),
+    which yfinance does not expose; this uses vol/OI as the proxy.
+    """
+    return "sweep" if vol_oi >= vol_oi_threshold else "block"
+
 
 def _safe_int(val, default: int = 0) -> int:
     """Convert val to int, returning default for None / NaN / Inf."""
@@ -641,6 +1130,7 @@ def _safe_int(val, default: int = 0) -> int:
     except (TypeError, ValueError):
         return default
 
+
 def _safe_float(val, default: float = 0.0) -> float:
     """Convert val to float, returning default for None / NaN / Inf."""
     try:
@@ -650,6 +1140,7 @@ def _safe_float(val, default: float = 0.0) -> float:
         return default if (math.isnan(f) or math.isinf(f)) else f
     except (TypeError, ValueError):
         return default
+
 
 def _scan_ticker_unusual(
     ticker: str,
@@ -661,12 +1152,21 @@ def _scan_ticker_unusual(
     max_dte: int = 60,
     min_premium: float = 0.0,
     new_positions_only: bool = False,
+    min_sweep_premium: float = 50_000.0,
+    min_block_premium: float = 100_000.0,
+    exclude_bid_side: bool = True,
 ) -> list[UnusualOption] | None:
     """
     Fetch options chain for one ticker and return unusual contracts.
 
     Returns a list of UnusualOption hits (empty list = nothing unusual found),
     or None if the ticker appears delisted / has no valid market data.
+
+    Flow filters (snapshot approximations - see _classify_trade_style /
+    _estimate_exec_side for the data caveats):
+      - sweeps kept only if total premium >= min_sweep_premium
+      - blocks kept only if total premium >= min_block_premium
+      - bid-side (seller-initiated lean) prints dropped when exclude_bid_side
     """
     import statistics
     from datetime import datetime, timezone
@@ -687,9 +1187,11 @@ def _scan_ticker_unusual(
             except Exception:
                 exps = []
             if not exps:
-                logger.info("[UnusualOptions] %s: no price + no options chain, likely delisted/invalid", ticker)
-                return None   # signal "delisted" to caller
-            return []   # has options but no live price - data gap, not delisted
+                logger.info(
+                    "[UnusualOptions] %s: no price + no options chain, likely delisted/invalid", ticker
+                )
+                return None  # signal "delisted" to caller
+            return []  # has options but no live price - data gap, not delisted
 
         now_date = datetime.now(timezone.utc).date()
 
@@ -716,49 +1218,67 @@ def _scan_ticker_unusual(
             except Exception as exc:
                 if _is_rate_limit(exc):
                     logger.warning("[UnusualOptions] %s rate-limited on expiry %s (giving up)", ticker, exp)
-                    break   # stop fetching more expiries for this ticker rather than silently skip all
+                    break  # stop fetching more expiries for this ticker rather than silently skip all
                 continue
 
             for side, df in [("call", chain.calls), ("put", chain.puts)]:
                 if df.empty:
                     continue
                 for _, row in df.iterrows():
-                    vol    = _safe_int(row.get("volume"))
-                    oi     = _safe_int(row.get("openInterest"))
-                    iv     = _safe_float(row.get("impliedVolatility"))
+                    vol = _safe_int(row.get("volume"))
+                    oi = _safe_int(row.get("openInterest"))
+                    iv = _safe_float(row.get("impliedVolatility"))
                     strike = _safe_float(row.get("strike"))
-                    bid    = _safe_float(row.get("bid"))
-                    ask    = _safe_float(row.get("ask"))
-                    last   = _safe_float(row.get("lastPrice"))
+                    bid = _safe_float(row.get("bid"))
+                    ask = _safe_float(row.get("ask"))
+                    last = _safe_float(row.get("lastPrice"))
                     # Use bid/ask midpoint when available, fall back to lastPrice
-                    mid    = (bid + ask) / 2.0 if (bid > 0 or ask > 0) else last
-                    itm    = bool(row.get("inTheMoney", False))
+                    mid = (bid + ask) / 2.0 if (bid > 0 or ask > 0) else last
+                    itm = bool(row.get("inTheMoney", False))
                     pct_chg = _safe_float(row.get("percentChange"))
 
                     if vol < min_volume or oi < min_oi or strike <= 0:
                         continue
 
-                    # Skip contracts below the premium threshold early
-                    if min_premium > 0 and (vol * mid * 100) < min_premium:
+                    total_prem = vol * mid * 100
+
+                    # Skip contracts below the absolute premium floor early
+                    if min_premium > 0 and total_prem < min_premium:
                         continue
 
                     # New-positions filter: only contracts where vol > OI
                     if new_positions_only and vol <= oi:
                         continue
 
-                    all_contracts.append({
-                        "ticker":   ticker.upper(),
-                        "expiry":   exp,
-                        "dte":      dte,
-                        "strike":   strike,
-                        "type":     side,
-                        "volume":   vol,
-                        "oi":       oi,
-                        "iv":       iv,
-                        "mid":      mid,
-                        "itm":      itm,
-                        "pct_chg":  pct_chg,
-                    })
+                    # Execution-side lean: drop bid-side (seller-initiated) prints
+                    exec_side = _estimate_exec_side(last, bid, ask)
+                    if exclude_bid_side and exec_side == "bid":
+                        continue
+
+                    # Sweep vs block + per-style premium thresholds
+                    vol_oi = vol / max(oi, 1)
+                    trade_style = _classify_trade_style(vol_oi, vol_oi_threshold)
+                    style_floor = min_sweep_premium if trade_style == "sweep" else min_block_premium
+                    if total_prem < style_floor:
+                        continue
+
+                    all_contracts.append(
+                        {
+                            "ticker": ticker.upper(),
+                            "expiry": exp,
+                            "dte": dte,
+                            "strike": strike,
+                            "type": side,
+                            "volume": vol,
+                            "oi": oi,
+                            "iv": iv,
+                            "mid": mid,
+                            "itm": itm,
+                            "pct_chg": pct_chg,
+                            "trade_style": trade_style,
+                            "exec_side": exec_side,
+                        }
+                    )
 
         if not all_contracts:
             return []
@@ -771,7 +1291,7 @@ def _scan_ticker_unusual(
         # Total call + put volume for CP divergence
         total_call_vol = sum(c["volume"] for c in all_contracts if c["type"] == "call")
         total_put_vol = sum(c["volume"] for c in all_contracts if c["type"] == "put")
-        cp_ratio = (total_call_vol / max(total_put_vol, 1))
+        cp_ratio = total_call_vol / max(total_put_vol, 1)
 
         # Premium percentile threshold (top-30% = notable)
         premiums = sorted(c["volume"] * c["mid"] * 100 for c in all_contracts)
@@ -782,9 +1302,9 @@ def _scan_ticker_unusual(
         # so it stays at 0.05 - prevents all contracts scoring 100% just because
         # the chain is call/put skewed.
         _SIG_W = {
-            "high_vol_oi":   0.35,  # contract-specific: new money flowing in
-            "iv_spike":      0.25,  # contract-specific: elevated IV conviction
-            "otm_sweep":     0.20,  # contract-specific: directional speculation
+            "high_vol_oi": 0.35,  # contract-specific: new money flowing in
+            "iv_spike": 0.25,  # contract-specific: elevated IV conviction
+            "otm_sweep": 0.20,  # contract-specific: directional speculation
             "large_premium": 0.15,  # contract-specific: notional size
             "cp_divergence": 0.05,  # chain-level tie-breaker only
         }
@@ -840,27 +1360,31 @@ def _scan_ticker_unusual(
             if "cp_divergence" in flags and cp_ratio < 0.5:
                 sentiment = "bearish" if c["type"] == "put" else "mixed"
 
-            results.append(UnusualOption(
-                ticker=c["ticker"],
-                expiry=c["expiry"],
-                strike=c["strike"],
-                option_type=c["type"],
-                volume=c["volume"],
-                open_interest=c["oi"],
-                vol_oi_ratio=round(vol_oi, 2),
-                implied_vol=iv,
-                avg_chain_iv=avg_iv,
-                in_the_money=c["itm"],
-                premium_per_contract=round(mid * 100, 2),
-                total_premium=round(total_prem, 2),
-                unusual_score=round(composite, 4),
-                flags=flags,
-                sentiment=sentiment,
-                spot=spot,
-                days_to_expiry=float(c["dte"]),
-                percent_change=c.get("pct_chg", 0.0),
-                sector=_SECTOR_MAP.get(ticker.upper(), "Other"),
-            ))
+            results.append(
+                UnusualOption(
+                    ticker=c["ticker"],
+                    expiry=c["expiry"],
+                    strike=c["strike"],
+                    option_type=c["type"],
+                    volume=c["volume"],
+                    open_interest=c["oi"],
+                    vol_oi_ratio=round(vol_oi, 2),
+                    implied_vol=iv,
+                    avg_chain_iv=avg_iv,
+                    in_the_money=c["itm"],
+                    premium_per_contract=round(mid * 100, 2),
+                    total_premium=round(total_prem, 2),
+                    unusual_score=round(composite, 4),
+                    flags=flags,
+                    sentiment=sentiment,
+                    spot=spot,
+                    days_to_expiry=float(c["dte"]),
+                    percent_change=c.get("pct_chg", 0.0),
+                    sector=_SECTOR_MAP.get(ticker.upper(), "Other"),
+                    trade_style=c.get("trade_style", "block"),
+                    exec_side=c.get("exec_side", "mid"),
+                )
+            )
 
     except Exception as exc:
         logger.warning("[UnusualOptions] %s scan failed: %s", ticker, exc)
@@ -868,6 +1392,7 @@ def _scan_ticker_unusual(
     # Sort by composite score descending, cap per ticker
     results.sort(key=lambda x: x.unusual_score, reverse=True)
     return results[:20]
+
 
 def scan_unusual_options(
     tickers: list[str],
@@ -881,17 +1406,35 @@ def scan_unusual_options(
     top_n: int = 50,
     min_premium: float = 0.0,
     new_positions_only: bool = False,
+    min_sweep_premium: float = 50_000.0,
+    min_block_premium: float = 100_000.0,
+    exclude_bid_side: bool = True,
+    exclude_high_volume_etfs: bool = True,
 ) -> dict:
     """
     Scan a list of tickers for unusual options activity. Returns top-N hits
     ranked by composite unusual score.
+
+    Flow filters (snapshot approximations):
+      - sweeps kept only if premium >= min_sweep_premium (default $50K)
+      - blocks kept only if premium >= min_block_premium (default $100K)
+      - exclude_bid_side drops seller-initiated (bid-side) prints
+      - exclude_high_volume_etfs removes index/sector/leverage/vol ETFs whose
+        tape is dominated by hedging rather than conviction flow
 
     Returns a dict with keys: hits (list), summary (dict), scanned_at (ISO-8601).
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from datetime import datetime, timezone
 
-    tickers = [t.upper().strip() for t in tickers if t.strip()]
+    # De-dup (watchlists overlap) and normalize
+    tickers = list(dict.fromkeys(t.upper().strip() for t in tickers if t.strip()))
+
+    excluded_etfs: list[str] = []
+    if exclude_high_volume_etfs:
+        excluded_etfs = [t for t in tickers if t in HIGH_VOLUME_ETFS]
+        tickers = [t for t in tickers if t not in HIGH_VOLUME_ETFS]
+
     if not tickers:
         return {"hits": [], "summary": {}, "scanned_at": datetime.now(timezone.utc).isoformat()}
 
@@ -922,6 +1465,9 @@ def scan_unusual_options(
             max_dte=max_dte,
             min_premium=min_premium,
             new_positions_only=new_positions_only,
+            min_sweep_premium=min_sweep_premium,
+            min_block_premium=min_block_premium,
+            exclude_bid_side=exclude_bid_side,
         )
 
     with ThreadPoolExecutor(max_workers=max_concurrent) as pool:
@@ -948,17 +1494,26 @@ def scan_unusual_options(
 
     bullish = sum(1 for h in top_hits if h.sentiment == "bullish")
     bearish = sum(1 for h in top_hits if h.sentiment == "bearish")
-    mixed   = sum(1 for h in top_hits if h.sentiment == "mixed")
+    mixed = sum(1 for h in top_hits if h.sentiment == "mixed")
+    sweeps = sum(1 for h in top_hits if h.trade_style == "sweep")
+    blocks = sum(1 for h in top_hits if h.trade_style == "block")
 
     if delisted_tickers:
         logger.info(
             "[UnusualOptions] %d tickers appear delisted/invalid: %s",
-            len(delisted_tickers), ", ".join(sorted(delisted_tickers)),
+            len(delisted_tickers),
+            ", ".join(sorted(delisted_tickers)),
         )
 
     logger.info(
         "[UnusualOptions] scan complete: %d hits from %d/%d tickers  bull=%d bear=%d mixed=%d  delisted=%d",
-        len(top_hits), len(tickers_with_hits), len(tickers), bullish, bearish, mixed, len(delisted_tickers),
+        len(top_hits),
+        len(tickers_with_hits),
+        len(tickers),
+        bullish,
+        bearish,
+        mixed,
+        len(delisted_tickers),
     )
 
     return {
@@ -970,13 +1525,24 @@ def scan_unusual_options(
             "bullish_count": bullish,
             "bearish_count": bearish,
             "mixed_count": mixed,
+            "sweep_count": sweeps,
+            "block_count": blocks,
             "delisted_count": len(delisted_tickers),
             "delisted_tickers": sorted(delisted_tickers),
+            "excluded_etf_count": len(excluded_etfs),
+            "filters": {
+                "min_sweep_premium": min_sweep_premium,
+                "min_block_premium": min_block_premium,
+                "exclude_bid_side": exclude_bid_side,
+                "exclude_high_volume_etfs": exclude_high_volume_etfs,
+            },
         },
         "scanned_at": datetime.now(timezone.utc).isoformat(),
     }
 
+
 # Volume spike scanner
+
 
 def scan_volume_spikes(
     tickers: list[str],
@@ -996,8 +1562,8 @@ def scan_volume_spikes(
 
     Each result dict contains: ticker, price, today_volume, avg_volume, vol_ratio, sector.
     """
-    import yfinance as yf
     import pandas as pd
+    import yfinance as yf
 
     results: list[dict] = []
     unique_tickers = list(dict.fromkeys(t.upper().strip() for t in tickers if t.strip()))
@@ -1034,11 +1600,19 @@ def scan_volume_spikes(
                 vol_df = raw.get("Volume", pd.DataFrame())
                 close_df = raw.get("Close", pd.DataFrame())
                 vol_series_map = {
-                    t: (vol_df[t].dropna() if isinstance(vol_df, pd.DataFrame) and t in vol_df.columns else pd.Series(dtype=float))
+                    t: (
+                        vol_df[t].dropna()
+                        if isinstance(vol_df, pd.DataFrame) and t in vol_df.columns
+                        else pd.Series(dtype=float)
+                    )
                     for t in batch
                 }
                 close_series_map = {
-                    t: (close_df[t].dropna() if isinstance(close_df, pd.DataFrame) and t in close_df.columns else pd.Series(dtype=float))
+                    t: (
+                        close_df[t].dropna()
+                        if isinstance(close_df, pd.DataFrame) and t in close_df.columns
+                        else pd.Series(dtype=float)
+                    )
                     for t in batch
                 }
             else:
@@ -1088,6 +1662,8 @@ def scan_volume_spikes(
     results.sort(key=lambda x: x["vol_ratio"], reverse=True)
     logger.info(
         "[vol_spike] scan complete: %d/%d tickers exceed %.1fx avg vol",
-        len(results), len(unique_tickers), min_vol_ratio,
+        len(results),
+        len(unique_tickers),
+        min_vol_ratio,
     )
     return results[:top_n]

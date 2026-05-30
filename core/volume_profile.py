@@ -16,12 +16,14 @@ _HVN_PERCENTILE = 70  # bins above this percentile = HVN
 _LVN_PERCENTILE = 30  # bins below this percentile = LVN
 _SMOOTH_WINDOW = 3  # Gaussian smooth the histogram before peak-finding
 
+
 @dataclass
 class VPBin:
     price: float  # centre of the price bucket
     volume: float  # total volume traded in this bucket
     pct: float  # fraction of total volume (0-1)
     type: str  # "hvn" | "lvn" | "poc" | "normal"
+
 
 @dataclass
 class VolumeProfile:
@@ -56,6 +58,7 @@ class VolumeProfile:
             ],
         }
 
+
 def compute_volume_profile(
     df: pd.DataFrame,
     n_bins: int = _N_BINS,
@@ -73,6 +76,7 @@ def compute_volume_profile(
     except Exception as exc:
         logger.warning("[VP] compute_volume_profile failed: %s", exc)
         return None
+
 
 def _compute(df: pd.DataFrame, n_bins: int) -> VolumeProfile:
     if df is None or len(df) < 10:
@@ -192,6 +196,7 @@ def _compute(df: pd.DataFrame, n_bins: int) -> VolumeProfile:
         current_price=current_price,
     )
 
+
 def nearest_node(
     price: float, vp: VolumeProfile, node_type: str = "hvn", max_pct: float = 3.0
 ) -> float | None:
@@ -205,6 +210,7 @@ def nearest_node(
     dists.sort()
     best_dist, best_price = dists[0]
     return best_price if best_dist <= max_pct else None
+
 
 def zone_type_at_price(price: float, vp: VolumeProfile, tol_pct: float = 0.5) -> str:
     """

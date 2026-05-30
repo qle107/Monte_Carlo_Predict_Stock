@@ -15,6 +15,7 @@ from .regime import Regime
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class Signal:
     composite: float
@@ -29,10 +30,11 @@ class Signal:
     sub_scores: dict[str, float] = field(default_factory=dict)
     weights: dict[str, float] = field(default_factory=dict)
 
+
 def _score_rsi(rsi: float) -> float:
     """Mean-reversion read on RSI. Uses cfg thresholds. Capped ±0.6."""
-    ob = cfg.rsi_overbought   # default 82
-    os_ = cfg.rsi_oversold    # default 18
+    ob = cfg.rsi_overbought  # default 82
+    os_ = cfg.rsi_oversold  # default 18
 
     if rsi < os_:
         return 0.60
@@ -49,21 +51,27 @@ def _score_rsi(rsi: float) -> float:
     else:
         return -0.60
 
+
 def _score_slope(slope_pct: float) -> float:
     return float(np.clip(slope_pct * 15, -0.8, 0.8))
+
 
 def _score_momentum(mom_pct: float) -> float:
     return float(np.clip(mom_pct * 5, -0.6, 0.6))
 
+
 def _score_ema(cross: str) -> float:
     return {"bullish": 0.4, "bearish": -0.4, "neutral": 0.0}.get(cross, 0.0)
+
 
 def _score_macd(hist_pct: float) -> float:
     return float(np.clip(hist_pct * 25, -0.6, 0.6))
 
+
 def _score_bollinger(bb_pos: float) -> float:
     """Mean-reversion: at upper band → bearish, at lower → bullish."""
     return float(np.clip(-bb_pos * 0.4, -0.6, 0.6))
+
 
 def _score_adx(adx: float, slope_pct: float) -> float:
     if adx < 20:
@@ -72,21 +80,27 @@ def _score_adx(adx: float, slope_pct: float) -> float:
     direction = 1.0 if slope_pct > 0 else -1.0 if slope_pct < 0 else 0.0
     return float(np.clip(strength * direction * 0.5, -0.5, 0.5))
 
+
 def _score_obv(obv_slope: float) -> float:
     return float(np.clip(obv_slope * 0.3, -0.4, 0.4))
+
 
 def _score_vwap(vwap_dist_pct: float) -> float:
     return float(np.clip(vwap_dist_pct * 0.05, -0.3, 0.3))
 
+
 def _score_skewness(skew: float) -> float:
     return float(np.clip(skew * 0.15, -0.3, 0.3))
+
 
 def _score_trend_bias(bias: float) -> float:
     return float(np.clip((bias - 0.5) * 2.0, -0.4, 0.4))
 
+
 def _score_rsi_divergence(div: float) -> float:
     """Divergence is a strong mean-reversion signal. ±0.5 max contribution."""
     return float(np.clip(div * 0.5, -0.5, 0.5))
+
 
 def _score_ema200_dist(dist_pct: float) -> float:
     """
@@ -95,6 +109,7 @@ def _score_ema200_dist(dist_pct: float) -> float:
     Capped at ±0.25 - this is a slow signal.
     """
     return float(np.clip(-dist_pct * 0.012, -0.25, 0.25))
+
 
 # Each row sums to 1.0. Trend regimes lean on slope/MACD/ADX; range regimes
 # lean on RSI/Bollinger; breakout regimes lean on momentum + ADX.
@@ -192,6 +207,7 @@ _REGIME_WEIGHTS = {
 _weights_cache_key: str = ""
 _weights_cache_value: dict[str, float] | None = None
 
+
 def _load_custom_base_weights() -> dict[str, float] | None:
     """
     Load custom base weights from cfg.signal_base_weights if set.
@@ -252,6 +268,7 @@ def _load_custom_base_weights() -> dict[str, float] | None:
         _weights_cache_value = None
         return None
 
+
 def _weights_for(regime: Regime | None) -> dict[str, float]:
     # Allow runtime override of base weights via config
     custom_base = _load_custom_base_weights()
@@ -262,6 +279,7 @@ def _weights_for(regime: Regime | None) -> dict[str, float]:
     if regime.regime == "choppy":
         return base
     return _REGIME_WEIGHTS.get(regime.regime, base)
+
 
 def _confidence(scores: dict[str, float], regime: Regime | None) -> float:
     if not scores:
@@ -303,6 +321,7 @@ def _confidence(scores: dict[str, float], regime: Regime | None) -> float:
         # range_bound left at 1.0 - RSI/BB are doing real work
 
     return round(float(np.clip(raw, 0.0, 1.0)), 3)
+
 
 def compute_signal(ind: Indicators, regime: Regime | None = None) -> Signal:
 

@@ -37,7 +37,6 @@ exclude = [
     "build",
     "dist",
     "resource_image",
-    "static/monte_carlo_microstructure.py",
 ]
 
 [tool.ruff.lint]

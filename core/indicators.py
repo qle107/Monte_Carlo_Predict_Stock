@@ -9,6 +9,7 @@ import pandas as pd
 
 from config import cfg
 
+
 @dataclass
 class Indicators:
     # legacy
@@ -47,6 +48,7 @@ class Indicators:
 
     returns: list[float] = field(default_factory=list)  # historical returns (decimal)
 
+
 def _safe(val, fallback: float = 0.0) -> float:
     """Return fallback if val is NaN, None, or infinite."""
     try:
@@ -57,12 +59,14 @@ def _safe(val, fallback: float = 0.0) -> float:
     except Exception:
         return fallback
 
+
 def _returns(closes: np.ndarray) -> np.ndarray:
     if len(closes) < 2:
         return np.array([0.0])
     rets = np.diff(closes) / closes[:-1]
     rets = rets[np.isfinite(rets)]
     return rets if len(rets) > 0 else np.array([0.0])
+
 
 def _rsi(closes: np.ndarray, period: int = 14) -> float:
     if len(closes) < period + 1:
@@ -75,16 +79,19 @@ def _rsi(closes: np.ndarray, period: int = 14) -> float:
     rs = gains / losses
     return _safe(100 - 100 / (1 + rs), 50.0)
 
+
 def _ema(closes: np.ndarray, period: int) -> float:
     return _safe(
         _ema_series(closes, period)[-1] if len(closes) else 0.0, float(closes[-1]) if len(closes) else 0.0
     )
+
 
 def _ema_series(closes: np.ndarray, period: int) -> np.ndarray:
     """Full EMA series (used by MACD)."""
     if len(closes) == 0:
         return np.array([0.0])
     return pd.Series(closes.astype(float)).ewm(span=period, adjust=False).mean().to_numpy()
+
 
 def _slope(closes: np.ndarray, n: int = 8) -> float:
     n = min(n, len(closes))
@@ -99,6 +106,7 @@ def _slope(closes: np.ndarray, n: int = 8) -> float:
     except Exception:
         return 0.0
 
+
 def _momentum(closes: np.ndarray, n: int = 5) -> float:
     if len(closes) <= n:
         return 0.0
@@ -106,6 +114,7 @@ def _momentum(closes: np.ndarray, n: int = 5) -> float:
     if prev == 0:
         return 0.0
     return _safe((float(closes[-1]) - prev) / prev * 100, 0.0)
+
 
 def _atr_pct(df: pd.DataFrame, period: int = 14) -> float:
     """
@@ -138,6 +147,7 @@ def _atr_pct(df: pd.DataFrame, period: int = 14) -> float:
     except Exception:
         return 1.0
 
+
 def _gap(df: pd.DataFrame, threshold: float = 3.0) -> tuple:
     if len(df) < 2:
         return 0.0, False, False
@@ -151,14 +161,17 @@ def _gap(df: pd.DataFrame, threshold: float = 3.0) -> tuple:
     except Exception:
         return 0.0, False, False
 
+
 def _mean_return(rets: np.ndarray) -> float:
     return _safe(float(np.mean(rets)) * 100, 0.0) if len(rets) else 0.0
+
 
 def _std_return(rets: np.ndarray) -> float:
     if len(rets) < 2:
         return 1.0
     val = float(np.std(rets)) * 100
     return _safe(val, 1.0) if val > 0 else 1.0
+
 
 def _skewness(rets: np.ndarray) -> float:
     if len(rets) < 4:
@@ -167,6 +180,7 @@ def _skewness(rets: np.ndarray) -> float:
         return _safe(float(pd.Series(rets).skew()), 0.0)
     except Exception:
         return 0.0
+
 
 def _kurtosis(rets: np.ndarray) -> float:
     """Excess kurtosis (Fisher). 0 for Normal; >0 = fat tails."""
@@ -177,12 +191,14 @@ def _kurtosis(rets: np.ndarray) -> float:
     except Exception:
         return 0.0
 
+
 def _trend_bias(closes: np.ndarray) -> float:
     if len(closes) < 2:
         return 0.5
     ups = int(np.sum(np.diff(closes) > 0))
     total = len(closes) - 1
     return _safe(ups / total, 0.5) if total > 0 else 0.5
+
 
 def _vol_regime(rets: np.ndarray, w_recent: int = 10, w_long: int = 30) -> str:
     if len(rets) < w_recent + 1:
@@ -200,6 +216,7 @@ def _vol_regime(rets: np.ndarray, w_recent: int = 10, w_long: int = 30) -> str:
         return "normal"
     except Exception:
         return "normal"
+
 
 def _macd(closes: np.ndarray, fast: int = 12, slow: int = 26, sig: int = 9):
     """Returns (macd_line, signal_line, histogram) - last values only."""
@@ -221,6 +238,7 @@ def _macd(closes: np.ndarray, fast: int = 12, slow: int = 26, sig: int = 9):
     except Exception:
         return 0.0, 0.0, 0.0
 
+
 def _bollinger_position(closes: np.ndarray, period: int = 20, k: float = 2.0) -> float:
     """
     Position within Bollinger bands.
@@ -241,6 +259,7 @@ def _bollinger_position(closes: np.ndarray, period: int = 20, k: float = 2.0) ->
         return _safe(float(np.clip(z, -3.0, 3.0)), 0.0)
     except Exception:
         return 0.0
+
 
 def _adx(df: pd.DataFrame, period: int = 14) -> float:
     """
@@ -283,6 +302,7 @@ def _adx(df: pd.DataFrame, period: int = 14) -> float:
     except Exception:
         return 0.0
 
+
 def _obv_slope(df: pd.DataFrame, n: int = 14) -> float:
     """
     Slope of On-Balance Volume over the last n candles, normalised
@@ -305,6 +325,7 @@ def _obv_slope(df: pd.DataFrame, n: int = 14) -> float:
         return _safe(m / base * 100, 0.0)
     except Exception:
         return 0.0
+
 
 def _vwap_distance(df: pd.DataFrame, n_bars: int = 26) -> float:
     """
@@ -330,6 +351,7 @@ def _vwap_distance(df: pd.DataFrame, n_bars: int = 26) -> float:
     except Exception:
         return 0.0
 
+
 def _rsi_series_vectorized(c: np.ndarray, p: int) -> np.ndarray:
     """
     Vectorised RSI series using Wilder EWM smoothing.
@@ -343,6 +365,7 @@ def _rsi_series_vectorized(c: np.ndarray, p: int) -> np.ndarray:
     rs = gain / loss.replace(0.0, np.nan)
     rsi = (100.0 - 100.0 / (1.0 + rs)).fillna(np.where(gain > 0, 100.0, 50.0))
     return rsi.to_numpy(dtype=float)
+
 
 def _rsi_divergence(closes: np.ndarray, period: int = 14, lookback: int = 30) -> float:
     """
@@ -374,6 +397,7 @@ def _rsi_divergence(closes: np.ndarray, period: int = 14, lookback: int = 30) ->
     except Exception:
         return 0.0
 
+
 def _vol_of_vol(rets: np.ndarray, window: int = 10, n_windows: int = 5) -> float:
     """
     Volatility of volatility: std of rolling realized vols.
@@ -397,6 +421,7 @@ def _vol_of_vol(rets: np.ndarray, window: int = 10, n_windows: int = 5) -> float
     except Exception:
         return 0.0
 
+
 def _price_vs_52w(closes: np.ndarray) -> float:
     """
     % distance of current price from the highest close in the window.
@@ -414,6 +439,7 @@ def _price_vs_52w(closes: np.ndarray) -> float:
     except Exception:
         return 0.0
 
+
 def _ema200_distance(closes: np.ndarray) -> tuple:
     """Returns (ema200_value, pct_distance_of_price_from_ema200)."""
     if len(closes) < 10:
@@ -427,6 +453,7 @@ def _ema200_distance(closes: np.ndarray) -> tuple:
         return round(ema200, 4), round(dist, 3)
     except Exception:
         return float(closes[-1]), 0.0
+
 
 def compute_indicators(df: pd.DataFrame) -> Indicators:
     closes = df["close"].to_numpy(float)

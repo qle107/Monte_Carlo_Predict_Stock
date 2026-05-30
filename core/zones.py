@@ -13,26 +13,34 @@ from config import cfg
 
 logger = logging.getLogger(__name__)
 
+
 def _pivot_wing() -> int:
     return int(cfg.zone_pivot_window)
+
 
 def _cluster_atr() -> float:
     return float(cfg.zone_cluster_atr)
 
+
 def _touch_atr() -> float:
     return float(cfg.zone_touch_atr)
+
 
 def _break_atr() -> float:
     return float(cfg.zone_break_atr)
 
+
 def _max_demand() -> int:
     return int(cfg.zone_max_demand)
+
 
 def _max_supply() -> int:
     return int(cfg.zone_max_supply)
 
+
 def _zone_half_atr() -> float:
     return float(cfg.zone_width_atr)
+
 
 # Scoring constants. They sum to 1.0 by design so a perfect zone scores 1.0.
 _W_TOUCHES = 0.35
@@ -47,6 +55,7 @@ _MAX_TOUCH_COUNT = 4
 # Filters out near-noise zones that would otherwise win on proximity alone.
 _MIN_NEAREST_STRENGTH = 0.30
 
+
 @dataclass
 class Zone:
     level: float
@@ -60,6 +69,7 @@ class Zone:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
 
 @dataclass
 class ZoneResult:
@@ -79,6 +89,7 @@ class ZoneResult:
             "price_context": self.price_context,
             "atr": round(self.atr, 4),
         }
+
 
 def _atr(df: pd.DataFrame, period: int = 14) -> float:
     """Average True Range as a dollar value (simple moving average over `period`)."""
@@ -100,6 +111,7 @@ def _atr(df: pd.DataFrame, period: int = 14) -> float:
     if tr.size == 0:
         return float(c[-1]) * 0.015
     return float(np.mean(tr[-period:]))
+
 
 def _find_pivots(
     highs: np.ndarray,
@@ -123,6 +135,7 @@ def _find_pivots(
         if lows[i] <= win_l.min():
             pl.append((i, float(lows[i])))
     return ph, pl
+
 
 def _cluster(
     pivots: Sequence[tuple[int, float]],
@@ -175,6 +188,7 @@ def _cluster(
     zones.append(_flush())
     return zones
 
+
 def _body_strength(df: pd.DataFrame, bar_idx: int) -> float:
     """
     How decisively the bar that formed the pivot rejected the level.
@@ -191,6 +205,7 @@ def _body_strength(df: pd.DataFrame, bar_idx: int) -> float:
     except Exception:
         return 0.0
 
+
 def _score_zones(
     zones: list[Zone],
     df: pd.DataFrame,
@@ -206,7 +221,6 @@ def _score_zones(
     touch_band = atr * _touch_atr()
 
     for z in zones:
-
         touching = (lows <= z.level + touch_band) & (highs >= z.level - touch_band)
         if 0 <= z.bar_idx < touching.size:
             touching[z.bar_idx] = False  # exclude formation bar
@@ -229,6 +243,7 @@ def _score_zones(
             + _W_DEPTH * depth_score,
             3,
         )
+
 
 def _remove_broken(
     zones: list[Zone],
@@ -265,6 +280,7 @@ def _remove_broken(
 
     return surviving
 
+
 def _select_nearest(
     zones: list[Zone],
     price: float,
@@ -293,6 +309,7 @@ def _select_nearest(
     strong = [z for z in candidates if z.strength >= _MIN_NEAREST_STRENGTH]
     return strong[0] if strong else candidates[0]
 
+
 _EMPTY = ZoneResult(
     demand_zones=[],
     supply_zones=[],
@@ -301,6 +318,7 @@ _EMPTY = ZoneResult(
     price_context="unknown",
     atr=0.0,
 )
+
 
 def detect_zones(df: pd.DataFrame) -> ZoneResult:
     """

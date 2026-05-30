@@ -81,6 +81,28 @@ build/
 *.egg-info/
 
 # ----------------------------
+# Node / Next.js frontend
+# ----------------------------
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+out/
+**/out/
+.turbo/
+.vercel/
+
+# npm / yarn / pnpm logs & caches
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# TypeScript / Next build artifacts
+*.tsbuildinfo
+next-env.d.ts
+
+# ----------------------------
 # Temp
 # ----------------------------
 *.tmp

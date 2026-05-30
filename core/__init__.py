@@ -13,6 +13,7 @@ from .regime import detect_regime
 from .signal import compute_signal
 from .volume_profile import compute_volume_profile
 
+
 def _df_to_candles(df: pd.DataFrame) -> list:
     """Vectorised OHLCV serialisation."""
     ts_list = [t.isoformat() for t in df.index]
@@ -25,6 +26,7 @@ def _df_to_candles(df: pd.DataFrame) -> list:
         {"t": t, "o": oi, "h": hi, "l": li, "c": ci, "v": vi}
         for t, oi, hi, li, ci, vi in zip(ts_list, o, h, lo, c, v, strict=False)
     ]
+
 
 def analyse(
     df: pd.DataFrame,

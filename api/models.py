@@ -10,6 +10,7 @@ from config import VALID_INTERVALS, VALID_MC_MODELS
 
 _TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
 
+
 class ConfigUpdate(BaseModel):
     ticker: str | None = None
     interval: str | None = None
@@ -135,6 +136,7 @@ class ConfigUpdate(BaseModel):
             raise ValueError("poll_seconds must be 10-3600")
         return v
 
+
 class ScanRequest(BaseModel):
     """Request model for POST /api/scan."""
 
@@ -181,6 +183,7 @@ class ScanRequest(BaseModel):
         if v is not None and not (0.0 <= v <= 1.0):
             raise ValueError("min_score_abs must be 0.0-1.0")
         return v
+
 
 class BacktestRequest(BaseModel):
     """Optional overrides for POST /api/backtest."""

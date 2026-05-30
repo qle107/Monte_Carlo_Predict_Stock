@@ -28,10 +28,12 @@ _GARCH_CACHE_TTL = 300.0  # seconds (5 min)
 _garch_cache_lock = threading.RLock()
 _garch_cache: dict = {}  # hash → ((omega, alpha, beta), expire_mono)
 
+
 def _garch_cache_key(returns: np.ndarray) -> str:
     """Cheap fingerprint: last 90 values rounded to 6 dp → MD5."""
     tail = np.round(returns[-90:], 6).tobytes()
     return hashlib.md5(tail).hexdigest()
+
 
 def _garch_cache_get(key: str) -> tuple | None:
     with _garch_cache_lock:
@@ -44,6 +46,7 @@ def _garch_cache_get(key: str) -> tuple | None:
             return None
         return params
 
+
 def _garch_cache_put(key: str, params: tuple) -> None:
     with _garch_cache_lock:
         now = time.monotonic()
@@ -52,7 +55,9 @@ def _garch_cache_put(key: str, params: tuple) -> None:
             del _garch_cache[k]
         _garch_cache[key] = (params, now + _GARCH_CACHE_TTL)
 
+
 # Microstructure model - tunable parameters
+
 
 @dataclass(frozen=True)
 class _MSParams:
@@ -113,9 +118,11 @@ class _MSParams:
     hvn_rel_threshold: float = 0.50  # HVN ≥ 50 % of POC volume
     lvn_rel_threshold: float = 0.30  # LVN ≤ 30 % of median volume
 
+
 _PARAMS = _MSParams()
 
 # Result type
+
 
 @dataclass
 class MCResult:
@@ -139,7 +146,7 @@ class MCResult:
     median_path: list[float]
     model: str
 
-    # Monte Carlo standard errors 
+    # Monte Carlo standard errors
     # prob_up_se  = sqrt(p*(1-p)/n_sim)*100  - binomial SE of prob_up
     # prob_down_se = same for prob_down
     # cvar_5_se   = SE of the tail-mean estimator (std of tail / sqrt(tail_n))
@@ -150,11 +157,13 @@ class MCResult:
     # Microstructure-only diagnostics (None for other models)
     ms_regime: str | None = None
     ms_dfa_alpha: float | None = None  # DFA exponent (replaces ms_hurst)
-    ms_hurst: float | None = None      # Deprecated alias for ms_dfa_alpha; kept for one minor version
+    ms_hurst: float | None = None  # Deprecated alias for ms_dfa_alpha; kept for one minor version
     ms_drift_bias: float | None = None
     ms_key_levels: dict | None = field(default=None)
 
+
 # Existing model helpers (untouched - proven & tested)
+
 
 def _calibrate_garch(
     recent_returns: Sequence[float] | None, base_alpha: float, base_beta: float
@@ -195,6 +204,7 @@ def _calibrate_garch(
 
     return float(np.clip(alpha, 0.01, 0.49)), float(np.clip(beta, 0.10, 0.94))
 
+
 def _adaptive_clip(recent_returns: Sequence[float] | None, base_clip: float) -> float:
     """Adapt return clipping threshold to empirical tail quantiles."""
     if recent_returns is None or len(recent_returns) < 20:
@@ -206,6 +216,7 @@ def _adaptive_clip(recent_returns: Sequence[float] | None, base_clip: float) -> 
     p99 = float(np.percentile(np.abs(arr), 99))
     return float(np.clip(p99 * 3.0, 0.05, base_clip))
 
+
 def _realized_vol(recent_returns: Sequence[float], window: int = 20) -> float:
     arr = np.asarray(recent_returns, dtype=float)
     arr = arr[np.isfinite(arr)]
@@ -213,6 +224,7 @@ def _realized_vol(recent_returns: Sequence[float], window: int = 20) -> float:
         return 0.0
     rv = float(np.std(arr[-window:]))
     return rv if np.isfinite(rv) else 0.0
+
 
 def _blend_vol(base_sigma: float, recent_returns: Sequence[float] | None, kurtosis_excess: float) -> float:
     """Blend ATR-based σ with realised vol; weight realised more under fat tails."""
@@ -225,8 +237,10 @@ def _blend_vol(base_sigma: float, recent_returns: Sequence[float] | None, kurtos
     blended = (1.0 - kurt_weight) * base_sigma + kurt_weight * rv
     return float(np.clip(blended, 0.002, 0.08))
 
+
 def _innov_gaussian(rng, n_sim, n_steps):
     return rng.standard_normal((n_sim, n_steps))
+
 
 def _innov_student_t(rng, n_sim, n_steps, kurtosis_excess: float):
     """Student-t innovations rescaled to unit variance (df from excess kurtosis)."""
@@ -238,6 +252,7 @@ def _innov_student_t(rng, n_sim, n_steps, kurtosis_excess: float):
     raw = rng.standard_t(df=df, size=(n_sim, n_steps))
     raw *= np.sqrt((df - 2.0) / df)  # variance = df/(df-2)
     return raw
+
 
 def _simulate_garch(
     rng, n_sim, n_steps, base_sigma, recent_returns, alpha: float | None = None, beta: float | None = None
@@ -277,6 +292,7 @@ def _simulate_garch(
 
     return eps_out, sigma_out
 
+
 def _simulate_bootstrap(rng, n_sim, n_steps, recent_returns: Sequence[float], drift, sigma):
     """Stationary bootstrap resample with Ito drift correction."""
     rets = np.asarray(recent_returns, dtype=float)
@@ -294,7 +310,7 @@ def _simulate_bootstrap(rng, n_sim, n_steps, recent_returns: Sequence[float], dr
 
     N = centred.size
     b = max(2, round(N ** (1.0 / 3.0)))  # mean block length ~ N^{1/3}
-    p = 1.0 / b                           # prob of starting a new block
+    p = 1.0 / b  # prob of starting a new block
 
     out = np.empty((n_sim, n_steps), dtype=float)
     for s in range(n_sim):
@@ -308,6 +324,7 @@ def _simulate_bootstrap(rng, n_sim, n_steps, recent_returns: Sequence[float], dr
 
     # Itô correction: subtract ½σ² per step (σ² = var of rescaled centred)
     return (drift - 0.5 * sigma**2) + out
+
 
 def _simulate_jump(
     rng,
@@ -326,7 +343,7 @@ def _simulate_jump(
         jump_sigma_mult = cfg.jump_sigma_mult
     sigma_jump = sigma * jump_sigma_mult
 
-    # Merton compensator for log-return path 
+    # Merton compensator for log-return path
     kappa = float(np.exp(jump_mean + 0.5 * sigma_jump**2) - 1.0)
     drift_eff = drift - jump_intensity * kappa
 
@@ -338,6 +355,7 @@ def _simulate_jump(
     jump_mask = rng.random((n_sim, n_steps)) < jump_intensity
     jump_size = jump_mean + sigma_jump * rng.standard_normal((n_sim, n_steps))
     return diffusion + jump_mask * jump_size
+
 
 def _simulate_ensemble(
     rng, n_sim, n_steps, base_sigma, drift, recent_returns: Sequence[float] | None, kurtosis_excess: float
@@ -406,6 +424,7 @@ def _simulate_ensemble(
 
     return w_garch * ret_garch + w_boot * ret_boot + w_jump * ret_jump
 
+
 # Microstructure model
 #
 # Two-phase design:
@@ -413,6 +432,7 @@ def _simulate_ensemble(
 #                                & CVD bias once, before any path is simulated.
 
 #                                  full price vector (vectorised across n_sim).
+
 
 def _hurst_exponent(ts: Sequence[float]) -> float:
     """
@@ -432,6 +452,7 @@ def _hurst_exponent(ts: Sequence[float]) -> float:
         return 0.5
     alpha, _ = dfa(arr)
     return float(np.clip(alpha, 0.0, 1.0))
+
 
 def _normalise_volume_profile(
     vp: Any,
@@ -520,6 +541,7 @@ def _normalise_volume_profile(
 
     return None
 
+
 def _calibrate_garch_mle(returns: np.ndarray) -> tuple[float, float, float]:
     """
     Fit GARCH(1,1) by maximum likelihood on a single returns series.
@@ -575,6 +597,7 @@ def _calibrate_garch_mle(returns: np.ndarray) -> tuple[float, float, float]:
         _garch_cache_put(cache_key, result)
     return result
 
+
 def _compute_volume_state(
     volume_history: Sequence[float] | None,
     price_history: Sequence[float] | None,
@@ -612,6 +635,7 @@ def _compute_volume_state(
         validates = (p_trend == 0) or (v_trend * p_trend >= 0)
 
     return vol_mult, validates
+
 
 def _compute_cvd_state(
     cvd_history: Sequence[float] | None,
@@ -666,6 +690,7 @@ def _compute_cvd_state(
         bias *= p.drift_distrust
     return bias, accumulation, distribution
 
+
 def _compute_regime_state(
     rets: np.ndarray,
     p: _MSParams = _PARAMS,
@@ -686,6 +711,7 @@ def _compute_regime_state(
     if p.hurst_mean_rev > H:
         return "mean-reverting", H, p.reg_mr_drift, p.reg_mr_gravity, p.reg_mr_sigma
     return "neutral", H, p.reg_neut_drift, p.reg_neut_gravity, p.reg_neut_sigma
+
 
 @dataclass
 class _MSContext:
@@ -820,8 +846,8 @@ class _MSContext:
     def diagnostics(self) -> dict:
         return {
             "regime": self.regime,
-            "dfa_alpha": float(self.hurst),   # primary (DFA exponent)
-            "hurst": float(self.hurst),        # backwards-compatible alias
+            "dfa_alpha": float(self.hurst),  # primary (DFA exponent)
+            "hurst": float(self.hurst),  # backwards-compatible alias
             "drift_bias": float(self.cvd_bias),
             "key_levels": {
                 "POC": float(self.poc) if self.has_vp else None,
@@ -832,6 +858,7 @@ class _MSContext:
             },
             "garch": {"omega": self.omega, "alpha": self.alpha, "beta": self.beta},
         }
+
 
 def _build_ms_context(
     base_drift: float,
@@ -909,6 +936,7 @@ def _build_ms_context(
         params=p,
     )
 
+
 def _simulate_microstructure(
     rng,
     n_sim: int,
@@ -953,7 +981,9 @@ def _simulate_microstructure(
 
     return paths
 
+
 # Public entry point
+
 
 def run(
     current_price: float,
@@ -1036,7 +1066,7 @@ def run(
     else:
         cap = clip_val
     returns = np.clip(returns, -cap, cap)
-    factors = np.exp(np.cumsum(returns, axis=1))   # same as cumprod(exp(r_i))
+    factors = np.exp(np.cumsum(returns, axis=1))  # same as cumprod(exp(r_i))
     paths = np.hstack(
         [
             np.full((n_sim, 1), current_price, dtype=float),
@@ -1047,7 +1077,9 @@ def run(
 
     return _build_mc_result(rng, paths, current_price, model, n_sim)
 
+
 # Result builder (shared)
+
 
 def _build_mc_result(
     rng,
@@ -1096,10 +1128,7 @@ def _build_mc_result(
     #   SE(CVaR) = std(tail_rets) / sqrt(worst_n)  × 100
     prob_up_se = float(np.sqrt(prob_up * (1.0 - prob_up) / n_sim)) * 100.0
     prob_down_se = float(np.sqrt(prob_down * (1.0 - prob_down) / n_sim)) * 100.0
-    cvar_5_se = (
-        float(np.std(tail_rets) / np.sqrt(worst_n)) * 100.0
-        if worst_n > 1 else 0.0
-    )
+    cvar_5_se = float(np.std(tail_rets) / np.sqrt(worst_n)) * 100.0 if worst_n > 1 else 0.0
 
     # Naïve independent rounding can yield sums of 99.9 or 100.1 depending on
     # how the half-up boundaries fall.  We round each component to 1 d.p., then
@@ -1133,7 +1162,7 @@ def _build_mc_result(
         [10, 25, 50, 75, 90],
         axis=0,
     )
-        # np.round operates on the whole array in one C call; .tolist() is fast.
+    # np.round operates on the whole array in one C call; .tolist() is fast.
     median_path = np.round(median_path_arr, 4).tolist()
 
     # Subsample 100 paths for the chart payload - vectorised round + tolist
@@ -1174,7 +1203,9 @@ def _build_mc_result(
         ms_key_levels=ms["key_levels"] if ms else None,
     )
 
+
 # CVD computation helper
+
 
 def compute_cvd_from_ohlc(
     opens: Sequence[float],

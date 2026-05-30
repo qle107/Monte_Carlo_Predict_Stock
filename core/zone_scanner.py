@@ -22,14 +22,17 @@ from .zones import Zone, detect_zones
 
 logger = logging.getLogger(__name__)
 
+
 def _ema_series(closes: np.ndarray, period: int) -> pd.Series:
     s = pd.Series(closes.astype(float))
     return s.ewm(span=period, adjust=False).mean()
+
 
 def _ema_value(closes: np.ndarray, period: int) -> float:
     if len(closes) < period:
         return float(closes[-1]) if len(closes) else 0.0
     return float(_ema_series(closes, period).iloc[-1])
+
 
 def _ema_cross(closes: np.ndarray, fast: int, slow: int, lookback: int = 5) -> str:
     """
@@ -53,6 +56,7 @@ def _ema_cross(closes: np.ndarray, fast: int, slow: int, lookback: int = 5) -> s
             return "cross_down"
     return "none"
 
+
 def _classify_ema_stack(price: float, ema20: float, ema50: float, ema200: float) -> str:
     """
     Returns one of:
@@ -72,6 +76,7 @@ def _classify_ema_stack(price: float, ema20: float, ema50: float, ema200: float)
         return "above_200"
     return "below_200"
 
+
 def _ema_score(ema_stack: str, side: str) -> float:
     """0-1 EMA alignment score for the given trade side."""
     if side == "long":
@@ -82,6 +87,7 @@ def _ema_score(ema_stack: str, side: str) -> float:
         return {"bear_stack": 1.0, "below_200": 0.6, "mixed": 0.3, "above_200": 0.1, "bull_stack": 0.0}[
             ema_stack
         ]
+
 
 def _score_setup(
     zone_strength: float,
@@ -108,6 +114,7 @@ def _score_setup(
     v_score = obv_ok * 0.10
 
     return round(z_score + e_score + r_score + v_score, 3)
+
 
 @dataclass
 class ZoneScanResult:
@@ -168,6 +175,7 @@ class ZoneScanResult:
     def to_dict(self) -> dict:
         return asdict(self)
 
+
 async def _zone_scan_one(
     ticker: str,
     interval: str,
@@ -218,7 +226,6 @@ async def _zone_scan_one(
     )
 
     try:
-
         df = await loop.run_in_executor(None, fetch_candles, ticker, interval, lookback, extended)
         ind = await loop.run_in_executor(None, compute_indicators, df)
         reg = await loop.run_in_executor(None, detect_regime, df, ind.adx, ind.obv_slope)
@@ -496,6 +503,7 @@ async def _zone_scan_one(
         err.reason = f"Error: {e}"
         err.elapsed_ms = round(elapsed, 1)
         return err
+
 
 async def zone_scan_tickers(
     tickers: list[str],

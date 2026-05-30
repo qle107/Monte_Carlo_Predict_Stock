@@ -27,6 +27,7 @@ VALID_MC_MODELS: list[str] = [
 # Startup ticker (not read from .env). Change here or via POST /api/config / dashboard.
 DEFAULT_TICKER = "PLTR"
 
+
 def _env_int(name: str, default: int, lo: int, hi: int) -> int:
     raw = os.getenv(name)
     if raw is None or raw == "":
@@ -41,12 +42,14 @@ def _env_int(name: str, default: int, lo: int, hi: int) -> int:
         return default
     return v
 
+
 def _env_str_choice(name: str, default: str, choices: list[str]) -> str:
     raw = os.getenv(name, default)
     if raw not in choices:
         logger.warning("config: %s=%r not in %s, using default %s", name, raw, choices, default)
         return default
     return raw
+
 
 def _env_float(name: str, default: float, lo: float, hi: float) -> float:
     raw = os.getenv(name)
@@ -62,11 +65,13 @@ def _env_float(name: str, default: float, lo: float, hi: float) -> float:
         return default
     return v
 
+
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
     if raw is None:
         return default
     return raw.strip().lower() in ("1", "true", "yes", "on", "y", "t")
+
 
 @dataclass
 class Config:
@@ -195,9 +200,11 @@ class Config:
     def to_dict(self) -> dict:
         return asdict(self)
 
+
 # Thread-safe config singleton
 cfg = Config()
 _cfg_lock = threading.RLock()
+
 
 def _lock_cfg() -> threading.RLock:
     """Return the config lock for use in api/server.py POST /api/config handler."""

@@ -11,6 +11,7 @@ from config import cfg
 
 from .hurst import dfa
 
+
 @dataclass
 class Regime:
     regime: str
@@ -43,6 +44,7 @@ class Regime:
 
     components: dict[str, float] = field(default_factory=dict)
 
+
 def _hurst(series: np.ndarray, max_lag: int = 20) -> float:
     """
     DFA-1 exponent for price-level or log-return series.
@@ -68,6 +70,7 @@ def _hurst(series: np.ndarray, max_lag: int = 20) -> float:
     alpha, _ = dfa(s, max_box=max(8, max_box))
     return float(np.clip(alpha, 0.0, 1.0))
 
+
 def _r2_and_slope(closes: np.ndarray, n: int) -> tuple[float, float]:
     """Linear regression R² and slope (%/candle) over the last n closes."""
     n = min(n, len(closes))
@@ -88,6 +91,7 @@ def _r2_and_slope(closes: np.ndarray, n: int) -> tuple[float, float]:
         return float(r2), float(slope_pct)
     except Exception:
         return 0.0, 0.0
+
 
 def _donchian(df: pd.DataFrame, n: int = 20) -> tuple[float, float, float, bool, bool]:
     """
@@ -132,6 +136,7 @@ def _donchian(df: pd.DataFrame, n: int = 20) -> tuple[float, float, float, bool,
         c = float(df["close"].iloc[-1]) if len(df) else 0.0
         return 0.0, c, c, False, False
 
+
 def _swing_pivots(highs: np.ndarray, lows: np.ndarray, lookback: int = 3) -> tuple[list[float], list[float]]:
     """Pivot highs/lows: a bar is a pivot if it's max (min) of the ±lookback window."""
     n = len(highs)
@@ -144,6 +149,7 @@ def _swing_pivots(highs: np.ndarray, lows: np.ndarray, lookback: int = 3) -> tup
         if lows[i] == np.min(win_l):
             pivots_l.append(float(lows[i]))
     return pivots_h, pivots_l
+
 
 def _hh_hl_counts(df: pd.DataFrame, lookback: int = 3, last_pivots: int = 6) -> tuple[int, int, int, int]:
     """Count HH/HL/LH/LL among the last `last_pivots` swing pivots."""
@@ -162,6 +168,7 @@ def _hh_hl_counts(df: pd.DataFrame, lookback: int = 3, last_pivots: int = 6) -> 
         return hh, hl, lh, ll
     except Exception:
         return 0, 0, 0, 0
+
 
 def _range_compression(df: pd.DataFrame, n: int = 20) -> float:
     """
@@ -198,6 +205,7 @@ def _range_compression(df: pd.DataFrame, n: int = 20) -> float:
     except Exception:
         return 0.5
 
+
 def _label_regime(trend: float, range_score: float, brk_up: bool, brk_dn: bool, adx: float) -> str:
     """Map scores to a regime label. Priority: breakout > strong ADX > range > choppy."""
     if brk_up and trend > -0.05:
@@ -233,6 +241,7 @@ def _label_regime(trend: float, range_score: float, brk_up: bool, brk_dn: bool, 
     if trend < -0.15:
         return "weak_downtrend"
     return "choppy"
+
 
 def _verdict(
     regime: str,
@@ -286,6 +295,7 @@ def _verdict(
         )
         return f"{desc}: {compression}, {leans} ({persist})."
     return f"{desc}: {cleanness}, {persist}."
+
 
 def detect_regime(df: pd.DataFrame, adx: float = 0.0, obv_slope: float = 0.0) -> Regime:
     """Compute market regime. adx/obv_slope come from compute_indicators (avoids re-computing)."""
@@ -436,6 +446,7 @@ def detect_regime(df: pd.DataFrame, adx: float = 0.0, obv_slope: float = 0.0) ->
         range_compression=round(float(rc), 3),
         components={k: round(float(v), 3) for k, v in comp.items()},
     )
+
 
 def regime_to_dict(reg: Regime) -> dict:
     return asdict(reg)

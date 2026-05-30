@@ -80,6 +80,7 @@ _MAX_TP1_PCT = {
     "1mo": 0.60,
 }
 
+
 @dataclass
 class TradeSetup:
     ticker: str
@@ -133,8 +134,10 @@ class TradeSetup:
     kelly_half: float | None = None  # half-Kelly   (%)
     fixed_frac: float | None = None  # fixed-frac 1% equity (%)
 
+
 def to_dict(ts: TradeSetup) -> dict:
     return asdict(ts)
+
 
 def compute_trade_setup(
     ticker: str,
@@ -561,6 +564,7 @@ def compute_trade_setup(
         fixed_frac=fixed_frac,
     )
 
+
 def trade_setup_from_analysis(
     ticker: str,
     result: dict,
@@ -656,6 +660,7 @@ def trade_setup_from_analysis(
             logging.getLogger(__name__).warning("levels compute failed: %s", _lvl_err)
 
     return out
+
 
 def trade_setup_from_scan(
     scan_result: dict,

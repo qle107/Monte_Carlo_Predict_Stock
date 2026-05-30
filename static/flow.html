@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Options Flow — Sweeps & Blocks</title>
+<style>
+  :root{
+    --bg:#0b0e11; --panel:#11161c; --row:#0e1318; --row-alt:#0c1116;
+    --line:#1b232c; --text:#e6edf3; --muted:#7d8b99; --dim:#5a6673;
+    --green:#3fb950; --green-soft:#2ea043; --red:#f0556d; --red-soft:#da3633;
+    --gold:#f2c14e; --blue:#58a6ff; --sweep:#e3b341; --magenta:#bc6bd9;
+    --ask:#3fb950; --bid:#f0556d; --mid:#7d8b99;
+    --bar-low:#f59e0b; --bar-mid:#eab308; --bar-hi:#84cc16;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);
+    font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:13px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1480px;margin:0 auto;padding:14px 16px 60px}
+
+  /* Header */
+  header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px}
+  h1{font-size:17px;font-weight:650;margin:0;letter-spacing:.2px}
+  h1 .sub{color:var(--muted);font-weight:400;font-size:12px;margin-left:8px}
+  .spacer{flex:1}
+  .chips{display:flex;gap:7px;flex-wrap:wrap}
+  .chip{background:#161c23;border:1px solid var(--line);color:var(--muted);
+    padding:4px 9px;border-radius:999px;font-size:11.5px;white-space:nowrap}
+  .chip b{color:var(--text);font-weight:600}
+  .chip.on{border-color:#244;background:#10211c;color:#9fe0bf}
+  .ctl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  select,button{background:#161c23;border:1px solid var(--line);color:var(--text);
+    border-radius:7px;padding:6px 10px;font-size:12px;cursor:pointer}
+  button:hover,select:hover{border-color:#2c3a47}
+  button.primary{background:#1f6feb;border-color:#1f6feb;color:#fff;font-weight:600}
+  button.primary:hover{background:#388bfd}
+  .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px;
+    background:var(--dim)}
+  .dot.live{background:var(--green);box-shadow:0 0 7px var(--green)}
+
+  /* Summary strip */
+  .summary{display:flex;gap:18px;flex-wrap:wrap;margin:2px 0 12px;color:var(--muted);font-size:12px}
+  .summary b{color:var(--text)}
+  .summary .g{color:var(--green)} .summary .r{color:var(--red)}
+  .summary .sw{color:var(--sweep)} .summary .bl{color:var(--blue)}
+
+  .banner{display:none;margin:0 0 12px;padding:8px 12px;border-radius:8px;
+    background:#21170a;border:1px solid #5a3d12;color:#f2c14e;font-size:12px}
+  .banner.show{display:block}
+
+  /* Table */
+  .tablewrap{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}
+  table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  thead th{position:sticky;top:0;background:#0d1217;color:var(--dim);font-weight:600;
+    text-align:right;padding:9px 10px;font-size:11px;letter-spacing:.4px;text-transform:uppercase;
+    border-bottom:1px solid var(--line);white-space:nowrap;cursor:pointer;user-select:none}
+  thead th.l{text-align:left}
+  thead th .ar{color:var(--blue);font-size:9px;margin-left:3px}
+  tbody td{padding:7px 10px;text-align:right;border-bottom:1px solid #141a20;white-space:nowrap}
+  tbody td.l{text-align:left}
+  tbody tr:nth-child(even){background:var(--row-alt)}
+  tbody tr:hover{background:#13202b}
+
+  .time{color:var(--muted);font-feature-settings:"tnum"}
+  .val{font-weight:700;color:var(--text)}
+  .val.big{color:var(--gold)}
+  .tk{display:inline-block;min-width:48px;text-align:center;padding:3px 8px;border-radius:6px;
+    font-weight:700;font-size:11.5px;letter-spacing:.3px}
+  .tk.call{background:rgba(63,185,80,.13);color:#56d364;border:1px solid rgba(63,185,80,.28)}
+  .tk.put{background:rgba(240,85,109,.13);color:#ff7b93;border:1px solid rgba(240,85,109,.28)}
+  .spot,.strike{color:#c9d4df}
+  .pc.call{color:var(--green);font-weight:600}
+  .pc.put{color:var(--red);font-weight:600}
+  .side.ask{color:var(--ask)} .side.bid{color:var(--bid)} .side.mid{color:var(--mid)}
+  .type.sweep{color:var(--sweep);font-weight:650}
+  .type.block{color:var(--blue);font-weight:650}
+  .price{color:#c9d4df}
+  .size{color:#c9d4df;font-weight:600}
+  .size.hot{color:var(--magenta)}
+  .ret.pos{color:var(--green)} .ret.zero{color:var(--dim)} .ret.na{color:var(--dim)}
+  .delta.pos{color:#9fb2c2} .delta.neg{color:#c98aa8}
+  .vol{color:var(--muted)}
+
+  /* SigScore bar */
+  .sig{display:inline-flex;flex-direction:column;align-items:flex-end;gap:3px;min-width:78px}
+  .sig .track{width:74px;height:7px;border-radius:4px;background:#1c242c;overflow:hidden}
+  .sig .fill{height:100%;border-radius:4px}
+  .sig .num{font-size:10.5px;color:var(--muted)}
+
+  .empty{padding:38px;text-align:center;color:var(--muted)}
+  .foot{margin-top:10px;color:var(--dim);font-size:11px;line-height:1.6}
+  code{background:#161c23;padding:1px 5px;border-radius:4px;color:#a9c7e8}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Options Flow <span class="sub">sweeps &amp; blocks · ask-side conviction</span></h1>
+    <div class="spacer"></div>
+    <div class="ctl">
+      <span><span class="dot" id="live"></span><span id="status" style="color:var(--muted);font-size:12px">idle</span></span>
+      <select id="watchlist" title="Scan universe">
+        <option value="">all optionable</option>
+        <option value="momentum">momentum</option>
+        <option value="tech">tech</option>
+        <option value="semis">semis</option>
+        <option value="biotech">biotech</option>
+        <option value="energy">energy</option>
+        <option value="defense">defense</option>
+        <option value="crypto">crypto</option>
+        <option value="financials">financials</option>
+      </select>
+      <select id="auto" title="Auto-refresh">
+        <option value="0">manual</option>
+        <option value="30">30s</option>
+        <option value="60" selected>60s</option>
+        <option value="120">2m</option>
+      </select>
+      <button class="primary" id="refresh">Scan</button>
+    </div>
+  </header>
+
+  <div class="chips">
+    <span class="chip on">Sweeps ≥ <b>$50K</b></span>
+    <span class="chip on">Blocks ≥ <b>$100K</b></span>
+    <span class="chip on">Excl. high-volume ETFs</span>
+    <span class="chip on">Ask-side only <span style="color:var(--dim)">(bid-side hidden)</span></span>
+  </div>
+
+  <div class="summary" id="summary"></div>
+  <div class="banner" id="banner"></div>
+
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="l" data-k="time">Time ↓</th>
+          <th data-k="value">Value</th>
+          <th class="l" data-k="ticker">Ticker</th>
+          <th data-k="spot">Spot</th>
+          <th data-k="strike">Strike</th>
+          <th class="l" data-k="pc">PC</th>
+          <th data-k="exp">Exp.</th>
+          <th class="l" data-k="side">X</th>
+          <th class="l" data-k="type">Type</th>
+          <th data-k="price">Price</th>
+          <th data-k="size">Size</th>
+          <th data-k="sig">SigScore</th>
+          <th data-k="ret">Peak Return</th>
+          <th data-k="delta">Δ</th>
+          <th data-k="vol">Volume</th>
+        </tr>
+      </thead>
+      <tbody id="rows">
+        <tr><td class="empty" colspan="15">Press <b>Scan</b> to load flow.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="foot">
+    <b>Data notes.</b> Built on the app's <code>/api/options/unusual</code> snapshot scan (yfinance).
+    <b>Sweep vs Block</b> is approximated from volume/OI (true tape conditions need a flow provider).
+    <b>X</b> (Ask/Bid) is a last-vs-bid/ask lean, not an exchange flag — bid-side prints are filtered out server-side.
+    <b>Time</b> is the scan timestamp (snapshot feed, not per-trade tape).
+    <b>Size</b> = contract day volume; <b>Volume</b> = open interest (context). <b>Δ</b> is Black–Scholes, computed client-side.
+  </div>
+</div>
+
+<script>
+const API_BASE = location.protocol === 'file:' ? 'http://localhost:8000' : '';
+let RAWS = [];
+let sortKey = 'value', sortDir = -1, autoTimer = null;
+
+const $ = s => document.querySelector(s);
+const ncdf = x => { // standard normal CDF (Abramowitz–Stegun)
+  const t = 1/(1+0.2316419*Math.abs(x));
+  const d = 0.3989423*Math.exp(-x*x/2);
+  let p = d*t*(0.3193815+t*(-0.3565638+t*(1.781478+t*(-1.821256+t*1.330274))));
+  return x>0 ? 1-p : p;
+};
+function bsDelta(type, S, K, ivPct, dte){
+  const sig = (ivPct||0)/100, T = Math.max(dte,0.5)/365;
+  if(!(S>0&&K>0&&sig>0&&T>0)) return type==='put' ? -0.5 : 0.5;
+  const d1 = (Math.log(S/K)+(0.05+0.5*sig*sig)*T)/(sig*Math.sqrt(T));
+  const nd = ncdf(d1);
+  return type==='put' ? nd-1 : nd;
+}
+function fmtVal(v){
+  if(v>=1e6) return '$'+(v/1e6).toFixed(2)+'M';
+  if(v>=1e3) return '$'+(v/1e3).toFixed(1)+'K';
+  return '$'+(v||0).toFixed(0);
+}
+function fmtExp(s){ if(!s) return '—'; const p=s.split('-'); return p.length===3 ? p[0].slice(2)+'-'+p[1]+'-'+p[2] : s; }
+function sigColor(v){ return v>=0.65?'var(--bar-hi)':v>=0.55?'var(--bar-mid)':'var(--bar-low)'; }
+function nowHMS(iso){ const d=iso?new Date(iso):new Date(); return d.toTimeString().slice(0,8); }
+
+function render(){
+  const tb = $('#rows');
+  if(!RAWS.length){ tb.innerHTML='<tr><td class="empty" colspan="15">No qualifying sweeps or blocks.</td></tr>'; return; }
+  const rows = [...RAWS].sort((a,b)=>{
+    let x,y;
+    switch(sortKey){
+      case 'value': x=a.total_premium; y=b.total_premium; break;
+      case 'ticker': x=a.ticker; y=b.ticker; break;
+      case 'spot': x=a.spot; y=b.spot; break;
+      case 'strike': x=a.strike; y=b.strike; break;
+      case 'price': x=a.premium_per_contract; y=b.premium_per_contract; break;
+      case 'size': x=a.volume; y=b.volume; break;
+      case 'sig': x=a.unusual_score; y=b.unusual_score; break;
+      case 'delta': x=a._delta; y=b._delta; break;
+      case 'vol': x=a.open_interest; y=b.open_interest; break;
+      case 'exp': x=a.expiry; y=b.expiry; break;
+      default: x=a._t; y=b._t;
+    }
+    if(typeof x==='string') return sortDir*x.localeCompare(y);
+    return sortDir*((x||0)-(y||0));
+  });
+  tb.innerHTML = rows.map(r=>{
+    const isCall = r.option_type==='call';
+    const big = r.total_premium>=500000;
+    const sizeHot = r.volume>=150;
+    const ret = r.percent_change;
+    const retCls = ret==null ? 'na' : (ret>0 ? 'pos' : 'zero');
+    const retTxt = ret==null ? 'N/A' : (ret>0?'+':'')+ret.toFixed(ret&&Math.abs(ret)<1?2:0)+'%';
+    const dl = r._delta;
+    const score = r.unusual_score;
+    return `<tr>
+      <td class="l time">${r._time}</td>
+      <td class="val ${big?'big':''}">${fmtVal(r.total_premium)}</td>
+      <td class="l"><span class="tk ${isCall?'call':'put'}">${r.ticker}</span></td>
+      <td class="spot">${r.spot.toFixed(2)}</td>
+      <td class="strike">${(+r.strike).toFixed(r.strike%1?2:0)}</td>
+      <td class="l pc ${isCall?'call':'put'}">${isCall?'Call':'Put'}</td>
+      <td>${fmtExp(r.expiry)}</td>
+      <td class="l side ${r.exec_side}">${r.exec_side.charAt(0).toUpperCase()+r.exec_side.slice(1)}</td>
+      <td class="l type ${r.trade_style}">${r.trade_style.charAt(0).toUpperCase()+r.trade_style.slice(1)}</td>
+      <td class="price">${(r.premium_per_contract/100).toFixed(2)}</td>
+      <td class="size ${sizeHot?'hot':''}">${r.volume.toLocaleString()}</td>
+      <td><div class="sig"><div class="track"><div class="fill" style="width:${Math.round(score*100)}%;background:${sigColor(score)}"></div></div><span class="num">${score.toFixed(2)}</span></div></td>
+      <td class="ret ${retCls}">${retTxt}</td>
+      <td class="delta ${dl>=0?'pos':'neg'}">${dl>=0?' ':''}${dl.toFixed(3)}</td>
+      <td class="vol">${(r.open_interest||0).toLocaleString()}</td>
+    </tr>`;
+  }).join('');
+}
+
+function ingest(data, scannedAt){
+  const hits = (data.hits||[]).map(h=>{
+    h._delta = bsDelta(h.option_type, h.spot, h.strike, h.implied_vol, h.days_to_expiry);
+    h._time = nowHMS(scannedAt);
+    h._t = Date.now();
+    return h;
+  });
+  RAWS = hits;
+  const s = data.summary||{};
+  $('#summary').innerHTML =
+    `<span><b>${s.total_hits??hits.length}</b> prints</span>`+
+    `<span class="sw"><b>${s.sweep_count??'–'}</b> sweeps</span>`+
+    `<span class="bl"><b>${s.block_count??'–'}</b> blocks</span>`+
+    `<span class="g"><b>${s.bullish_count??'–'}</b> bullish</span>`+
+    `<span class="r"><b>${s.bearish_count??'–'}</b> bearish</span>`+
+    `<span><b>${s.tickers_scanned??'–'}</b> scanned</span>`+
+    (s.excluded_etf_count?`<span><b>${s.excluded_etf_count}</b> ETFs excluded</span>`:'')+
+    `<span style="color:var(--dim)">@ ${nowHMS(scannedAt)}</span>`;
+  render();
+}
+
+async function scan(){
+  const wl = $('#watchlist').value;
+  const params = new URLSearchParams({
+    top_n:'100', min_sweep_premium:'50000', min_block_premium:'100000',
+    exclude_bid_side:'true', exclude_high_volume_etfs:'true'
+  });
+  if(wl) params.set('watchlist', wl);
+  const url = `${API_BASE}/api/options/unusual?${params}`;
+  $('#status').textContent='scanning…'; $('#live').classList.add('live');
+  $('#banner').classList.remove('show');
+  try{
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const data = await res.json();
+    ingest(data, data.scanned_at);
+    $('#status').textContent='live';
+  }catch(err){
+    $('#status').textContent='offline'; $('#live').classList.remove('live');
+    $('#banner').classList.add('show');
+    $('#banner').innerHTML = `Couldn't reach <code>${url}</code> (${err.message}). Showing sample layout — start the API (<code>uvicorn api.server:app</code>) and Scan again for live flow.`;
+    ingest(SAMPLE, new Date().toISOString());
+  }
+}
+
+document.querySelectorAll('thead th').forEach(th=>{
+  th.addEventListener('click', ()=>{
+    const k = th.dataset.k;
+    if(sortKey===k) sortDir*=-1; else { sortKey=k; sortDir = (k==='ticker'||k==='pc'||k==='type'||k==='side')?1:-1; }
+    document.querySelectorAll('thead th .ar').forEach(a=>a.remove());
+    const ar=document.createElement('span'); ar.className='ar'; ar.textContent=sortDir<0?'▼':'▲'; th.appendChild(ar);
+    render();
+  });
+});
+$('#refresh').addEventListener('click', scan);
+$('#auto').addEventListener('change', e=>{
+  if(autoTimer) clearInterval(autoTimer);
+  const s=+e.target.value; if(s>0) autoTimer=setInterval(scan, s*1000);
+});
+
+// Sample data (mirrors the reference layout) shown when the API is unreachable.
+const SAMPLE = {summary:{total_hits:16,sweep_count:7,block_count:9,bullish_count:12,bearish_count:4,tickers_scanned:48,excluded_etf_count:31},hits:[
+ {ticker:'HYG',spot:80.32,strike:55,option_type:'call',expiry:'2026-07-17',exec_side:'ask',trade_style:'block',premium_per_contract:2640,total_premium:792000,volume:300,open_interest:575,unusual_score:0.53,implied_vol:22,days_to_expiry:48,percent_change:null},
+ {ticker:'MSFT',spot:449.53,strike:500,option_type:'call',expiry:'2028-01-21',exec_side:'ask',trade_style:'block',premium_per_contract:6415,total_premium:737700,volume:115,open_interest:869,unusual_score:0.45,implied_vol:25,days_to_expiry:601,percent_change:0},
+ {ticker:'HOOD',spot:94.35,strike:90,option_type:'call',expiry:'2027-06-17',exec_side:'ask',trade_style:'block',premium_per_contract:2920,total_premium:292000,volume:100,open_interest:289,unusual_score:0.40,implied_vol:55,days_to_expiry:383,percent_change:0},
+ {ticker:'MSFT',spot:450.05,strike:440,option_type:'call',expiry:'2026-06-26',exec_side:'ask',trade_style:'sweep',premium_per_contract:2110,total_premium:213100,volume:101,open_interest:13851,unusual_score:0.54,implied_vol:24,days_to_expiry:27,percent_change:0},
+ {ticker:'JPM',spot:299.45,strike:300,option_type:'call',expiry:'2026-06-05',exec_side:'ask',trade_style:'block',premium_per_contract:380,total_premium:190000,volume:500,open_interest:3711,unusual_score:0.56,implied_vol:18,days_to_expiry:6,percent_change:0},
+ {ticker:'INTC',spot:114.67,strike:124,option_type:'put',expiry:'2026-06-05',exec_side:'ask',trade_style:'block',premium_per_contract:1160,total_premium:290000,volume:250,open_interest:1711,unusual_score:0.51,implied_vol:42,days_to_expiry:6,percent_change:0},
+ {ticker:'INTC',spot:114.7,strike:100,option_type:'put',expiry:'2026-06-05',exec_side:'ask',trade_style:'sweep',premium_per_contract:100.7,total_premium:86400,volume:858,open_interest:3506,unusual_score:0.69,implied_vol:40,days_to_expiry:6,percent_change:0.3},
+ {ticker:'GLW',spot:181.43,strike:175,option_type:'call',expiry:'2027-03-19',exec_side:'ask',trade_style:'sweep',premium_per_contract:5109.6,total_premium:766400,volume:150,open_interest:160,unusual_score:0.66,implied_vol:30,days_to_expiry:293,percent_change:0.05},
+ {ticker:'INTC',spot:114.65,strike:110,option_type:'put',expiry:'2026-06-05',exec_side:'ask',trade_style:'block',premium_per_contract:325,total_premium:154100,volume:474,open_interest:8065,unusual_score:0.60,implied_vol:39,days_to_expiry:6,percent_change:0},
+ {ticker:'INTC',spot:114.65,strike:110,option_type:'call',expiry:'2026-06-05',exec_side:'ask',trade_style:'sweep',premium_per_contract:830,total_premium:415000,volume:500,open_interest:2672,unusual_score:0.69,implied_vol:38,days_to_expiry:6,percent_change:0},
+ {ticker:'WSM',spot:203.68,strike:200,option_type:'put',expiry:'2026-06-18',exec_side:'ask',trade_style:'block',premium_per_contract:565,total_premium:256500,volume:454,open_interest:622,unusual_score:0.54,implied_vol:36,days_to_expiry:19,percent_change:0},
+ {ticker:'MU',spot:972.35,strike:210,option_type:'call',expiry:'2026-06-18',exec_side:'ask',trade_style:'block',premium_per_contract:76205,total_premium:15240000,volume:200,open_interest:200,unusual_score:0.43,implied_vol:50,days_to_expiry:19,percent_change:0},
+ {ticker:'MSFT',spot:449.62,strike:500,option_type:'call',expiry:'2026-07-17',exec_side:'ask',trade_style:'sweep',premium_per_contract:545,total_premium:58900,volume:108,open_interest:16655,unusual_score:0.57,implied_vol:24,days_to_expiry:48,percent_change:0.92},
+ {ticker:'META',spot:632.63,strike:760,option_type:'call',expiry:'2028-12-15',exec_side:'ask',trade_style:'sweep',premium_per_contract:13550,total_premium:1355000,volume:100,open_interest:105,unusual_score:0.57,implied_vol:33,days_to_expiry:929,percent_change:0},
+ {ticker:'MSFT',spot:449.85,strike:500,option_type:'call',expiry:'2026-07-17',exec_side:'ask',trade_style:'sweep',premium_per_contract:545,total_premium:50100,volume:92,open_interest:16547,unusual_score:0.57,implied_vol:24,days_to_expiry:48,percent_change:0.92},
+ {ticker:'META',spot:632.61,strike:635,option_type:'call',expiry:'2026-06-12',exec_side:'ask',trade_style:'block',premium_per_contract:1490,total_premium:166900,volume:112,open_interest:399,unusual_score:0.44,implied_vol:31,days_to_expiry:13,percent_change:0.2}
+]};
+
+// Auto-scan on load (falls back to sample layout if API is down).
+scan();
+$('#auto').dispatchEvent(new Event('change'));
+</script>
+</body>
+</html>

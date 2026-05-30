@@ -20,6 +20,7 @@ _CACHE_TTL = 4 * 3600.0  # seconds
 _cache_lock = threading.RLock()
 _macro_cache: dict = {}  # key → (data, expire_monotonic)
 
+
 def _cache_get(key: str):
     with _cache_lock:
         entry = _macro_cache.get(key)
@@ -31,6 +32,7 @@ def _cache_get(key: str):
             return None
         return data
 
+
 def _cache_put(key: str, data) -> None:
     with _cache_lock:
         now = time.monotonic()
@@ -39,8 +41,10 @@ def _cache_put(key: str, data) -> None:
             del _macro_cache[k]
         _macro_cache[key] = (data, now + _CACHE_TTL)
 
+
 # Each function maps (current, previous) → "bullish" | "bearish" | "neutral".
 # Thresholds are based on widely-used rule-of-thumb market heuristics.
+
 
 def _cpi_impact(cur: float | None, _prev) -> str:
     """High CPI → Fed hikes → equity multiples compress → bearish."""
@@ -52,6 +56,7 @@ def _cpi_impact(cur: float | None, _prev) -> str:
         return "bullish"
     return "neutral"
 
+
 def _ppi_impact(cur: float | None, _prev) -> str:
     """High PPI → upstream cost pressure → margin squeeze → bearish."""
     if cur is None:
@@ -62,6 +67,7 @@ def _ppi_impact(cur: float | None, _prev) -> str:
         return "bullish"
     return "neutral"
 
+
 def _pce_impact(cur: float | None, _prev) -> str:
     """Fed's 2 % target - above target → rate hikes → bearish."""
     if cur is None:
@@ -71,6 +77,7 @@ def _pce_impact(cur: float | None, _prev) -> str:
     if cur < 1.8:
         return "bullish"
     return "neutral"
+
 
 def _fed_rate_impact(cur: float | None, prev: float | None) -> str:
     """High absolute level AND recent hikes → bearish; cuts → bullish."""
@@ -84,6 +91,7 @@ def _fed_rate_impact(cur: float | None, prev: float | None) -> str:
         return "bullish"
     return "neutral"
 
+
 def _yield_10y_impact(cur: float | None, prev: float | None) -> str:
     """Rising yields compress equity P/E multiples → bearish for stocks."""
     if cur is None:
@@ -96,6 +104,7 @@ def _yield_10y_impact(cur: float | None, prev: float | None) -> str:
         return "bullish"
     return "neutral"
 
+
 def _gdp_impact(cur: float | None, _prev) -> str:
     """Strong growth → earnings expansion → bullish; contraction → bearish."""
     if cur is None:
@@ -105,6 +114,7 @@ def _gdp_impact(cur: float | None, _prev) -> str:
     if cur < 0.0:
         return "bearish"
     return "neutral"
+
 
 def _unemployment_impact(cur: float | None, prev: float | None) -> str:
     """Rising unemployment → weakening consumer → bearish; tight labour → bullish."""
@@ -117,6 +127,7 @@ def _unemployment_impact(cur: float | None, prev: float | None) -> str:
         return "bullish"
     return "neutral"
 
+
 def _pmi_impact(cur: float | None, _prev) -> str:
     """PMI >50 = expansion (bullish); <50 = contraction (bearish)."""
     if cur is None:
@@ -126,6 +137,7 @@ def _pmi_impact(cur: float | None, _prev) -> str:
     if cur < 48.0:
         return "bearish"
     return "neutral"
+
 
 def _trend_arrow(cur: float | None, prev: float | None) -> str:
     """Visual arrow comparing current reading to prior period."""
@@ -137,7 +149,9 @@ def _trend_arrow(cur: float | None, prev: float | None) -> str:
         return "↓"
     return "→"
 
+
 _FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
+
 
 def _fetch_fred_levels(series_id: str, limit: int = 14) -> list[float]:
     """
@@ -173,12 +187,14 @@ def _fetch_fred_levels(series_id: str, limit: int = 14) -> list[float]:
         logger.debug("[macro] FRED %s failed: %s", series_id, exc)
         return []
 
+
 def _fred_latest_two(series_id: str) -> tuple[float | None, float | None]:
     """Convenience: return (current, previous) from a FRED level series."""
     vals = _fetch_fred_levels(series_id, limit=2)
     cur = vals[0] if len(vals) > 0 else None
     prev = vals[1] if len(vals) > 1 else None
     return cur, prev
+
 
 def _fred_yoy(series_id: str) -> tuple[float | None, float | None]:
     """
@@ -196,6 +212,7 @@ def _fred_yoy(series_id: str) -> tuple[float | None, float | None]:
     except ZeroDivisionError:
         return None, None
 
+
 # Registration is optional for higher rate limits.
 
 _BLS_API_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
@@ -205,6 +222,7 @@ _BLS_SERIES = {
     "PPI": "WPSFD49104",  # PPI Final Demand (index level)
     "Unemployment": "LNS14000000",  # Civilian Unemployment Rate (%)
 }
+
 
 def _fetch_bls(series_key: str) -> tuple[float | None, float | None]:
     """
@@ -243,6 +261,7 @@ def _fetch_bls(series_key: str) -> tuple[float | None, float | None]:
     except Exception as exc:
         logger.debug("[macro] BLS %s failed: %s", series_key, exc)
         return None, None
+
 
 def _bls_yoy(series_key: str) -> tuple[float | None, float | None]:
     """
@@ -283,6 +302,7 @@ def _bls_yoy(series_key: str) -> tuple[float | None, float | None]:
         logger.debug("[macro] BLS YoY %s failed: %s", series_key, exc)
         return None, None
 
+
 def _fetch_yf_rate(ticker: str) -> tuple[float | None, float | None]:
     """
     Fetch current and ~1-month-ago close from yfinance.
@@ -301,6 +321,7 @@ def _fetch_yf_rate(ticker: str) -> tuple[float | None, float | None]:
     except Exception as exc:
         logger.debug("[macro] yfinance %s failed: %s", ticker, exc)
         return None, None
+
 
 def _fetch_worldbank_gdp() -> tuple[float | None, float | None]:
     """
@@ -327,6 +348,7 @@ def _fetch_worldbank_gdp() -> tuple[float | None, float | None]:
         logger.debug("[macro] World Bank GDP failed: %s", exc)
         return None, None
 
+
 def _indicator(
     name: str,
     full_name: str,
@@ -346,6 +368,7 @@ def _indicator(
         "impact": impact_fn(cur, prev),  # "bullish" | "bearish" | "neutral"
         "arrow": _trend_arrow(cur, prev),  # "↑" | "↓" | "→"
     }
+
 
 def fetch_macro_indicators(force_refresh: bool = False) -> dict:
     """

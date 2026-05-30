@@ -16,6 +16,7 @@ _ROLLING_WINDOW = 20  # window for rolling σ
 _MAX_ITER = 200  # MLE iterations
 _MIN_EVENTS = 8  # minimum events needed to fit
 
+
 @dataclass
 class HawkesParams:
     mu: float  # baseline intensity
@@ -24,6 +25,7 @@ class HawkesParams:
     branching_ratio: float  # α/β - must be < 1 for stability
     n_events: int  # number of events used in fitting
     fit_ok: bool  # True if MLE converged
+
 
 @dataclass
 class ZoneReaction:
@@ -35,6 +37,7 @@ class ZoneReaction:
     consolidate_prob: float  # 0-1
     excitement_label: str  # "calm" | "moderate" | "excited"
     explanation: str
+
 
 @dataclass
 class HawkesResult:
@@ -74,6 +77,7 @@ class HawkesResult:
             ],
         }
 
+
 def _extract_events(returns: np.ndarray) -> np.ndarray:
     """
     Return the *indices* of candles whose |return| exceeds _EVENT_THRESH_SIGMA
@@ -91,6 +95,7 @@ def _extract_events(returns: np.ndarray) -> np.ndarray:
             events.append(float(i))  # use bar index as "time"
 
     return np.array(events, dtype=float)
+
 
 def _hawkes_loglik(params: np.ndarray, times: np.ndarray) -> float:
     """
@@ -123,6 +128,7 @@ def _hawkes_loglik(params: np.ndarray, times: np.ndarray) -> float:
     integral = mu * T + (alpha / beta) * sum(1.0 - math.exp(-beta * (times[-1] - t)) for t in times)
 
     return -(ll - integral)
+
 
 def _fit_hawkes(event_times: np.ndarray) -> HawkesParams:
     """
@@ -181,6 +187,7 @@ def _fit_hawkes(event_times: np.ndarray) -> HawkesParams:
         logger.debug("[Hawkes] MLE failed (%s), using heuristics", exc)
         return _heuristic_params(t_norm, n)
 
+
 def _heuristic_params(t_norm: np.ndarray, n_events: int) -> HawkesParams:
     """Simple moment-matching fallback when scipy/MLE is unavailable."""
     T = float(t_norm[-1]) if len(t_norm) > 1 else float(n_events)
@@ -196,6 +203,7 @@ def _heuristic_params(t_norm: np.ndarray, n_events: int) -> HawkesParams:
         fit_ok=False,
     )
 
+
 def _compute_lambda(params: HawkesParams, event_times: np.ndarray, query_time: float) -> float:
     """
     Evaluate λ(query_time) given the Hawkes parameters and observed event times.
@@ -205,6 +213,7 @@ def _compute_lambda(params: HawkesParams, event_times: np.ndarray, query_time: f
     excitation = sum(alpha * math.exp(-beta * (query_time - t)) for t in past_events)
     return float(mu + excitation)
 
+
 def _historical_lambda_dist(params: HawkesParams, event_times: np.ndarray, n_points: int = 200) -> np.ndarray:
     """Compute λ at N evenly-spaced times to build a reference distribution."""
     if len(event_times) < 2:
@@ -212,6 +221,7 @@ def _historical_lambda_dist(params: HawkesParams, event_times: np.ndarray, n_poi
     T = event_times[-1]
     times = np.linspace(0, T, n_points)
     return np.array([_compute_lambda(params, event_times, t) for t in times])
+
 
 def _zone_probs(
     lam: float, lam_lo: float, lam_hi: float, zone_type: str
@@ -254,6 +264,7 @@ def _zone_probs(
             expl = "High excitation - strong directional pressure; supply may not hold."
 
     return bounce, brk, cons, label, expl
+
 
 def analyse_hawkes(
     returns: Sequence[float],
@@ -330,6 +341,7 @@ def analyse_hawkes(
     except Exception as exc:
         logger.warning("[Hawkes] analyse failed: %s", exc)
         return _fallback_result(zones, error=str(exc)[:120])
+
 
 def _fallback_result(zones, error: str = "insufficient_data") -> HawkesResult:
     """Return a neutral result when fitting fails."""

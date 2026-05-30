@@ -15,13 +15,10 @@ import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
-# Sentiment data is slow to fetch (Reddit + Cramer/Google News + yfinance options).
-# Cache results per ticker for 5 minutes so the dashboard / scanner can call
-# get_sentiment() multiple times without hammering the public APIs.
-
-_SENTIMENT_TTL  = 300.0          # 5 minutes
+_SENTIMENT_TTL = 300.0
 _sentiment_lock = threading.Lock()
-_sentiment_cache: dict[str, tuple] = {}   # ticker → (result_dict, expire_time)
+_sentiment_cache: dict[str, tuple] = {}  # ticker → (result_dict, expire_time)
+
 
 def _sentiment_cache_get(ticker: str) -> dict | None:
     with _sentiment_lock:
@@ -34,27 +31,81 @@ def _sentiment_cache_get(ticker: str) -> dict | None:
             return None
         return result
 
+
 def _sentiment_cache_put(ticker: str, result: dict) -> None:
     with _sentiment_lock:
         _sentiment_cache[ticker.upper()] = (result, time.monotonic() + _SENTIMENT_TTL)
 
+
 # Sentiment scoring
 
 _BULL_WORDS: list[str] = [
-    "bullish", "moon", "mooning", "calls", "long", "buy", "buying",
-    "breakout", "squeeze", "yolo", "hodl", "undervalued", "accumulate",
-    "strong", "support", "bounce", "rocket", "gains", "green", "ripping",
-    "rip", "pump", "pumping", "beat", "upgrade", "upside", "higher",
-    "🚀", "💎", "🙌", "📈",
+    "bullish",
+    "moon",
+    "mooning",
+    "calls",
+    "long",
+    "buy",
+    "buying",
+    "breakout",
+    "squeeze",
+    "yolo",
+    "hodl",
+    "undervalued",
+    "accumulate",
+    "strong",
+    "support",
+    "bounce",
+    "rocket",
+    "gains",
+    "green",
+    "ripping",
+    "rip",
+    "pump",
+    "pumping",
+    "beat",
+    "upgrade",
+    "upside",
+    "higher",
+    "🚀",
+    "💎",
+    "🙌",
+    "📈",
 ]
 
 _BEAR_WORDS: list[str] = [
-    "bearish", "puts", "short", "sell", "selling", "breakdown", "dump",
-    "dumping", "crash", "crashing", "overvalued", "weak", "resistance",
-    "fall", "falling", "drop", "dropping", "red", "miss", "downgrade",
-    "downside", "lower", "hedge", "fear", "risky", "bag", "bagholder",
-    "🐻", "💀", "📉",
+    "bearish",
+    "puts",
+    "short",
+    "sell",
+    "selling",
+    "breakdown",
+    "dump",
+    "dumping",
+    "crash",
+    "crashing",
+    "overvalued",
+    "weak",
+    "resistance",
+    "fall",
+    "falling",
+    "drop",
+    "dropping",
+    "red",
+    "miss",
+    "downgrade",
+    "downside",
+    "lower",
+    "hedge",
+    "fear",
+    "risky",
+    "bag",
+    "bagholder",
+    "🐻",
+    "💀",
+    "📉",
 ]
+
 
 def _score_text(text: str) -> float:
     """Return [-1, +1] sentiment score. Positive = bullish."""
@@ -64,38 +115,90 @@ def _score_text(text: str) -> float:
     total = bull + bear
     return 0.0 if total == 0 else (bull - bear) / total
 
+
 def _detect_option_bias(text: str) -> tuple[int, int]:
     """Return (call_mentions, put_mentions)."""
     t = text.lower()
-    calls = len(re.findall(r'\bcalls?\b', t))
-    puts  = len(re.findall(r'\bputs?\b',  t))
+    calls = len(re.findall(r"\bcalls?\b", t))
+    puts = len(re.findall(r"\bputs?\b", t))
     return calls, puts
 
-# Sentiment type classification  (stock vs options vs mixed)
+
+# Sentiment type classification
 
 _OPTIONS_SIGNALS: list[str] = [
-    "call", "calls", "put", "puts", "option", "options", "strike",
-    "expir", "expiry", "theta", "delta", "gamma", "vega", "iv",
-    "implied volatility", "otm", "itm", "atm", "leaps", "contract",
-    "contracts", "premium", "0dte", "0 dte", "dte", "spread",
-    "covered call", "cash secured put", "iron condor", "straddle",
-    "strangle", "debit", "credit", "butterfly", "condor",
+    "call",
+    "calls",
+    "put",
+    "puts",
+    "option",
+    "options",
+    "strike",
+    "expir",
+    "expiry",
+    "theta",
+    "delta",
+    "gamma",
+    "vega",
+    "iv",
+    "implied volatility",
+    "otm",
+    "itm",
+    "atm",
+    "leaps",
+    "contract",
+    "contracts",
+    "premium",
+    "0dte",
+    "0 dte",
+    "dte",
+    "spread",
+    "covered call",
+    "cash secured put",
+    "iron condor",
+    "straddle",
+    "strangle",
+    "debit",
+    "credit",
+    "butterfly",
+    "condor",
 ]
 
 _STOCK_SIGNALS: list[str] = [
-    "share", "shares", "stock", "stonk", "stonks", "holding", "held",
-    "dividend", "earnings", "eps", "revenue", "guidance", "buyback",
-    "pe ratio", "market cap", "float", "short interest", "catalyst",
-    "price target", "pt ", " pt$", "analyst", "upgrade", "downgrade",
+    "share",
+    "shares",
+    "stock",
+    "stonk",
+    "stonks",
+    "holding",
+    "held",
+    "dividend",
+    "earnings",
+    "eps",
+    "revenue",
+    "guidance",
+    "buyback",
+    "pe ratio",
+    "market cap",
+    "float",
+    "short interest",
+    "catalyst",
+    "price target",
+    "pt ",
+    " pt$",
+    "analyst",
+    "upgrade",
+    "downgrade",
 ]
+
 
 def _classify_sentiment_type(text: str) -> str:
     """
     Classify the discussion type: 'stock', 'options', 'mixed', or 'general'.
     """
     t = text.lower()
-    opt   = sum(1 for w in _OPTIONS_SIGNALS if w in t)
-    stock = sum(1 for w in _STOCK_SIGNALS   if w in t)
+    opt = sum(1 for w in _OPTIONS_SIGNALS if w in t)
+    stock = sum(1 for w in _STOCK_SIGNALS if w in t)
     total = opt + stock
     if total == 0:
         return "general"
@@ -106,41 +209,41 @@ def _classify_sentiment_type(text: str) -> str:
         return "stock"
     return "mixed"
 
+
 # Price / strike extraction
 
 # Each entry: (compiled regex, option_type or None, group_index_for_price)
 # option_type: 'call' | 'put' | 'stock'
 _PRICE_REGEXES: list[tuple[re.Pattern, str, int]] = [
-
     # "$150c", "$200p", "$150C", "$200P"
-    (re.compile(r'\$(\d{1,5}(?:\.\d{1,2})?)\s*([Cc])\b'),       'call',  1),
-    (re.compile(r'\$(\d{1,5}(?:\.\d{1,2})?)\s*([Pp])\b'),       'put',   1),
+    (re.compile(r"\$(\d{1,5}(?:\.\d{1,2})?)\s*([Cc])\b"), "call", 1),
+    (re.compile(r"\$(\d{1,5}(?:\.\d{1,2})?)\s*([Pp])\b"), "put", 1),
     # "150c", "200p", "150C", "200P" (bare chain notation ≥2 digits)
-    (re.compile(r'\b(\d{2,5})([Cc])\b'),                          'call',  1),
-    (re.compile(r'\b(\d{2,5})([Pp])\b'),                          'put',   1),
+    (re.compile(r"\b(\d{2,5})([Cc])\b"), "call", 1),
+    (re.compile(r"\b(\d{2,5})([Pp])\b"), "put", 1),
     # "$150 calls", "$200 puts", "$150 call"
-    (re.compile(r'\$(\d{1,5}(?:\.\d{1,2})?)\s+calls?\b', re.I),  'call',  1),
-    (re.compile(r'\$(\d{1,5}(?:\.\d{1,2})?)\s+puts?\b',  re.I),  'put',   1),
+    (re.compile(r"\$(\d{1,5}(?:\.\d{1,2})?)\s+calls?\b", re.I), "call", 1),
+    (re.compile(r"\$(\d{1,5}(?:\.\d{1,2})?)\s+puts?\b", re.I), "put", 1),
     # "150 calls", "200 puts" (no dollar sign)
-    (re.compile(r'\b(\d{1,5}(?:\.\d{1,2})?)\s+calls?\b', re.I),  'call',  1),
-    (re.compile(r'\b(\d{1,5}(?:\.\d{1,2})?)\s+puts?\b',  re.I),  'put',   1),
+    (re.compile(r"\b(\d{1,5}(?:\.\d{1,2})?)\s+calls?\b", re.I), "call", 1),
+    (re.compile(r"\b(\d{1,5}(?:\.\d{1,2})?)\s+puts?\b", re.I), "put", 1),
     # "strike of $150 / strike 150"
-    (re.compile(r'strike\s+(?:of\s+)?\$?(\d{1,5}(?:\.\d{1,2})?)', re.I), 'call', 1),
-
+    (re.compile(r"strike\s+(?:of\s+)?\$?(\d{1,5}(?:\.\d{1,2})?)", re.I), "call", 1),
     # "PT $150", "PT: $150", "price target $150"
-    (re.compile(r'(?:price\s+target|pt)[:\s]+\$?(\d{1,5}(?:\.\d{1,2})?)', re.I), 'stock', 1),
+    (re.compile(r"(?:price\s+target|pt)[:\s]+\$?(\d{1,5}(?:\.\d{1,2})?)", re.I), "stock", 1),
     # "target $150", "targeting $150", "target of $150"
-    (re.compile(r'target(?:ing)?\s+(?:of\s+)?\$(\d{1,5}(?:\.\d{1,2})?)', re.I), 'stock', 1),
+    (re.compile(r"target(?:ing)?\s+(?:of\s+)?\$(\d{1,5}(?:\.\d{1,2})?)", re.I), "stock", 1),
     # "to $150", "at $150", "@ $150", "around $150"
-    (re.compile(r'(?:to|at|@|around)\s+\$(\d{1,5}(?:\.\d{1,2})?)', re.I), 'stock', 1),
+    (re.compile(r"(?:to|at|@|around)\s+\$(\d{1,5}(?:\.\d{1,2})?)", re.I), "stock", 1),
     # "support at 150", "resistance at 150"
-    (re.compile(r'(?:support|resistance|level)\s+(?:at\s+)?\$?(\d{1,5}(?:\.\d{1,2})?)', re.I), 'stock', 1),
+    (re.compile(r"(?:support|resistance|level)\s+(?:at\s+)?\$?(\d{1,5}(?:\.\d{1,2})?)", re.I), "stock", 1),
     # Generic "$NNN" fallback - lowest priority
-    (re.compile(r'\$(\d{1,5}(?:\.\d{1,2})?)'), 'stock', 1),
+    (re.compile(r"\$(\d{1,5}(?:\.\d{1,2})?)"), "stock", 1),
 ]
 
-_PRICE_MIN = 0.5    # filter out sub-cent
-_PRICE_MAX = 25_000 # filter out obviously wrong numbers
+_PRICE_MIN = 0.5  # filter out sub-cent
+_PRICE_MAX = 25_000  # filter out obviously wrong numbers
+
 
 def _extract_price_mentions(text: str) -> list[dict]:
     """
@@ -156,7 +259,7 @@ def _extract_price_mentions(text: str) -> list[dict]:
     for pattern, ptype, grp in _PRICE_REGEXES:
         for m in pattern.finditer(text):
             try:
-                price = float(m.group(grp).replace(',', ''))
+                price = float(m.group(grp).replace(",", ""))
             except (ValueError, IndexError):
                 continue
             if not (_PRICE_MIN <= price <= _PRICE_MAX):
@@ -166,30 +269,26 @@ def _extract_price_mentions(text: str) -> list[dict]:
             if key in seen:
                 continue
             seen.add(key)
-            results.append({
-                "price": round(price, 2),
-                "type":  ptype,
-                "raw":   m.group(0)[:30],
-            })
+            results.append(
+                {
+                    "price": round(price, 2),
+                    "type": ptype,
+                    "raw": m.group(0)[:30],
+                }
+            )
 
     return results
 
-# X (Twitter) - per-ticker social sentiment via twikit (free, no API key)
 
-# Uses twikit to simulate a logged-in browser session.
-# Setup (one-time):
-#
-# After first login, cookies are saved to x_cookies.json in the project root
-# so subsequent restarts don't need to log in again.
+# X/Twitter via twikit (cookies in x_cookies.json after first login).
 
 import os as _os  # noqa: E402
 
-_TWIKIT_COOKIES = _os.path.abspath(
-    _os.path.join(_os.path.dirname(__file__), '..', 'x_cookies.json')
-)
+_TWIKIT_COOKIES = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), "..", "x_cookies.json"))
 
-_twikit_client:    object | None       = None
-_twikit_lock:      asyncio.Lock | None = None   # created lazily inside async ctx
+_twikit_client: object | None = None
+_twikit_lock: asyncio.Lock | None = None  # created lazily inside async ctx
+
 
 async def _get_twikit_client() -> object | None:
     """
@@ -228,7 +327,8 @@ async def _get_twikit_client() -> object | None:
             return None
 
         import os
-        client = Client('en-US')
+
+        client = Client("en-US")
 
         if _os.path.exists(_TWIKIT_COOKIES):
             try:
@@ -241,9 +341,9 @@ async def _get_twikit_client() -> object | None:
                 # Don't auto-delete: user may have manually created the file.
                 # Just fall through to password login.
 
-        username = os.getenv('X_USERNAME', '').strip().lstrip('@')
-        password = os.getenv('X_PASSWORD', '').strip().strip('"\'')
-        email    = os.getenv('X_EMAIL',    '').strip()
+        username = os.getenv("X_USERNAME", "").strip().lstrip("@")
+        password = os.getenv("X_PASSWORD", "").strip().strip("\"'")
+        email = os.getenv("X_EMAIL", "").strip()
 
         if not username or not password:
             logger.warning(
@@ -268,9 +368,12 @@ async def _get_twikit_client() -> object | None:
                 "[X] twikit password login failed for @%s: %s\n"
                 "  → Fix: export cookies from your browser and save to %s\n"
                 "  → Get auth_token + ct0 from: F12 → Application → Cookies → x.com",
-                username, exc, _TWIKIT_COOKIES,
+                username,
+                exc,
+                _TWIKIT_COOKIES,
             )
             return None
+
 
 def _twikit_reset() -> None:
     """
@@ -283,17 +386,16 @@ def _twikit_reset() -> None:
     _twikit_client = None
     logger.debug("[X] twikit client reset - will reload on next request")
 
+
 # Keep Reddit fetcher available for the global market pulse feed (no key needed)
-_REDDIT_HEADERS    = {"User-Agent": "Mozilla/5.0 mc-trader-bot/1.0 (research)"}
+_REDDIT_HEADERS = {"User-Agent": "Mozilla/5.0 mc-trader-bot/1.0 (research)"}
 _REDDIT_SUBREDDITS = ["wallstreetbets", "options", "stocks", "investing"]
 
-async def _reddit_fetch_subreddit(
-    client: httpx.AsyncClient, ticker: str, subreddit: str
-) -> list[dict]:
-    """Used by the Global Market Pulse feed - NOT the per-ticker sentiment."""
+
+async def _reddit_fetch_subreddit(client: httpx.AsyncClient, ticker: str, subreddit: str) -> list[dict]:
+    """Fetch Reddit posts for a subreddit search."""
     url = (
-        f"https://www.reddit.com/r/{subreddit}/search.json"
-        f"?q={ticker}&sort=new&limit=20&restrict_sr=on&t=day"
+        f"https://www.reddit.com/r/{subreddit}/search.json?q={ticker}&sort=new&limit=20&restrict_sr=on&t=day"
     )
     try:
         resp = await client.get(url, headers=_REDDIT_HEADERS, timeout=10)
@@ -301,24 +403,27 @@ async def _reddit_fetch_subreddit(
         children = resp.json()["data"]["children"]
         results = []
         for child in children:
-            d    = child["data"]
+            d = child["data"]
             text = f"{d.get('title', '')} {d.get('selftext', '')}"
-            results.append({
-                "source":         f"reddit/{subreddit}",
-                "title":          d.get("title", "")[:150],
-                "url":            f"https://reddit.com{d.get('permalink', '')}",
-                "score":          _score_text(text),
-                "upvotes":        d.get("ups", 0),
-                "comments":       d.get("num_comments", 0),
-                "call_mentions":  _detect_option_bias(text)[0],
-                "put_mentions":   _detect_option_bias(text)[1],
-                "sentiment_type": _classify_sentiment_type(text),
-                "price_mentions": _extract_price_mentions(text),
-            })
+            results.append(
+                {
+                    "source": f"reddit/{subreddit}",
+                    "title": d.get("title", "")[:150],
+                    "url": f"https://reddit.com{d.get('permalink', '')}",
+                    "score": _score_text(text),
+                    "upvotes": d.get("ups", 0),
+                    "comments": d.get("num_comments", 0),
+                    "call_mentions": _detect_option_bias(text)[0],
+                    "put_mentions": _detect_option_bias(text)[1],
+                    "sentiment_type": _classify_sentiment_type(text),
+                    "price_mentions": _extract_price_mentions(text),
+                }
+            )
         return results
     except Exception as exc:
         logger.debug("Reddit r/%s/%s failed: %s", subreddit, ticker, exc)
         return []
+
 
 async def fetch_x_sentiment(ticker: str) -> dict:
     """
@@ -350,16 +455,19 @@ async def fetch_x_sentiment(ticker: str) -> dict:
     import random
 
     has_creds = bool(
-        os.getenv('X_USERNAME', '').strip().lstrip('@') and
-        os.getenv('X_PASSWORD', '').strip().strip('"\'')
+        os.getenv("X_USERNAME", "").strip().lstrip("@") and os.getenv("X_PASSWORD", "").strip().strip("\"'")
     )
 
     # needs_setup = True ONLY when credentials are literally absent or twikit missing
     _no_creds = {
-        "available": False, "needs_setup": True,
-        "post_count": 0, "sentiment_score": 0.0,
-        "call_mentions": 0, "put_mentions": 0,
-        "type_breakdown": {}, "top_posts": [],
+        "available": False,
+        "needs_setup": True,
+        "post_count": 0,
+        "sentiment_score": 0.0,
+        "call_mentions": 0,
+        "put_mentions": 0,
+        "type_breakdown": {},
+        "top_posts": [],
     }
     # credentials present but something went wrong → needs_setup stays False
     _failed = {**_no_creds, "needs_setup": False}
@@ -373,7 +481,7 @@ async def fetch_x_sentiment(ticker: str) -> dict:
         import twikit  # noqa: F401  type: ignore
     except ImportError:
         logger.warning("[X] twikit not installed - run: pip install twikit")
-        return _no_creds   # show setup notice - package is literally missing
+        return _no_creds  # show setup notice - package is literally missing
 
     client = await _get_twikit_client()
     if client is None:
@@ -388,8 +496,8 @@ async def fetch_x_sentiment(ticker: str) -> dict:
     query = f"${ticker} -filter:retweets lang:en"
 
     try:
-        await asyncio.sleep(random.uniform(0.5, 1.5))   # polite delay
-        results = await client.search_tweet(query, product='Top', count=20)
+        await asyncio.sleep(random.uniform(0.5, 1.5))  # polite delay
+        results = await client.search_tweet(query, product="Top", count=20)
     except TooManyRequests:
         logger.warning("[X] Rate limited while fetching $%s - backing off", ticker)
         return {**_failed, "error": "Rate limited - try again in a few minutes"}
@@ -398,167 +506,304 @@ async def fetch_x_sentiment(ticker: str) -> dict:
         # KEY_BYTE / key_byte is a known twikit internal parse error triggered when
         # Twitter changes their internal API structure.  It is not actionable and
         # very noisy, so log at DEBUG instead of WARNING.
-        if 'KEY_BYTE' in err_str or 'key_byte' in err_str.lower():
-            logger.debug("[X] twikit parse error for $%s (Twitter API drift - not actionable): %s",
-                         ticker, err_str[:80])
+        if "KEY_BYTE" in err_str or "key_byte" in err_str.lower():
+            logger.debug(
+                "[X] twikit parse error for $%s (Twitter API drift - not actionable): %s",
+                ticker,
+                err_str[:80],
+            )
         else:
             logger.warning("[X] Search failed for $%s: %s", ticker, err_str[:120])
-        _twikit_reset()   # force re-login next call in case session expired
+        _twikit_reset()  # force re-login next call in case session expired
         return _failed
 
     tweets = list(results) if results else []
     if not tweets:
         return {**_failed, "available": True, "needs_setup": False, "post_count": 0}
 
-    posts:         list[dict] = []
-    total_weight   = 0.0
+    posts: list[dict] = []
+    total_weight = 0.0
     weighted_score = 0.0
     call_total = put_total = 0
     type_counts: Counter = Counter()
 
     for tw in tweets:
-        text     = getattr(tw, 'text', '') or ''
-        likes    = int(getattr(tw, 'favorite_count', 0) or 0)
-        retweets = int(getattr(tw, 'retweet_count',  0) or 0)
-        replies  = int(getattr(tw, 'reply_count',    0) or 0)
+        text = getattr(tw, "text", "") or ""
+        likes = int(getattr(tw, "favorite_count", 0) or 0)
+        retweets = int(getattr(tw, "retweet_count", 0) or 0)
+        replies = int(getattr(tw, "reply_count", 0) or 0)
 
         # Weight by engagement - high-engagement tweets carry more signal
         weight = max(1, likes + retweets * 2)
 
-        score          = _score_text(text)
-        calls, puts    = _detect_option_bias(text)
-        sent_type      = _classify_sentiment_type(text)
+        score = _score_text(text)
+        calls, puts = _detect_option_bias(text)
+        sent_type = _classify_sentiment_type(text)
         price_mentions = _extract_price_mentions(text)
 
         weighted_score += score * weight
-        total_weight   += weight
-        call_total     += calls
-        put_total      += puts
+        total_weight += weight
+        call_total += calls
+        put_total += puts
         type_counts[sent_type] += 1
 
-        tweet_id    = getattr(tw, 'id', '')
-        user        = getattr(tw, 'user', None)
-        screen_name = getattr(user, 'screen_name', '') if user else ''
-        tweet_url   = (
+        tweet_id = getattr(tw, "id", "")
+        user = getattr(tw, "user", None)
+        screen_name = getattr(user, "screen_name", "") if user else ""
+        tweet_url = (
             f"https://x.com/{screen_name}/status/{tweet_id}"
-            if screen_name and tweet_id else
-            f"https://x.com/i/web/status/{tweet_id}" if tweet_id else ""
+            if screen_name and tweet_id
+            else f"https://x.com/i/web/status/{tweet_id}"
+            if tweet_id
+            else ""
         )
 
-        posts.append({
-            "title":          text[:200],
-            "url":            tweet_url,
-            "source":         "X",
-            "score":          round(score, 3),
-            "likes":          likes,
-            "retweets":       retweets,
-            "replies":        replies,
-            "call_mentions":  calls,
-            "put_mentions":   puts,
-            "sentiment_type": sent_type,
-            "price_mentions": price_mentions,
-        })
+        posts.append(
+            {
+                "title": text[:200],
+                "url": tweet_url,
+                "source": "X",
+                "score": round(score, 3),
+                "likes": likes,
+                "retweets": retweets,
+                "replies": replies,
+                "call_mentions": calls,
+                "put_mentions": puts,
+                "sentiment_type": sent_type,
+                "price_mentions": price_mentions,
+            }
+        )
 
-    n         = len(posts)
+    n = len(posts)
     avg_score = weighted_score / total_weight if total_weight else 0.0
-    top_posts = sorted(posts, key=lambda x: x["likes"] + x["retweets"] * 2,
-                       reverse=True)[:15]
+    top_posts = sorted(posts, key=lambda x: x["likes"] + x["retweets"] * 2, reverse=True)[:15]
     type_pcts = {k: round(v / n * 100) for k, v in type_counts.items()}
 
     return {
-        "available":       True,
-        "needs_setup":     False,
-        "post_count":      n,
+        "available": True,
+        "needs_setup": False,
+        "post_count": n,
         "sentiment_score": round(avg_score, 4),
-        "call_mentions":   call_total,
-        "put_mentions":    put_total,
-        "type_breakdown":  type_pcts,
-        "top_posts":       top_posts,
+        "call_mentions": call_total,
+        "put_mentions": put_total,
+        "type_breakdown": type_pcts,
+        "top_posts": top_posts,
     }
 
-# Jim Cramer  -  Inverse Cramer sentiment  (Google News RSS, no auth required)
 
-# The "Inverse Cramer" strategy: whatever Cramer says to do, do the opposite.
-# We scrape Google News RSS for "[Jim Cramer] [TICKER]" headlines, detect his
-# bullish/bearish stance per article, then flip the signal for the UI.
-
-# Cramer stance keyword lists  (ordered from strongest signal → weakest)
+# Inverse Cramer (Google News RSS).
 
 _CRAMER_BULLISH_KW: list[str] = [
     # Superlatives / iconic Cramer phrases
-    "buy buy buy", "screaming buy", "strong buy", "must own",
-    "back up the truck", "buying opportunity", "buy the dip",
-    "great opportunity", "once-in-a-lifetime",
+    "buy buy buy",
+    "screaming buy",
+    "strong buy",
+    "must own",
+    "back up the truck",
+    "buying opportunity",
+    "buy the dip",
+    "great opportunity",
+    "once-in-a-lifetime",
     # Standard buy
-    "buy", "buying", "bought", "bullish", "go long", "long",
+    "buy",
+    "buying",
+    "bought",
+    "bullish",
+    "go long",
+    "long",
     # Positive verbs
-    "like", "likes", "love", "loves", "fan of", "big fan",
-    "recommend", "recommends", "recommending", "endorses",
+    "like",
+    "likes",
+    "love",
+    "loves",
+    "fan of",
+    "big fan",
+    "recommend",
+    "recommends",
+    "recommending",
+    "endorses",
     # Upgrades & price-target raises
-    "upgrade", "upgraded", "outperform", "overweight",
-    "raised price target", "price target raised", "raised target",
+    "upgrade",
+    "upgraded",
+    "outperform",
+    "overweight",
+    "raised price target",
+    "price target raised",
+    "raised target",
     # Ownership / accumulation
-    "own", "owns", "owning", "holding", "adding", "accumulate",
-    "accumulating", "staying long", "still long",
+    "own",
+    "owns",
+    "owning",
+    "holding",
+    "adding",
+    "accumulate",
+    "accumulating",
+    "staying long",
+    "still long",
     # Positive framing
-    "still a buy", "still like", "undervalued", "upside",
-    "opportunity", "positive on", "backing", "backs",
-    "great stock", "solid", "winner",
+    "still a buy",
+    "still like",
+    "undervalued",
+    "upside",
+    "opportunity",
+    "positive on",
+    "backing",
+    "backs",
+    "great stock",
+    "solid",
+    "winner",
 ]
 
 _CRAMER_BEARISH_KW: list[str] = [
     # Superlatives / iconic Cramer phrases
-    "sell sell sell", "avoid at all costs", "run from", "get out now",
-    "terrible stock", "avoid like the plague",
+    "sell sell sell",
+    "avoid at all costs",
+    "run from",
+    "get out now",
+    "terrible stock",
+    "avoid like the plague",
     # Standard sell
-    "sell", "selling", "sold", "bearish", "short", "shorting",
+    "sell",
+    "selling",
+    "sold",
+    "bearish",
+    "short",
+    "shorting",
     # Negative verbs
-    "hate", "hates", "hated", "avoid", "avoiding",
-    "not a fan", "don't like", "doesn't like", "no longer likes",
-    "no longer", "wrong call",
+    "hate",
+    "hates",
+    "hated",
+    "avoid",
+    "avoiding",
+    "not a fan",
+    "don't like",
+    "doesn't like",
+    "no longer likes",
+    "no longer",
+    "wrong call",
     # Downgrades & target cuts
-    "downgrade", "downgraded", "underperform", "underweight",
-    "cut target", "price target cut", "lowered target", "lowered price target",
+    "downgrade",
+    "downgraded",
+    "underperform",
+    "underweight",
+    "cut target",
+    "price target cut",
+    "lowered target",
+    "lowered price target",
     # Risk / exit signals
-    "risky", "too risky", "concerned", "worried", "worrying",
-    "stay away", "take profit", "take profits",
-    "dump", "exit", "reduce exposure", "trimming", "cut position",
+    "risky",
+    "too risky",
+    "concerned",
+    "worried",
+    "worrying",
+    "stay away",
+    "take profit",
+    "take profits",
+    "dump",
+    "exit",
+    "reduce exposure",
+    "trimming",
+    "cut position",
     # Negative framing
-    "overvalued", "peaked", "too expensive", "vulnerable",
-    "danger", "warning", "negative on",
+    "overvalued",
+    "peaked",
+    "too expensive",
+    "vulnerable",
+    "danger",
+    "warning",
+    "negative on",
 ]
 
 _CRAMER_NEUTRAL_KW: list[str] = [
-    "watch", "watching", "wait", "waiting", "monitor", "monitoring",
-    "keep an eye", "uncertain", "mixed", "neutral",
-    "on the fence", "not sure", "could go either",
-    "interesting situation", "considering",
+    "watch",
+    "watching",
+    "wait",
+    "waiting",
+    "monitor",
+    "monitoring",
+    "keep an eye",
+    "uncertain",
+    "mixed",
+    "neutral",
+    "on the fence",
+    "not sure",
+    "could go either",
+    "interesting situation",
+    "considering",
 ]
 
 # Regex to find stock tickers embedded in article text
 # Covers:  (NYSE: AAPL)  (Nasdaq: NVDA)  (NYSEARCA: SPY)  $AAPL
 _ARTICLE_TICKER_RE = re.compile(
-    r'(?:'
-    r'\((?:NYSE|NASDAQ|Nasdaq|AMEX|NYSEARCA|NYSEMKT|BATS):\s*([A-Z]{1,5})\)'
-    r'|\$([A-Z]{1,5})\b'
-    r')'
+    r"(?:"
+    r"\((?:NYSE|NASDAQ|Nasdaq|AMEX|NYSEARCA|NYSEMKT|BATS):\s*([A-Z]{1,5})\)"
+    r"|\$([A-Z]{1,5})\b"
+    r")"
 )
 
 # Words that look like tickers but aren't
 _ARTICLE_TICKER_BL: set = {
-    "A", "I", "AM", "AN", "AT", "BE", "DO", "GO", "IN", "IS", "IT",
-    "ME", "MY", "NO", "OF", "ON", "OR", "SO", "TO", "UP", "US", "WE",
-    "AI", "DD", "OP", "IV", "OI", "PE", "EV", "OK", "PM", "FY", "QQ",
-    "ATH", "IPO", "ETF", "CEO", "CFO", "COO", "SEC", "FED", "GDP",
-    "CPI", "PPI", "PCE", "EPS", "FCF", "TTM", "YOY", "IMO", "TLDR",
+    "A",
+    "I",
+    "AM",
+    "AN",
+    "AT",
+    "BE",
+    "DO",
+    "GO",
+    "IN",
+    "IS",
+    "IT",
+    "ME",
+    "MY",
+    "NO",
+    "OF",
+    "ON",
+    "OR",
+    "SO",
+    "TO",
+    "UP",
+    "US",
+    "WE",
+    "AI",
+    "DD",
+    "OP",
+    "IV",
+    "OI",
+    "PE",
+    "EV",
+    "OK",
+    "PM",
+    "FY",
+    "QQ",
+    "ATH",
+    "IPO",
+    "ETF",
+    "CEO",
+    "CFO",
+    "COO",
+    "SEC",
+    "FED",
+    "GDP",
+    "CPI",
+    "PPI",
+    "PCE",
+    "EPS",
+    "FCF",
+    "TTM",
+    "YOY",
+    "IMO",
+    "TLDR",
 }
 
+
 def _score_cramer_text(text: str) -> tuple[int, int]:
-    """Return (buy_signals, sell_signals) - kept for backward-compat with global fn."""
+    """Return (buy_signals, sell_signals)."""
     t = text.lower()
-    buys  = sum(1 for w in _CRAMER_BULLISH_KW  if w in t)
+    buys = sum(1 for w in _CRAMER_BULLISH_KW if w in t)
     sells = sum(1 for w in _CRAMER_BEARISH_KW if w in t)
     return buys, sells
+
 
 def _classify_stance_from_window(window: str) -> tuple[str, str]:
     """
@@ -585,6 +830,7 @@ def _classify_stance_from_window(window: str) -> tuple[str, str]:
         return "bearish", evidence
     return "neutral", evidence
 
+
 def _extract_cramer_picks(full_text: str) -> list[dict]:
     """
     Scan article text for ticker symbols and classify Cramer's stance on each.
@@ -606,8 +852,8 @@ def _extract_cramer_picks(full_text: str) -> list[dict]:
         if not ticker or ticker in _ARTICLE_TICKER_BL or len(ticker) < 2:
             continue
 
-        start  = max(0, match.start() - 400)
-        end    = min(len(full_text), match.end() + 400)
+        start = max(0, match.start() - 400)
+        end = min(len(full_text), match.end() + 400)
         window = full_text[start:end]
 
         stance, evidence = _classify_stance_from_window(window)
@@ -616,6 +862,7 @@ def _extract_cramer_picks(full_text: str) -> list[dict]:
             picks[ticker] = {"ticker": ticker, "stance": stance, "evidence": evidence}
 
     return list(picks.values())
+
 
 async def _fetch_article_text(url: str, client: httpx.AsyncClient) -> str:
     """
@@ -629,24 +876,25 @@ async def _fetch_article_text(url: str, client: httpx.AsyncClient) -> str:
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/124.0.0.0 Safari/537.36"
             ),
-            "Accept":          "text/html,application/xhtml+xml,*/*",
+            "Accept": "text/html,application/xhtml+xml,*/*",
             "Accept-Language": "en-US,en;q=0.9",
         }
-        resp = await client.get(url, headers=headers, timeout=8.0,
-                                follow_redirects=True)
+        resp = await client.get(url, headers=headers, timeout=8.0, follow_redirects=True)
         if resp.status_code != 200:
             return ""
         html = resp.text
         # Strip <script> and <style> blocks entirely
-        html = re.sub(r"<(script|style)[^>]*>.*?</(script|style)>",
-                      " ", html, flags=re.DOTALL | re.IGNORECASE)
+        html = re.sub(
+            r"<(script|style)[^>]*>.*?</(script|style)>", " ", html, flags=re.DOTALL | re.IGNORECASE
+        )
         # Strip remaining HTML tags
         text = re.sub(r"<[^>]+>", " ", html)
         # Collapse whitespace
         text = re.sub(r"\s+", " ", text).strip()
-        return text[:10_000]   # cap - enough for stance extraction
+        return text[:10_000]  # cap - enough for stance extraction
     except Exception:
         return ""
+
 
 async def fetch_cramer_sentiment(ticker: str) -> dict:
     """
@@ -682,63 +930,58 @@ async def fetch_cramer_sentiment(ticker: str) -> dict:
 
     rss_headers = {
         "User-Agent": "Mozilla/5.0 (compatible; MCTrader/2.0)",
-        "Accept":     "application/rss+xml, application/xml, text/xml, */*",
+        "Accept": "application/rss+xml, application/xml, text/xml, */*",
     }
 
     rss_urls = [
-        f'https://news.google.com/rss/search?q=%22Jim+Cramer%22+%22{ticker}%22&hl=en-US&gl=US&ceid=US:en',
-        f'https://news.google.com/rss/search?q=Cramer+{ticker}+CNBC&hl=en-US&gl=US&ceid=US:en',
-        f'https://news.google.com/rss/search?q=%22Mad+Money%22+{ticker}&hl=en-US&gl=US&ceid=US:en',
+        f"https://news.google.com/rss/search?q=%22Jim+Cramer%22+%22{ticker}%22&hl=en-US&gl=US&ceid=US:en",
+        f"https://news.google.com/rss/search?q=Cramer+{ticker}+CNBC&hl=en-US&gl=US&ceid=US:en",
+        f"https://news.google.com/rss/search?q=%22Mad+Money%22+{ticker}&hl=en-US&gl=US&ceid=US:en",
     ]
 
-    raw_items: list[dict] = []   # items from RSS before article fetch
+    raw_items: list[dict] = []  # items from RSS before article fetch
 
     async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-
         for rss_url in rss_urls:
             try:
                 resp = await client.get(rss_url, headers=rss_headers)
                 if resp.status_code != 200:
                     continue
-                root  = ET.fromstring(resp.text)
+                root = ET.fromstring(resp.text)
                 for item in root.findall(".//item")[:20]:
-                    title = item.findtext("title",       "") or ""
-                    link  = item.findtext("link",        "") or ""
-                    pub   = item.findtext("pubDate",     "") or ""
-                    desc  = item.findtext("description", "") or ""
-                    tl    = f"{title} {desc}".lower()
+                    title = item.findtext("title", "") or ""
+                    link = item.findtext("link", "") or ""
+                    pub = item.findtext("pubDate", "") or ""
+                    desc = item.findtext("description", "") or ""
+                    tl = f"{title} {desc}".lower()
                     if "cramer" not in tl and "mad money" not in tl:
                         continue
                     try:
                         pub_str = parsedate_to_datetime(pub).strftime("%Y-%m-%d")
                     except Exception:
                         pub_str = pub[:10] if pub else ""
-                    raw_items.append({"title": title, "url": link,
-                                      "date": pub_str, "desc": desc})
+                    raw_items.append({"title": title, "url": link, "date": pub_str, "desc": desc})
                 if raw_items:
                     break
             except Exception as exc:
                 logger.debug("Cramer RSS %s: %s", rss_url, exc)
 
-        articles:    list[dict] = []
-        all_picks_map: dict[str, dict] = {}   # ticker → best pick across all articles
+        articles: list[dict] = []
+        all_picks_map: dict[str, dict] = {}  # ticker → best pick across all articles
         total_buy = total_sell = 0
         type_counts: Counter = Counter()
         strength_order = {"bullish": 3, "bearish": 3, "neutral": 2, "unknown": 1}
 
-        fetch_tasks = [
-            _fetch_article_text(it["url"], client)
-            for it in raw_items[:5]
-        ]
+        fetch_tasks = [_fetch_article_text(it["url"], client) for it in raw_items[:5]]
         bodies = await asyncio.gather(*fetch_tasks, return_exceptions=True)
 
         for it, body in zip(raw_items[:5], bodies, strict=False):
             body_text = body if isinstance(body, str) else ""
             # Combine RSS snippet + full body for maximum coverage
-            combined  = f"{it['title']} {it['desc']} {body_text}"
+            combined = f"{it['title']} {it['desc']} {body_text}"
 
             b, s = _score_cramer_text(combined)
-            total_buy  += b
+            total_buy += b
             total_sell += s
             cramer_bias = "bullish" if b > s else "bearish" if s > b else "neutral"
             type_counts[_classify_sentiment_type(combined)] += 1
@@ -753,22 +996,24 @@ async def fetch_cramer_sentiment(ticker: str) -> dict:
                 ):
                     all_picks_map[t] = pk
 
-            articles.append({
-                "title":          it["title"],
-                "url":            it["url"],
-                "date":           it["date"],
-                "cramer_bias":    cramer_bias,
-                "buy_signals":    b,
-                "sell_signals":   s,
-                "picks":          art_picks,
-                "price_mentions": prices,
-            })
+            articles.append(
+                {
+                    "title": it["title"],
+                    "url": it["url"],
+                    "date": it["date"],
+                    "cramer_bias": cramer_bias,
+                    "buy_signals": b,
+                    "sell_signals": s,
+                    "picks": art_picks,
+                    "price_mentions": prices,
+                }
+            )
 
         # For remaining RSS items beyond top-5, score title+desc only (no fetch)
         for it in raw_items[5:]:
             combined = f"{it['title']} {it['desc']}"
             b, s = _score_cramer_text(combined)
-            total_buy  += b
+            total_buy += b
             total_sell += s
             cramer_bias = "bullish" if b > s else "bearish" if s > b else "neutral"
             type_counts[_classify_sentiment_type(combined)] += 1
@@ -779,26 +1024,31 @@ async def fetch_cramer_sentiment(ticker: str) -> dict:
                     strength_order[pk["stance"]] > strength_order[all_picks_map[t]["stance"]]
                 ):
                     all_picks_map[t] = pk
-            articles.append({
-                "title":       it["title"], "url": it["url"],
-                "date":        it["date"],  "cramer_bias": cramer_bias,
-                "buy_signals": b, "sell_signals": s,
-                "picks": art_picks, "price_mentions": [],
-            })
+            articles.append(
+                {
+                    "title": it["title"],
+                    "url": it["url"],
+                    "date": it["date"],
+                    "cramer_bias": cramer_bias,
+                    "buy_signals": b,
+                    "sell_signals": s,
+                    "picks": art_picks,
+                    "price_mentions": [],
+                }
+            )
 
     n = len(articles)
-    all_picks = sorted(all_picks_map.values(),
-                       key=lambda x: strength_order[x["stance"]], reverse=True)
+    all_picks = sorted(all_picks_map.values(), key=lambda x: strength_order[x["stance"]], reverse=True)
 
     # Specific stance for THIS ticker
     ticker_stance = all_picks_map.get(ticker.upper(), {}).get("stance", "unknown")
 
     # Overall cramer signal (from keyword counts across all articles)
     if n == 0:
-        cramer_signal  = "unknown"
+        cramer_signal = "unknown"
         inverse_signal = "WAIT"
-        inverse_score  = 0.0
-        confidence     = "low"
+        inverse_score = 0.0
+        confidence = "low"
     else:
         if total_buy > total_sell * 1.4:
             cramer_signal = "bullish"
@@ -815,15 +1065,15 @@ async def fetch_cramer_sentiment(ticker: str) -> dict:
 
         if cramer_signal == "bullish":
             inverse_signal = "SELL"
-            inverse_score  = -0.60
+            inverse_score = -0.60
         elif cramer_signal == "bearish":
             inverse_signal = "BUY"
-            inverse_score  = +0.60
+            inverse_score = +0.60
         else:
             inverse_signal = "WAIT"
-            inverse_score  = 0.0
+            inverse_score = 0.0
 
-        total_signals   = max(total_buy + total_sell, 1)
+        total_signals = max(total_buy + total_sell, 1)
         signal_strength = abs(total_buy - total_sell) / total_signals
         if n >= 5 and signal_strength >= 0.5:
             confidence = "high"
@@ -833,34 +1083,30 @@ async def fetch_cramer_sentiment(ticker: str) -> dict:
             confidence = "low"
 
     total_types = sum(type_counts.values()) or 1
-    type_pcts   = {k: round(v / total_types * 100) for k, v in type_counts.items()}
+    type_pcts = {k: round(v / total_types * 100) for k, v in type_counts.items()}
 
     return {
-        "available":      n > 0,
-        "article_count":  n,
-        "cramer_signal":  cramer_signal,
+        "available": n > 0,
+        "article_count": n,
+        "cramer_signal": cramer_signal,
         "inverse_signal": inverse_signal,
-        "inverse_score":  round(inverse_score, 4),
-        "confidence":     confidence,
-        "ticker_stance":  ticker_stance,
-        "buy_signals":    total_buy,
-        "sell_signals":   total_sell,
+        "inverse_score": round(inverse_score, 4),
+        "confidence": confidence,
+        "ticker_stance": ticker_stance,
+        "buy_signals": total_buy,
+        "sell_signals": total_sell,
         "type_breakdown": type_pcts,
-        "picks":          all_picks[:20],          # all tickers from articles
-        "articles":       articles[:10],
+        "picks": all_picks[:20],  # all tickers from articles
+        "articles": articles[:10],
     }
 
+
 async def fetch_stocktwits_sentiment(ticker: str) -> dict:
-    """
-    Fetch StockTwits stream for ticker. No API key required for public data.
-    # SOURCE: StockTwits API, api.stocktwits.com/api/2/streams/symbol/{TICKER}.json, Free
-    Rate limit: ~200 req/hour unauthenticated - we cache for 5 minutes.
-    """
+    """Fetch StockTwits stream for ticker (cached 5 min)."""
     result = await _fetch_stocktwits_sentiment(ticker)
-    # Alias message_count → post_count so the frontend compatibility layer
-    # (data.x.post_count) keeps working without a frontend change.
     result.setdefault("post_count", result.get("message_count", 0))
     return result
+
 
 async def _fetch_stocktwits_sentiment(ticker: str) -> dict:
     url = f"https://api.stocktwits.com/api/2/streams/symbol/{ticker}.json"
@@ -878,14 +1124,14 @@ async def _fetch_stocktwits_sentiment(ticker: str) -> dict:
         st_price_mentions: list[dict] = []
 
         for msg in messages:
-            body           = msg.get("body", "")
-            text_score     = _score_text(body)
-            calls, puts    = _detect_option_bias(body)
-            sent_type      = _classify_sentiment_type(body)
-            prices         = _extract_price_mentions(body)
+            body = msg.get("body", "")
+            text_score = _score_text(body)
+            calls, puts = _detect_option_bias(body)
+            sent_type = _classify_sentiment_type(body)
+            prices = _extract_price_mentions(body)
 
-            call_total    += calls
-            put_total     += puts
+            call_total += calls
+            put_total += puts
             type_counts[sent_type] += 1
             st_price_mentions.extend(prices)
 
@@ -902,10 +1148,10 @@ async def _fetch_stocktwits_sentiment(ticker: str) -> dict:
 
             scored.append(effective)
 
-        total     = len(messages)
+        total = len(messages)
         avg_score = sum(scored) / total if total else 0.0
-        bull_pct  = round(bull / total * 100) if total else 0
-        bear_pct  = round(bear / total * 100) if total else 0
+        bull_pct = round(bull / total * 100) if total else 0
+        bear_pct = round(bear / total * 100) if total else 0
 
         # Lightweight price aggregation from StockTwits
         st_price_counter: Counter = Counter()
@@ -913,42 +1159,43 @@ async def _fetch_stocktwits_sentiment(ticker: str) -> dict:
             key = (round(pm["price"], 2), pm["type"])
             st_price_counter[key] += 1
         st_top_prices = [
-            {"price": k[0], "type": k[1], "count": v}
-            for k, v in st_price_counter.most_common(8)
+            {"price": k[0], "type": k[1], "count": v} for k, v in st_price_counter.most_common(8)
         ]
 
         type_pcts = {k: round(v / total * 100) for k, v in type_counts.items()} if total else {}
 
         return {
-            "available":       True,
-            "message_count":   total,
-            "bullish_count":   bull,
-            "bearish_count":   bear,
-            "neutral_count":   neutral,
+            "available": True,
+            "message_count": total,
+            "bullish_count": bull,
+            "bearish_count": bear,
+            "neutral_count": neutral,
             "sentiment_score": round(avg_score, 4),
-            "call_mentions":   call_total,
-            "put_mentions":    put_total,
-            "bull_pct":        bull_pct,
-            "bear_pct":        bear_pct,
-            "type_breakdown":  type_pcts,
-            "price_targets":   st_top_prices,
+            "call_mentions": call_total,
+            "put_mentions": put_total,
+            "bull_pct": bull_pct,
+            "bear_pct": bear_pct,
+            "type_breakdown": type_pcts,
+            "price_targets": st_top_prices,
         }
 
     except Exception as exc:
         logger.debug("StockTwits %s failed: %s", ticker, exc)
         return {
-            "available":       False,
-            "message_count":   0,
+            "available": False,
+            "message_count": 0,
             "sentiment_score": 0.0,
-            "bull_pct":        0,
-            "bear_pct":        0,
-            "call_mentions":   0,
-            "put_mentions":    0,
-            "type_breakdown":  {},
-            "price_targets":   [],
+            "bull_pct": 0,
+            "bear_pct": 0,
+            "call_mentions": 0,
+            "put_mentions": 0,
+            "type_breakdown": {},
+            "price_targets": [],
         }
 
+
 # Options flow  (yfinance - blocking → run in executor)
+
 
 def _scan_unusual_activity(
     calls_df,
@@ -981,35 +1228,38 @@ def _scan_unusual_activity(
         if df is None or df.empty:
             continue
         d = df.copy()
-        d["volume"]       = d["volume"].fillna(0).astype(int)
+        d["volume"] = d["volume"].fillna(0).astype(int)
         d["openInterest"] = d["openInterest"].fillna(0).astype(int)
         mask = (d["volume"] > min_vol) & (d["volume"] > d["openInterest"] * vol_oi_mult)
         rows = d[mask]
         for _, row in rows.iterrows():
             vol = int(row["volume"])
-            oi  = int(row["openInterest"])
-            lp  = float(row.get("lastPrice", 0) or 0)
+            oi = int(row["openInterest"])
+            lp = float(row.get("lastPrice", 0) or 0)
             chg = float(row.get("percentChange", 0) or 0)
-            iv  = float(row.get("impliedVolatility", 0) or 0)
+            iv = float(row.get("impliedVolatility", 0) or 0)
             ratio = round(vol / max(oi, 1), 2)
-            premium = round(lp * 100, 2)        # cost per contract (USD)
-            flow    = round(lp * 100 * vol, 2)  # notional flow (USD)
-            out.append({
-                "expiry":     exp_str,
-                "dte":        dte,
-                "strike":     float(row["strike"]),
-                "type":       type_str,
-                "volume":     vol,
-                "oi":         oi,
-                "vol_oi":     ratio,
-                "premium":    premium,
-                "flow":       flow,
-                "pct_change": round(chg, 2),
-                "iv":         round(iv * 100, 1),
-                "in_money":   bool(row.get("inTheMoney", False)),
-                "leaps":      is_leaps,
-            })
+            premium = round(lp * 100, 2)  # cost per contract (USD)
+            flow = round(lp * 100 * vol, 2)  # notional flow (USD)
+            out.append(
+                {
+                    "expiry": exp_str,
+                    "dte": dte,
+                    "strike": float(row["strike"]),
+                    "type": type_str,
+                    "volume": vol,
+                    "oi": oi,
+                    "vol_oi": ratio,
+                    "premium": premium,
+                    "flow": flow,
+                    "pct_change": round(chg, 2),
+                    "iv": round(iv * 100, 1),
+                    "in_money": bool(row.get("inTheMoney", False)),
+                    "leaps": is_leaps,
+                }
+            )
     return out
+
 
 def _options_flow_sync(ticker: str) -> dict:
     """
@@ -1023,19 +1273,19 @@ def _options_flow_sync(ticker: str) -> dict:
     PCR > 1.0  → put-heavy  (bearish / hedging)
     """
     try:
-        t           = yf.Ticker(ticker)
+        t = yf.Ticker(ticker)
         expirations = t.options
         if not expirations:
             return {"available": False, "reason": "no options data"}
 
-        n_exp                = min(3, len(expirations))
-        n_unusual_exp        = min(8, len(expirations))   # deeper scan for LEAPS
-        today_date           = datetime.now(timezone.utc).date()
-        total_call_vol       = total_put_vol = 0
-        total_call_oi        = total_put_oi  = 0
-        chains_summary       = []
+        n_exp = min(3, len(expirations))
+        n_unusual_exp = min(8, len(expirations))  # deeper scan for LEAPS
+        today_date = datetime.now(timezone.utc).date()
+        total_call_vol = total_put_vol = 0
+        total_call_oi = total_put_oi = 0
+        chains_summary = []
         hot_calls: list[dict] = []
-        hot_puts:  list[dict] = []
+        hot_puts: list[dict] = []
         unusual_activity: list[dict] = []
         scanned_for_unusual: set = set()
 
@@ -1048,60 +1298,64 @@ def _options_flow_sync(ticker: str) -> dict:
                 po = int(chain.puts["openInterest"].fillna(0).sum())
 
                 total_call_vol += cv
-                total_put_vol  += pv
-                total_call_oi  += co
-                total_put_oi   += po
+                total_put_vol += pv
+                total_call_oi += co
+                total_put_oi += po
 
-                chains_summary.append({
-                    "expiry":  exp,
-                    "call_vol": cv,
-                    "put_vol":  pv,
-                    "call_oi":  co,
-                    "put_oi":   po,
-                    "pcr_vol":  round(pv / cv, 3) if cv else None,
-                })
+                chains_summary.append(
+                    {
+                        "expiry": exp,
+                        "call_vol": cv,
+                        "put_vol": pv,
+                        "call_oi": co,
+                        "put_oi": po,
+                        "pcr_vol": round(pv / cv, 3) if cv else None,
+                    }
+                )
 
                 # Top 5 call strikes by volume for this expiry
                 calls_df = chain.calls.copy()
                 calls_df["volume"] = calls_df["volume"].fillna(0)
                 calls_df = calls_df[calls_df["volume"] > 0].nlargest(5, "volume")
                 for _, row in calls_df.iterrows():
-                    lp  = float(row.get("lastPrice", 0) or 0)
+                    lp = float(row.get("lastPrice", 0) or 0)
                     chg = float(row.get("percentChange", 0) or 0)
-                    hot_calls.append({
-                        "expiry":      exp,
-                        "strike":      float(row["strike"]),
-                        "volume":      int(row["volume"]),
-                        "oi":          int(row.get("openInterest", 0) or 0),
-                        "iv":          round(float(row.get("impliedVolatility", 0) or 0) * 100, 1),
-                        "type":        "call",
-                        "in_money":    bool(row.get("inTheMoney", False)),
-                        "last_price":  round(lp, 2),
-                        "pct_change":  round(chg, 2),
-                    })
+                    hot_calls.append(
+                        {
+                            "expiry": exp,
+                            "strike": float(row["strike"]),
+                            "volume": int(row["volume"]),
+                            "oi": int(row.get("openInterest", 0) or 0),
+                            "iv": round(float(row.get("impliedVolatility", 0) or 0) * 100, 1),
+                            "type": "call",
+                            "in_money": bool(row.get("inTheMoney", False)),
+                            "last_price": round(lp, 2),
+                            "pct_change": round(chg, 2),
+                        }
+                    )
 
                 # Top 5 put strikes by volume
                 puts_df = chain.puts.copy()
                 puts_df["volume"] = puts_df["volume"].fillna(0)
                 puts_df_top = puts_df[puts_df["volume"] > 0].nlargest(5, "volume")
                 for _, row in puts_df_top.iterrows():
-                    lp  = float(row.get("lastPrice", 0) or 0)
+                    lp = float(row.get("lastPrice", 0) or 0)
                     chg = float(row.get("percentChange", 0) or 0)
-                    hot_puts.append({
-                        "expiry":      exp,
-                        "strike":      float(row["strike"]),
-                        "volume":      int(row["volume"]),
-                        "oi":          int(row.get("openInterest", 0) or 0),
-                        "iv":          round(float(row.get("impliedVolatility", 0) or 0) * 100, 1),
-                        "type":        "put",
-                        "in_money":    bool(row.get("inTheMoney", False)),
-                        "last_price":  round(lp, 2),
-                        "pct_change":  round(chg, 2),
-                    })
+                    hot_puts.append(
+                        {
+                            "expiry": exp,
+                            "strike": float(row["strike"]),
+                            "volume": int(row["volume"]),
+                            "oi": int(row.get("openInterest", 0) or 0),
+                            "iv": round(float(row.get("impliedVolatility", 0) or 0) * 100, 1),
+                            "type": "put",
+                            "in_money": bool(row.get("inTheMoney", False)),
+                            "last_price": round(lp, 2),
+                            "pct_change": round(chg, 2),
+                        }
+                    )
 
-                unusual_activity.extend(
-                    _scan_unusual_activity(chain.calls, chain.puts, exp, today_date)
-                )
+                unusual_activity.extend(_scan_unusual_activity(chain.calls, chain.puts, exp, today_date))
                 scanned_for_unusual.add(exp)
 
             except Exception:
@@ -1115,9 +1369,7 @@ def _options_flow_sync(ticker: str) -> dict:
                 continue
             try:
                 chain = t.option_chain(exp)
-                unusual_activity.extend(
-                    _scan_unusual_activity(chain.calls, chain.puts, exp, today_date)
-                )
+                unusual_activity.extend(_scan_unusual_activity(chain.calls, chain.puts, exp, today_date))
             except Exception:
                 pass
 
@@ -1126,49 +1378,51 @@ def _options_flow_sync(ticker: str) -> dict:
         unusual_activity = unusual_activity[:50]
 
         total_vol = total_call_vol + total_put_vol
-        pcr_vol   = round(total_put_vol / total_call_vol,  3) if total_call_vol else None
-        pcr_oi    = round(total_put_oi  / total_call_oi,   3) if total_call_oi  else None
+        pcr_vol = round(total_put_vol / total_call_vol, 3) if total_call_vol else None
+        pcr_oi = round(total_put_oi / total_call_oi, 3) if total_call_oi else None
 
         flow_bias = (
-            "call_heavy" if pcr_vol is not None and pcr_vol < 0.70 else
-            "put_heavy"  if pcr_vol is not None and pcr_vol > 1.00 else
-            "neutral"    if pcr_vol is not None else "unknown"
+            "call_heavy"
+            if pcr_vol is not None and pcr_vol < 0.70
+            else "put_heavy"
+            if pcr_vol is not None and pcr_vol > 1.00
+            else "neutral"
+            if pcr_vol is not None
+            else "unknown"
         )
 
         call_pct = round(total_call_vol / total_vol * 100) if total_vol else 0
-        put_pct  = round(total_put_vol  / total_vol * 100) if total_vol else 0
+        put_pct = round(total_put_vol / total_vol * 100) if total_vol else 0
 
         # Keep top-10 hottest strikes across all expiries
         hot_calls.sort(key=lambda x: x["volume"], reverse=True)
-        hot_puts.sort( key=lambda x: x["volume"], reverse=True)
+        hot_puts.sort(key=lambda x: x["volume"], reverse=True)
 
         # Get current spot price for ATM/OTM classification downstream
         try:
             info = t.fast_info
             spot_price = float(
-                getattr(info, "last_price", None)
-                or getattr(info, "regular_market_price", None)
-                or 0.0
+                getattr(info, "last_price", None) or getattr(info, "regular_market_price", None) or 0.0
             )
         except Exception:
             spot_price = 0.0
 
         return {
-            "available":        True,
+            "available": True,
             "expirations_used": n_exp,
-            "spot_price":       round(spot_price, 2),
-            "call_volume":      total_call_vol,
-            "put_volume":       total_put_vol,
-            "call_oi":          total_call_oi,
-            "put_oi":           total_put_oi,
-            "pcr_volume":       pcr_vol,
-            "pcr_oi":           pcr_oi,
-            "flow_bias":        flow_bias,
-            "call_pct":         call_pct,
-            "put_pct":          put_pct,
-            "chains":           chains_summary,
-            "hot_calls":        hot_calls[:10],
-            "hot_puts":         hot_puts[:10],
+            "spot_price": round(spot_price, 2),
+            "call_volume": total_call_vol,
+            "put_volume": total_put_vol,
+            "call_oi": total_call_oi,
+            "put_oi": total_put_oi,
+            "pcr_volume": pcr_vol,
+            "pcr_oi": pcr_oi,
+            "flow_bias": flow_bias,
+            "call_pct": call_pct,
+            "put_pct": put_pct,
+            "chains": chains_summary,
+            "hot_calls": hot_calls[:10],
+            "hot_puts": hot_puts[:10],
             # Unusual Activity: contracts with vol > OI×1.5 AND vol > 500.
             # Raw exchange volume - NOT aggressor-side; the UI shows a disclaimer.
             "unusual_activity": unusual_activity,
@@ -1179,36 +1433,82 @@ def _options_flow_sync(ticker: str) -> dict:
         logger.debug("Options flow %s failed: %s", ticker, exc)
         return {"available": False, "reason": str(exc)}
 
+
 # Global market sentiment  (no specific ticker - overall market mood)
 
-_GLOBAL_CACHE_TTL = 600.0   # 10 min (market-wide data changes slower)
+_GLOBAL_CACHE_TTL = 600.0  # 10 min (market-wide data changes slower)
 _global_cache_lock = threading.Lock()
-_global_cache: dict[str, tuple] = {}   # 'GLOBAL' → (result, expire)
+_global_cache: dict[str, tuple] = {}  # 'GLOBAL' → (result, expire)
 
 # Hot market themes to detect in posts
 _MARKET_THEMES = {
-    "Fed / Rates":   ["fed", "federal reserve", "fomc", "rate hike", "rate cut", "powell", "interest rate"],
-    "Inflation":     ["inflation", "cpi", "pce", "deflation", "disinflation", "price", "consumer price"],
-    "Recession":     ["recession", "gdp", "slowdown", "contraction", "stagflation", "layoffs"],
-    "Earnings":      ["earnings", "eps", "beat", "miss", "guidance", "revenue", "quarter"],
-    "VIX / Fear":    ["vix", "volatility", "fear", "panic", "protection", "hedge"],
-    "Market Rally":  ["rally", "breakout", "squeeze", "rip", "moon", "ath", "all-time high"],
-    "Market Crash":  ["crash", "correction", "dump", "sell-off", "selloff", "collapse", "drop"],
-    "Tech / AI":     ["ai", "artificial intelligence", "nvidia", "semiconductor", "chips", "chatgpt"],
-    "Options Flow":  ["calls", "puts", "options", "spreads", "iron condor", "theta", "gamma"],
+    "Fed / Rates": ["fed", "federal reserve", "fomc", "rate hike", "rate cut", "powell", "interest rate"],
+    "Inflation": ["inflation", "cpi", "pce", "deflation", "disinflation", "price", "consumer price"],
+    "Recession": ["recession", "gdp", "slowdown", "contraction", "stagflation", "layoffs"],
+    "Earnings": ["earnings", "eps", "beat", "miss", "guidance", "revenue", "quarter"],
+    "VIX / Fear": ["vix", "volatility", "fear", "panic", "protection", "hedge"],
+    "Market Rally": ["rally", "breakout", "squeeze", "rip", "moon", "ath", "all-time high"],
+    "Market Crash": ["crash", "correction", "dump", "sell-off", "selloff", "collapse", "drop"],
+    "Tech / AI": ["ai", "artificial intelligence", "nvidia", "semiconductor", "chips", "chatgpt"],
+    "Options Flow": ["calls", "puts", "options", "spreads", "iron condor", "theta", "gamma"],
 }
 
 # Ticker-mention regex - looks for $SYMBOL or plain uppercase 2-5 letter words near $ or %
-_TICKER_RE = re.compile(r'\$([A-Z]{1,5})\b')
+_TICKER_RE = re.compile(r"\$([A-Z]{1,5})\b")
 
 # Junk words that get confused for tickers
 _TICKER_BLACKLIST = {
-    "I", "A", "AT", "BE", "DO", "GO", "IN", "IS", "IT", "ME", "MY",
-    "NO", "OF", "ON", "OR", "SO", "TO", "UP", "US", "WE", "HE", "AN",
-    "AI", "DD", "OP", "IV", "OI", "PE", "EV", "OK", "YO", "IF",
-    "PM", "AM", "FY", "QQ", "QE", "MM", "YTD", "YOY", "ATH", "HODL",
-    "YOLO", "FOMO", "TLDR", "IIRC", "AFAIK", "IMO", "IMHO",
+    "I",
+    "A",
+    "AT",
+    "BE",
+    "DO",
+    "GO",
+    "IN",
+    "IS",
+    "IT",
+    "ME",
+    "MY",
+    "NO",
+    "OF",
+    "ON",
+    "OR",
+    "SO",
+    "TO",
+    "UP",
+    "US",
+    "WE",
+    "HE",
+    "AN",
+    "AI",
+    "DD",
+    "OP",
+    "IV",
+    "OI",
+    "PE",
+    "EV",
+    "OK",
+    "YO",
+    "IF",
+    "PM",
+    "AM",
+    "FY",
+    "QQ",
+    "QE",
+    "MM",
+    "YTD",
+    "YOY",
+    "ATH",
+    "HODL",
+    "YOLO",
+    "FOMO",
+    "TLDR",
+    "IIRC",
+    "AFAIK",
+    "IMO",
+    "IMHO",
 }
+
 
 async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
     """
@@ -1235,7 +1535,7 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
     # Cache check
     if not force_refresh:
         with _global_cache_lock:
-            entry = _global_cache.get('GLOBAL')
+            entry = _global_cache.get("GLOBAL")
             if entry:
                 result, exp = entry
                 if time.monotonic() < exp:
@@ -1252,23 +1552,23 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
 
     _GLOBAL_SUBS = [
         ("wallstreetbets", "hot"),
-        ("stocks",         "hot"),
-        ("investing",      "hot"),
-        ("options",        "hot"),
-        ("StockMarket",    "hot"),
+        ("stocks", "hot"),
+        ("investing", "hot"),
+        ("options", "hot"),
+        ("StockMarket", "hot"),
     ]
 
     all_posts: list[dict] = []
     ticker_counter: Counter = Counter()
-    theme_counter:  Counter = Counter()
+    theme_counter: Counter = Counter()
     total_bull = total_bear = 0
-    call_total = put_total  = 0
+    call_total = put_total = 0
 
     async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
         # Reddit hot posts
         for sub, sort in _GLOBAL_SUBS:
             try:
-                url  = f"https://www.reddit.com/r/{sub}/{sort}.json?limit=25&t=day"
+                url = f"https://www.reddit.com/r/{sub}/{sort}.json?limit=25&t=day"
                 resp = await client.get(url, headers=headers_reddit)
                 if resp.status_code != 200:
                     continue
@@ -1276,17 +1576,17 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
                 children = data.get("data", {}).get("children", [])
 
                 for child in children:
-                    p     = child.get("data", {})
+                    p = child.get("data", {})
                     title = p.get("title", "")
-                    body  = p.get("selftext", "")
-                    text  = f"{title} {body}"
+                    body = p.get("selftext", "")
+                    text = f"{title} {body}"
 
-                    score     = _score_text(text)
+                    score = _score_text(text)
                     calls, puts = _detect_option_bias(text)
                     sent_type = _classify_sentiment_type(text)
 
                     call_total += calls
-                    put_total  += puts
+                    put_total += puts
                     if score > 0.1:
                         total_bull += 1
                     elif score < -0.1:
@@ -1303,16 +1603,18 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
                         if any(kw in tl for kw in kws):
                             theme_counter[theme] += 1
 
-                    all_posts.append({
-                        "title":         title,
-                        "url":           p.get("url", ""),
-                        "subreddit":     f"r/{sub}",
-                        "score":         round(score, 3),
-                        "upvotes":       int(p.get("score", 0)),
-                        "sentiment_type": sent_type,
-                        "call_mentions": calls,
-                        "put_mentions":  puts,
-                    })
+                    all_posts.append(
+                        {
+                            "title": title,
+                            "url": p.get("url", ""),
+                            "subreddit": f"r/{sub}",
+                            "score": round(score, 3),
+                            "upvotes": int(p.get("score", 0)),
+                            "sentiment_type": sent_type,
+                            "call_mentions": calls,
+                            "put_mentions": puts,
+                        }
+                    )
 
             except Exception as exc:
                 logger.debug("Global Reddit r/%s failed: %s", sub, exc)
@@ -1329,18 +1631,18 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
                 resp = await client.get(rss_url, headers=headers_rss)
                 if resp.status_code != 200:
                     continue
-                root  = ET.fromstring(resp.text)
-                items = root.findall('.//item')
+                root = ET.fromstring(resp.text)
+                items = root.findall(".//item")
                 for item in items[:10]:
-                    title = item.findtext('title', '') or ''
-                    link  = item.findtext('link',  '') or ''
-                    desc  = item.findtext('description', '') or ''
-                    text  = f"{title} {desc}"
+                    title = item.findtext("title", "") or ""
+                    link = item.findtext("link", "") or ""
+                    desc = item.findtext("description", "") or ""
+                    text = f"{title} {desc}"
 
                     score = _score_text(text)
                     calls, puts = _detect_option_bias(text)
                     call_total += calls
-                    put_total  += puts
+                    put_total += puts
                     if score > 0.1:
                         total_bull += 1
                     elif score < -0.1:
@@ -1355,16 +1657,18 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
                         if m not in _TICKER_BLACKLIST and 2 <= len(m) <= 5:
                             ticker_counter[m] += 1
 
-                    all_posts.append({
-                        "title":         title,
-                        "url":           link,
-                        "subreddit":     "📰 News",
-                        "score":         round(score, 3),
-                        "upvotes":       0,
-                        "sentiment_type": _classify_sentiment_type(text),
-                        "call_mentions": calls,
-                        "put_mentions":  puts,
-                    })
+                    all_posts.append(
+                        {
+                            "title": title,
+                            "url": link,
+                            "subreddit": "📰 News",
+                            "score": round(score, 3),
+                            "upvotes": 0,
+                            "sentiment_type": _classify_sentiment_type(text),
+                            "call_mentions": calls,
+                            "put_mentions": puts,
+                        }
+                    )
             except Exception as exc:
                 logger.debug("Global RSS %s failed: %s", q, exc)
 
@@ -1374,23 +1678,24 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
     ]
     try:
         import random as _rand
+
         x_client = await _get_twikit_client()
         if x_client is not None:
             for xq in _GLOBAL_X_QUERIES:
                 try:
                     await asyncio.sleep(_rand.uniform(0.5, 1.2))
-                    xresults = await x_client.search_tweet(xq, product='Top', count=30)
-                    xtweets  = list(xresults) if xresults else []
+                    xresults = await x_client.search_tweet(xq, product="Top", count=30)
+                    xtweets = list(xresults) if xresults else []
                     for tw in xtweets:
-                        text     = getattr(tw, 'text', '') or ''
-                        likes    = int(getattr(tw, 'favorite_count', 0) or 0)
-                        retweets = int(getattr(tw, 'retweet_count',  0) or 0)
+                        text = getattr(tw, "text", "") or ""
+                        likes = int(getattr(tw, "favorite_count", 0) or 0)
+                        retweets = int(getattr(tw, "retweet_count", 0) or 0)
 
-                        score     = _score_text(text)
+                        score = _score_text(text)
                         calls, puts = _detect_option_bias(text)
                         sent_type = _classify_sentiment_type(text)
                         call_total += calls
-                        put_total  += puts
+                        put_total += puts
                         if score > 0.1:
                             total_bull += 1
                         elif score < -0.1:
@@ -1405,34 +1710,42 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
                             if any(kw in tl_lower for kw in kws):
                                 theme_counter[theme] += 1
 
-                        tweet_id    = getattr(tw, 'id', '')
-                        user        = getattr(tw, 'user', None)
-                        screen_name = getattr(user, 'screen_name', '') if user else ''
-                        tweet_url   = (
+                        tweet_id = getattr(tw, "id", "")
+                        user = getattr(tw, "user", None)
+                        screen_name = getattr(user, "screen_name", "") if user else ""
+                        tweet_url = (
                             f"https://x.com/{screen_name}/status/{tweet_id}"
-                            if screen_name and tweet_id else ""
+                            if screen_name and tweet_id
+                            else ""
                         )
-                        all_posts.append({
-                            "title":         text[:150],
-                            "url":           tweet_url,
-                            "subreddit":     "𝕏 X",
-                            "score":         round(score, 3),
-                            "upvotes":       likes + retweets,   # proxy for engagement
-                            "sentiment_type": sent_type,
-                            "call_mentions": calls,
-                            "put_mentions":  puts,
-                        })
+                        all_posts.append(
+                            {
+                                "title": text[:150],
+                                "url": tweet_url,
+                                "subreddit": "𝕏 X",
+                                "score": round(score, 3),
+                                "upvotes": likes + retweets,  # proxy for engagement
+                                "sentiment_type": sent_type,
+                                "call_mentions": calls,
+                                "put_mentions": puts,
+                            }
+                        )
                     if xtweets:
-                        break   # one successful query is enough
+                        break  # one successful query is enough
                 except Exception as exc:
                     logger.debug("Global X query failed: %s", exc)
                     _twikit_reset()
     except Exception as exc:
         logger.debug("Global X block failed: %s", exc)
 
-        cramer_market = {"cramer_signal": "unknown", "inverse_signal": "WAIT",
-                     "confidence": "low", "article_count": 0,
-                     "articles": [], "picks": []}
+        cramer_market = {
+            "cramer_signal": "unknown",
+            "inverse_signal": "WAIT",
+            "confidence": "low",
+            "article_count": 0,
+            "articles": [],
+            "picks": [],
+        }
     try:
         import xml.etree.ElementTree as ET2
         from email.utils import parsedate_to_datetime as p2dt
@@ -1453,27 +1766,25 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
                         continue
                     root2 = ET2.fromstring(r.text)
                     for item in root2.findall(".//item")[:20]:
-                        title = item.findtext("title",       "") or ""
-                        link  = item.findtext("link",        "") or ""
-                        pub   = item.findtext("pubDate",     "") or ""
-                        desc  = item.findtext("description", "") or ""
-                        tl    = f"{title} {desc}".lower()
+                        title = item.findtext("title", "") or ""
+                        link = item.findtext("link", "") or ""
+                        pub = item.findtext("pubDate", "") or ""
+                        desc = item.findtext("description", "") or ""
+                        tl = f"{title} {desc}".lower()
                         if "cramer" not in tl and "mad money" not in tl:
                             continue
                         try:
                             pub_str = p2dt(pub).strftime("%Y-%m-%d")
                         except Exception:
                             pub_str = pub[:10] if pub else ""
-                        cramer_raw_items.append({"title": title, "url": link,
-                                                 "date": pub_str, "desc": desc})
+                        cramer_raw_items.append({"title": title, "url": link, "date": pub_str, "desc": desc})
                     if cramer_raw_items:
                         break
                 except Exception as exc:
                     logger.debug("Global Cramer RSS: %s", exc)
 
             # Fetch full article bodies for top 5 items
-            g_fetch_tasks = [_fetch_article_text(it["url"], c2)
-                             for it in cramer_raw_items[:5]]
+            g_fetch_tasks = [_fetch_article_text(it["url"], c2) for it in cramer_raw_items[:5]]
             g_bodies = await asyncio.gather(*g_fetch_tasks, return_exceptions=True)
 
         # Process items - score + extract picks
@@ -1483,9 +1794,9 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
 
         for it, body in zip(cramer_raw_items[:5], g_bodies, strict=False):
             body_text = body if isinstance(body, str) else ""
-            combined  = f"{it['title']} {it['desc']} {body_text}"
+            combined = f"{it['title']} {it['desc']} {body_text}"
             b, s = _score_cramer_text(combined)
-            cramer_buy  += b
+            cramer_buy += b
             cramer_sell += s
             bias = "bullish" if b > s else "bearish" if s > b else "neutral"
             art_picks = _extract_cramer_picks(combined)
@@ -1495,9 +1806,15 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
                     g_strength[pk["stance"]] > g_strength[global_picks_map[t]["stance"]]
                 ):
                     global_picks_map[t] = pk
-            cramer_arts.append({"title": it["title"], "url": it["url"],
-                                 "date": it["date"], "cramer_bias": bias,
-                                 "picks": art_picks})
+            cramer_arts.append(
+                {
+                    "title": it["title"],
+                    "url": it["url"],
+                    "date": it["date"],
+                    "cramer_bias": bias,
+                    "picks": art_picks,
+                }
+            )
 
         for it in cramer_raw_items[5:]:
             combined = f"{it['title']} {it['desc']}"
@@ -1512,9 +1829,15 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
                     g_strength[pk["stance"]] > g_strength[global_picks_map[t]["stance"]]
                 ):
                     global_picks_map[t] = pk
-            cramer_arts.append({"title": it["title"], "url": it["url"],
-                                 "date": it["date"], "cramer_bias": bias,
-                                 "picks": art_picks})
+            cramer_arts.append(
+                {
+                    "title": it["title"],
+                    "url": it["url"],
+                    "date": it["date"],
+                    "cramer_bias": bias,
+                    "picks": art_picks,
+                }
+            )
 
         nc = len(cramer_arts)
         if nc > 0:
@@ -1524,25 +1847,27 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
                 sig = "bearish"
             else:
                 sig = "mixed"
-            inv  = "SELL" if sig == "bullish" else "BUY" if sig == "bearish" else "WAIT"
+            inv = "SELL" if sig == "bullish" else "BUY" if sig == "bearish" else "WAIT"
             sstr = abs(cramer_buy - cramer_sell) / max(cramer_buy + cramer_sell, 1)
-            conf = ("high"   if nc >= 5 and sstr >= 0.5  else
-                    "medium" if nc >= 2 and sstr >= 0.25 else "low")
-            all_global_picks = sorted(global_picks_map.values(),
-                                      key=lambda x: g_strength[x["stance"]], reverse=True)
+            conf = "high" if nc >= 5 and sstr >= 0.5 else "medium" if nc >= 2 and sstr >= 0.25 else "low"
+            all_global_picks = sorted(
+                global_picks_map.values(), key=lambda x: g_strength[x["stance"]], reverse=True
+            )
             cramer_market = {
-                "cramer_signal": sig, "inverse_signal": inv,
-                "confidence":    conf, "article_count": nc,
-                "articles":      cramer_arts[:5],
-                "picks":         all_global_picks[:25],   # full pick list with stances
+                "cramer_signal": sig,
+                "inverse_signal": inv,
+                "confidence": conf,
+                "article_count": nc,
+                "articles": cramer_arts[:5],
+                "picks": all_global_picks[:25],  # full pick list with stances
             }
     except Exception as exc:
         logger.debug("Global Cramer block failed: %s", exc)
 
-    n_posts    = len(all_posts)
+    n_posts = len(all_posts)
     total_sent = total_bull + total_bear or 1
-    bull_pct   = round(total_bull / total_sent * 100)
-    bear_pct   = round(total_bear / total_sent * 100)
+    bull_pct = round(total_bull / total_sent * 100)
+    bear_pct = round(total_bear / total_sent * 100)
 
     raw_score = (total_bull - total_bear) / total_sent if total_sent else 0.0
     # Clamp and label
@@ -1551,11 +1876,12 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
 
     # Trending tickers - top 15 by mention count
     trending = [
-        {"ticker": t, "count": c,
-         "sentiment": sum(
-             p["score"] for p in all_posts
-             if t.lower() in (p.get("title","") or "").lower()
-         ) / max(sum(1 for p in all_posts if t.lower() in (p.get("title","") or "").lower()), 1)}
+        {
+            "ticker": t,
+            "count": c,
+            "sentiment": sum(p["score"] for p in all_posts if t.lower() in (p.get("title", "") or "").lower())
+            / max(sum(1 for p in all_posts if t.lower() in (p.get("title", "") or "").lower()), 1),
+        }
         for t, c in ticker_counter.most_common(15)
     ]
 
@@ -1571,26 +1897,28 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
     top_posts = sorted(all_posts, key=lambda x: x["upvotes"], reverse=True)[:15]
 
     result = {
-        "mood_score":       round(mood_score, 4),
-        "market_mood":      market_mood,
-        "bull_pct":         bull_pct,
-        "bear_pct":         bear_pct,
-        "post_count":       n_posts,
-        "call_mentions":    call_total,
-        "put_mentions":     put_total,
+        "mood_score": round(mood_score, 4),
+        "market_mood": market_mood,
+        "bull_pct": bull_pct,
+        "bear_pct": bear_pct,
+        "post_count": n_posts,
+        "call_mentions": call_total,
+        "put_mentions": put_total,
         "trending_tickers": trending,
-        "hot_themes":       hot_themes,
-        "cramer_market":    cramer_market,
-        "top_posts":        top_posts,
-        "timestamp":        datetime.now(timezone.utc).isoformat(),
+        "hot_themes": hot_themes,
+        "cramer_market": cramer_market,
+        "top_posts": top_posts,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
     with _global_cache_lock:
-        _global_cache['GLOBAL'] = (result, time.monotonic() + _GLOBAL_CACHE_TTL)
+        _global_cache["GLOBAL"] = (result, time.monotonic() + _GLOBAL_CACHE_TTL)
 
     return result
 
+
 # Options-activity sentiment scorer
+
 
 def _score_options_activity(options_data: dict) -> tuple[float, str, dict]:
     """Score options flow from ATM/OTM volume, expiry, and PCR. Returns (score, label, details)."""
@@ -1604,47 +1932,40 @@ def _score_options_activity(options_data: dict) -> tuple[float, str, dict]:
         return 0.0, "neutral", {}
 
     hot_calls = options_data.get("hot_calls", [])
-    hot_puts  = options_data.get("hot_puts",  [])
+    hot_puts = options_data.get("hot_puts", [])
     if not hot_calls and not hot_puts:
         return 0.0, "neutral", {}
 
-    atm_lo      = spot * 0.985    # ATM band: ±1.5% of spot
-    atm_hi      = spot * 1.015
-    otm_call_lo = spot * 1.0     # OTM calls: 0-12% above spot
+    atm_lo = spot * 0.985  # ATM band: ±1.5% of spot
+    atm_hi = spot * 1.015
+    otm_call_lo = spot * 1.0  # OTM calls: 0-12% above spot
     otm_call_hi = spot * 1.12
-    otm_put_lo  = spot * 0.88    # OTM puts:  0-12% below spot
-    otm_put_hi  = spot * 1.0
+    otm_put_lo = spot * 0.88  # OTM puts:  0-12% below spot
+    otm_put_hi = spot * 1.0
 
-    today        = date.today()
-    days_to_fri  = (4 - today.weekday()) % 7 or 7   # always ≥ 1
-    next_fri     = today + timedelta(days=days_to_fri)
-    nw_start     = (next_fri - timedelta(days=1)).isoformat()   # Thursday
-    nw_end       = (next_fri + timedelta(days=3)).isoformat()   # following Monday
+    today = date.today()
+    days_to_fri = (4 - today.weekday()) % 7 or 7  # always ≥ 1
+    next_fri = today + timedelta(days=days_to_fri)
+    nw_start = (next_fri - timedelta(days=1)).isoformat()  # Thursday
+    nw_end = (next_fri + timedelta(days=3)).isoformat()  # following Monday
 
-    atm_call_vol = sum(c["volume"] for c in hot_calls
-                       if atm_lo <= c["strike"] <= atm_hi)
-    atm_put_vol  = sum(p["volume"] for p in hot_puts
-                       if atm_lo <= p["strike"] <= atm_hi)
+    atm_call_vol = sum(c["volume"] for c in hot_calls if atm_lo <= c["strike"] <= atm_hi)
+    atm_put_vol = sum(p["volume"] for p in hot_puts if atm_lo <= p["strike"] <= atm_hi)
 
-    otm_call_vol = sum(c["volume"] for c in hot_calls
-                       if otm_call_lo < c["strike"] <= otm_call_hi)
-    otm_put_vol  = sum(p["volume"] for p in hot_puts
-                       if otm_put_lo  <= p["strike"] < otm_put_hi)
+    otm_call_vol = sum(c["volume"] for c in hot_calls if otm_call_lo < c["strike"] <= otm_call_hi)
+    otm_put_vol = sum(p["volume"] for p in hot_puts if otm_put_lo <= p["strike"] < otm_put_hi)
 
     # Distinct OTM call strikes - "call ladder" breadth indicator
-    otm_call_strikes = sorted({
-        c["strike"] for c in hot_calls
-        if otm_call_lo < c["strike"] <= otm_call_hi and c["volume"] > 0
-    })
+    otm_call_strikes = sorted(
+        {c["strike"] for c in hot_calls if otm_call_lo < c["strike"] <= otm_call_hi and c["volume"] > 0}
+    )
     n_ladder = len(otm_call_strikes)
 
     # Next-week volume concentration
-    nw_call_vol = sum(c["volume"] for c in hot_calls
-                      if nw_start <= (c.get("expiry") or "") <= nw_end)
-    nw_put_vol  = sum(p["volume"] for p in hot_puts
-                      if nw_start <= (p.get("expiry") or "") <= nw_end)
+    nw_call_vol = sum(c["volume"] for c in hot_calls if nw_start <= (c.get("expiry") or "") <= nw_end)
+    nw_put_vol = sum(p["volume"] for p in hot_puts if nw_start <= (p.get("expiry") or "") <= nw_end)
 
-    pcr = options_data.get("pcr_volume")   # None if unavailable
+    pcr = options_data.get("pcr_volume")  # None if unavailable
 
     score = 0.0
 
@@ -1669,13 +1990,13 @@ def _score_options_activity(options_data: dict) -> tuple[float, str, dict]:
 
     if pcr is not None:
         if pcr < 0.35:
-            score += 0.15    # extremely call-heavy
+            score += 0.15  # extremely call-heavy
         elif pcr < 0.60:
             score += 0.10
         elif pcr < 0.80:
             score += 0.05
         elif pcr > 1.80:
-            score -= 0.15    # extremely put-heavy
+            score -= 0.15  # extremely put-heavy
         elif pcr > 1.20:
             score -= 0.10
         elif pcr > 1.00:
@@ -1695,23 +2016,25 @@ def _score_options_activity(options_data: dict) -> tuple[float, str, dict]:
         label = "neutral"
 
     details = {
-        "spot":                round(spot, 2),
-        "atm_call_vol":        atm_call_vol,
-        "atm_put_vol":         atm_put_vol,
-        "otm_call_vol":        otm_call_vol,
-        "otm_put_vol":         otm_put_vol,
-        "otm_call_strikes":    otm_call_strikes,
-        "call_ladder_count":   n_ladder,
-        "next_week_expiry":    next_fri.isoformat(),
-        "next_week_call_vol":  nw_call_vol,
-        "next_week_put_vol":   nw_put_vol,
-        "pcr":                 pcr,
-        "score":               score,
-        "label":               label,
+        "spot": round(spot, 2),
+        "atm_call_vol": atm_call_vol,
+        "atm_put_vol": atm_put_vol,
+        "otm_call_vol": otm_call_vol,
+        "otm_put_vol": otm_put_vol,
+        "otm_call_strikes": otm_call_strikes,
+        "call_ladder_count": n_ladder,
+        "next_week_expiry": next_fri.isoformat(),
+        "next_week_call_vol": nw_call_vol,
+        "next_week_put_vol": nw_put_vol,
+        "pcr": pcr,
+        "score": score,
+        "label": label,
     }
     return score, label, details
 
+
 # Aggregate
+
 
 async def get_sentiment(ticker: str, force_refresh: bool = False) -> dict:
     """
@@ -1734,32 +2057,40 @@ async def get_sentiment(ticker: str, force_refresh: bool = False) -> dict:
 
     loop = asyncio.get_running_loop()
 
-    # SOURCE: StockTwits (replaces X/Twitter - no API key required, free)
-    x_task       = asyncio.create_task(fetch_stocktwits_sentiment(ticker))
-    cramer_task  = asyncio.create_task(fetch_cramer_sentiment(ticker))
+    x_task = asyncio.create_task(fetch_stocktwits_sentiment(ticker))
+    cramer_task = asyncio.create_task(fetch_cramer_sentiment(ticker))
     options_coro = loop.run_in_executor(None, _options_flow_sync, ticker)
 
-    x_data, cramer, options = await asyncio.gather(
-        x_task, cramer_task, options_coro, return_exceptions=True
-    )
+    x_data, cramer, options = await asyncio.gather(x_task, cramer_task, options_coro, return_exceptions=True)
 
     if isinstance(x_data, Exception):
         logger.warning("StockTwits sentiment exception: %s", x_data)
         x_data = {
-            "available": False, "needs_setup": False,
-            "sentiment_score": 0.0, "call_mentions": 0,
-            "put_mentions": 0, "post_count": 0, "message_count": 0,
-            "bull_pct": 0, "bear_pct": 0,
-            "type_breakdown": {}, "top_posts": [],
+            "available": False,
+            "needs_setup": False,
+            "sentiment_score": 0.0,
+            "call_mentions": 0,
+            "put_mentions": 0,
+            "post_count": 0,
+            "message_count": 0,
+            "bull_pct": 0,
+            "bear_pct": 0,
+            "type_breakdown": {},
+            "top_posts": [],
         }
     if isinstance(cramer, Exception):
         logger.warning("Cramer exception: %s", cramer)
         cramer = {
-            "available": False, "article_count": 0,
-            "cramer_signal": "unknown", "inverse_signal": "WAIT",
-            "inverse_score": 0.0, "confidence": "low",
-            "buy_signals": 0, "sell_signals": 0,
-            "type_breakdown": {}, "articles": [],
+            "available": False,
+            "article_count": 0,
+            "cramer_signal": "unknown",
+            "inverse_signal": "WAIT",
+            "inverse_score": 0.0,
+            "confidence": "low",
+            "buy_signals": 0,
+            "sell_signals": 0,
+            "type_breakdown": {},
+            "articles": [],
         }
     if isinstance(options, Exception):
         logger.warning("Options exception: %s", options)
@@ -1786,16 +2117,13 @@ async def get_sentiment(ticker: str, force_refresh: bool = False) -> dict:
         scores.append(opt_score)
         weights.append(2.0)
 
-    agg_score = (
-        sum(s * w for s, w in zip(scores, weights, strict=False)) / sum(weights)
-        if scores else 0.0
-    )
+    agg_score = sum(s * w for s, w in zip(scores, weights, strict=False)) / sum(weights) if scores else 0.0
     agg_score = round(max(-1.0, min(1.0, agg_score)), 4)
 
-    label = ("bullish" if agg_score > 0.15 else "bearish" if agg_score < -0.15 else "neutral")
+    label = "bullish" if agg_score > 0.15 else "bearish" if agg_score < -0.15 else "neutral"
 
     text_calls = x_data.get("call_mentions", 0)
-    text_puts  = x_data.get("put_mentions",  0)
+    text_puts = x_data.get("put_mentions", 0)
 
     combined_types: Counter = Counter()
     for src in (x_data, cramer):
@@ -1805,72 +2133,131 @@ async def get_sentiment(ticker: str, force_refresh: bool = False) -> dict:
     merged_type_pcts = {k: round(v / total_type * 100) for k, v in combined_types.items()}
 
     result = {
-        "ticker":    ticker.upper(),
+        "ticker": ticker.upper(),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "aggregate": {
-            "score":          agg_score,
-            "label":          label,
-            "text_calls":     text_calls,
-            "text_puts":      text_puts,
+            "score": agg_score,
+            "label": label,
+            "text_calls": text_calls,
+            "text_puts": text_puts,
             "type_breakdown": merged_type_pcts,
             # Options contribution to the aggregate
-            "options_score":  opt_score,
-            "options_label":  opt_label,
+            "options_score": opt_score,
+            "options_label": opt_label,
         },
         # Full breakdown of options-activity signals (for UI display)
         "options_activity": opt_details,
-        "x":          x_data,
-        "cramer":     cramer,
+        "x": x_data,
+        "cramer": cramer,
         "options_flow": options,
     }
     _sentiment_cache_put(ticker, result)
     return result
 
-# Used by the Inverse Cramer sector-fallback path: when the requested ticker
-# has no recent Cramer coverage we look up peers in the same sector and
-# return their most recent mentions.  yfinance's Ticker.info["sector"] is
-# available but slow and unreliable; this table covers the most-traded names.
-# Sectors deliberately match the bucket names used in _SECTOR_KEYWORDS above.
+
+# Sector → ticker map for Cramer sector fallback.
 
 _TICKER_SECTOR_MAP: dict[str, str] = {
     # Technology
-    "AAPL": "tech", "MSFT": "tech", "GOOG": "tech", "GOOGL": "tech",
-    "META": "tech", "AMZN": "tech", "TSLA": "tech", "NVDA": "tech",
-    "AMD": "tech",  "INTC": "tech", "CRM": "tech",  "ORCL": "tech",
-    "ADBE": "tech", "QCOM": "tech", "AVGO": "tech", "TXN": "tech",
-    "NFLX": "tech", "UBER": "tech", "LYFT": "tech", "SNAP": "tech",
-    "PINS": "tech", "TWTR": "tech", "SPOT": "tech", "ZM": "tech",
-    "SHOP": "tech", "SQ": "tech",   "PYPL": "tech", "NET": "tech",
-    "DDOG": "tech", "SNOW": "tech", "PLTR": "tech", "RBLX": "tech",
-    "HOOD": "tech", "COIN": "tech", "MSTR": "tech",
+    "AAPL": "tech",
+    "MSFT": "tech",
+    "GOOG": "tech",
+    "GOOGL": "tech",
+    "META": "tech",
+    "AMZN": "tech",
+    "TSLA": "tech",
+    "NVDA": "tech",
+    "AMD": "tech",
+    "INTC": "tech",
+    "CRM": "tech",
+    "ORCL": "tech",
+    "ADBE": "tech",
+    "QCOM": "tech",
+    "AVGO": "tech",
+    "TXN": "tech",
+    "NFLX": "tech",
+    "UBER": "tech",
+    "LYFT": "tech",
+    "SNAP": "tech",
+    "PINS": "tech",
+    "TWTR": "tech",
+    "SPOT": "tech",
+    "ZM": "tech",
+    "SHOP": "tech",
+    "SQ": "tech",
+    "PYPL": "tech",
+    "NET": "tech",
+    "DDOG": "tech",
+    "SNOW": "tech",
+    "PLTR": "tech",
+    "RBLX": "tech",
+    "HOOD": "tech",
+    "COIN": "tech",
+    "MSTR": "tech",
     # Energy
-    "XOM": "energy", "CVX": "energy", "COP": "energy", "SLB": "energy",
-    "OXY": "energy", "MPC": "energy", "VLO": "energy", "PSX": "energy",
-    "EOG": "energy", "PXD": "energy", "HAL": "energy", "BKR": "energy",
-    "DVN": "energy", "FANG": "energy", "APA": "energy",
+    "XOM": "energy",
+    "CVX": "energy",
+    "COP": "energy",
+    "SLB": "energy",
+    "OXY": "energy",
+    "MPC": "energy",
+    "VLO": "energy",
+    "PSX": "energy",
+    "EOG": "energy",
+    "PXD": "energy",
+    "HAL": "energy",
+    "BKR": "energy",
+    "DVN": "energy",
+    "FANG": "energy",
+    "APA": "energy",
     # Financials
-    "JPM": "financials", "BAC": "financials", "WFC": "financials",
-    "GS": "financials",  "MS": "financials",  "C": "financials",
-    "BRK.B": "financials", "BLK": "financials", "SCHW": "financials",
-    "AXP": "financials", "V": "financials",  "MA": "financials",
-    "COF": "financials", "DFS": "financials", "SYF": "financials",
-    "ALLY": "financials", "BX": "financials", "KKR": "financials",
+    "JPM": "financials",
+    "BAC": "financials",
+    "WFC": "financials",
+    "GS": "financials",
+    "MS": "financials",
+    "C": "financials",
+    "BRK.B": "financials",
+    "BLK": "financials",
+    "SCHW": "financials",
+    "AXP": "financials",
+    "V": "financials",
+    "MA": "financials",
+    "COF": "financials",
+    "DFS": "financials",
+    "SYF": "financials",
+    "ALLY": "financials",
+    "BX": "financials",
+    "KKR": "financials",
     # Healthcare
-    "JNJ": "healthcare", "PFE": "healthcare", "MRK": "healthcare",
-    "ABBV": "healthcare", "BMY": "healthcare", "AMGN": "healthcare",
-    "GILD": "healthcare", "BIIB": "healthcare", "REGN": "healthcare",
-    "LLY": "healthcare", "UNH": "healthcare",  "CVS": "healthcare",
-    "HUM": "healthcare", "CI": "healthcare",   "ISRG": "healthcare",
-    "MRNA": "healthcare", "BNTX": "healthcare", "NVAX": "healthcare",
+    "JNJ": "healthcare",
+    "PFE": "healthcare",
+    "MRK": "healthcare",
+    "ABBV": "healthcare",
+    "BMY": "healthcare",
+    "AMGN": "healthcare",
+    "GILD": "healthcare",
+    "BIIB": "healthcare",
+    "REGN": "healthcare",
+    "LLY": "healthcare",
+    "UNH": "healthcare",
+    "CVS": "healthcare",
+    "HUM": "healthcare",
+    "CI": "healthcare",
+    "ISRG": "healthcare",
+    "MRNA": "healthcare",
+    "BNTX": "healthcare",
+    "NVAX": "healthcare",
 }
 
 # Sector → representative tickers to search Cramer coverage for
 _SECTOR_PEER_TICKERS: dict[str, list[str]] = {
-    "tech":       ["AAPL", "MSFT", "NVDA", "GOOG", "META", "AMZN", "TSLA"],
-    "energy":     ["XOM",  "CVX",  "COP",  "OXY",  "SLB"],
-    "financials": ["JPM",  "BAC",  "GS",   "MS",   "V",   "MA"],
-    "healthcare": ["JNJ",  "PFE",  "MRK",  "ABBV", "UNH", "LLY"],
+    "tech": ["AAPL", "MSFT", "NVDA", "GOOG", "META", "AMZN", "TSLA"],
+    "energy": ["XOM", "CVX", "COP", "OXY", "SLB"],
+    "financials": ["JPM", "BAC", "GS", "MS", "V", "MA"],
+    "healthcare": ["JNJ", "PFE", "MRK", "ABBV", "UNH", "LLY"],
 }
+
 
 async def _cramer_for_sector(sector: str) -> dict:
     """
@@ -1885,11 +2272,17 @@ async def _cramer_for_sector(sector: str) -> dict:
     peers = _SECTOR_PEER_TICKERS.get(sector, [])
     if not peers:
         return {
-            "available": False, "article_count": 0,
-            "cramer_signal": "unknown", "inverse_signal": "WAIT",
-            "inverse_score": 0.0, "confidence": "low",
-            "buy_signals": 0, "sell_signals": 0,
-            "articles": [], "picks": [], "type_breakdown": {},
+            "available": False,
+            "article_count": 0,
+            "cramer_signal": "unknown",
+            "inverse_signal": "WAIT",
+            "inverse_score": 0.0,
+            "confidence": "low",
+            "buy_signals": 0,
+            "sell_signals": 0,
+            "articles": [],
+            "picks": [],
+            "type_breakdown": {},
             "source_label": "Sector Cramer Signal",
         }
 
@@ -1908,7 +2301,7 @@ async def _cramer_for_sector(sector: str) -> dict:
                 art = dict(art)
                 art["peer_ticker"] = peer
                 collected_articles.append(art)
-            total_buy  += result.get("buy_signals",  0)
+            total_buy += result.get("buy_signals", 0)
             total_sell += result.get("sell_signals", 0)
         except Exception as exc:
             logger.debug("[_cramer_for_sector] peer %s error: %s", peer, exc)
@@ -1938,24 +2331,25 @@ async def _cramer_for_sector(sector: str) -> dict:
             inverse_score = 0.0
 
         strength = abs(total_buy - total_sell) / max(total_buy + total_sell, 1)
-        confidence = "high" if n >= 5 and strength >= 0.5 else (
-            "medium" if n >= 2 and strength >= 0.25 else "low"
+        confidence = (
+            "high" if n >= 5 and strength >= 0.5 else ("medium" if n >= 2 and strength >= 0.25 else "low")
         )
 
     return {
-        "available":      n > 0,
-        "article_count":  n,
-        "cramer_signal":  cramer_signal,
+        "available": n > 0,
+        "article_count": n,
+        "cramer_signal": cramer_signal,
         "inverse_signal": inverse_signal,
-        "inverse_score":  round(inverse_score, 4),
-        "confidence":     confidence,
-        "buy_signals":    total_buy,
-        "sell_signals":   total_sell,
-        "articles":       collected_articles[:5],
-        "picks":          [],
+        "inverse_score": round(inverse_score, 4),
+        "confidence": confidence,
+        "buy_signals": total_buy,
+        "sell_signals": total_sell,
+        "articles": collected_articles[:5],
+        "picks": [],
         "type_breakdown": {},
-        "source_label":   "Sector Cramer Signal",
+        "source_label": "Sector Cramer Signal",
     }
+
 
 def get_ticker_sector(ticker: str) -> str | None:
     """Return the sector for a ticker, or None if unknown."""

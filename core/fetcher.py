@@ -31,6 +31,7 @@ _cache: dict = {}  # key → (df, expire_time)
 _inflight_lock = threading.RLock()
 _inflight: dict = {}  # key → threading.Event
 
+
 def _cache_get(key: tuple) -> pd.DataFrame | None:
     with _cache_lock:
         entry = _cache.get(key)
@@ -42,6 +43,7 @@ def _cache_get(key: tuple) -> pd.DataFrame | None:
             return None
         return df.copy()  # return a copy so callers can't mutate the cache
 
+
 def _cache_put(key: tuple, df: pd.DataFrame) -> None:
     with _cache_lock:
         # Evict expired entries to prevent unbounded growth
@@ -51,13 +53,16 @@ def _cache_put(key: tuple, df: pd.DataFrame) -> None:
             del _cache[k]
         _cache[key] = (df.copy(), now + _CACHE_TTL)
 
+
 def clear_fetch_cache() -> None:
     """Flush the entire in-process fetch cache (useful in tests)."""
     with _cache_lock:
         _cache.clear()
 
+
 _RETRY_ATTEMPTS = 3
 _RETRY_BASE_S = 1.0  # first sleep = 1 s, then 2 s, then 4 s
+
 
 def _with_retry(fn, *args, label: str = "fetch"):
     """
@@ -81,6 +86,7 @@ def _with_retry(fn, *args, label: str = "fetch"):
                 )
                 time.sleep(sleep_s)
     raise last_exc
+
 
 # Pre-market:  04:00 - 09:29
 # Regular:     09:30 - 15:59
@@ -114,6 +120,7 @@ _INTERVAL_MINUTES = {
     "1d": 1440,
 }
 
+
 def _lookback_days(interval: str, n_candles: int, buffer: float = 1.6) -> int:
     """
     How many calendar days to request to reliably get n_candles.
@@ -136,6 +143,7 @@ def _lookback_days(interval: str, n_candles: int, buffer: float = 1.6) -> int:
     cpd = 390.0 / mins  # candles per trading day
     needed = max(int((n_candles / cpd) * buffer) + 3, 5)
     return min(needed, _YF_MAX_DAYS.get(interval, 60))
+
 
 def current_session() -> str:
     """Return the current US market session based on ET wall-clock time."""
@@ -162,6 +170,7 @@ def current_session() -> str:
         return "after-hours"
     return "closed"
 
+
 def should_use_extended(user_extended: bool) -> bool:
     """
     Return True if extended-hours data should be fetched.
@@ -171,6 +180,7 @@ def should_use_extended(user_extended: bool) -> bool:
         return True
     session = current_session()
     return session in ("pre-market", "after-hours")
+
 
 def _session_label(df: pd.DataFrame) -> str:
     """Tag the last candle's session."""
@@ -192,6 +202,7 @@ def _session_label(df: pd.DataFrame) -> str:
     if 16 <= h < 20:
         return "after-hours"
     return "closed"
+
 
 def _filter_regular_hours(df: pd.DataFrame, interval: str = "") -> pd.DataFrame:
     """
@@ -215,6 +226,7 @@ def _filter_regular_hours(df: pd.DataFrame, interval: str = "") -> pd.DataFrame:
         return filtered if len(filtered) > 0 else df
     except Exception:
         return df
+
 
 def _yfinance(ticker: str, interval: str, n: int, extended: bool) -> pd.DataFrame:
     import yfinance as yf
@@ -246,6 +258,7 @@ def _yfinance(ticker: str, interval: str, n: int, extended: bool) -> pd.DataFram
     if not extended:
         df = _filter_regular_hours(df, interval=interval)
     return df.tail(n)
+
 
 def _alpaca(ticker: str, interval: str, n: int, extended: bool) -> pd.DataFrame:
     from alpaca.data.historical import StockHistoricalDataClient
@@ -286,6 +299,7 @@ def _alpaca(ticker: str, interval: str, n: int, extended: bool) -> pd.DataFrame:
         bars = _filter_regular_hours(bars, interval=interval)
     return bars.tail(n)
 
+
 def _polygon(ticker: str, interval: str, n: int, extended: bool) -> pd.DataFrame:
     import httpx
 
@@ -322,6 +336,7 @@ def _polygon(ticker: str, interval: str, n: int, extended: bool) -> pd.DataFrame
     if not extended:
         df = _filter_regular_hours(df, interval=interval)
     return df.tail(n)
+
 
 def fetch_candles(
     ticker: str,
@@ -435,6 +450,7 @@ def fetch_candles(
             with _inflight_lock:
                 _inflight.pop(cache_key, None)
             event.set()  # wake any threads that were waiting on this key
+
 
 def get_latest_price(ticker: str) -> float | None:
     """Always fetches with extended=True to get live price at any hour."""

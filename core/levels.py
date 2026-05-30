@@ -30,6 +30,7 @@ _FIB_LABELS = {
     2.618: "261.8%",
 }
 
+
 @dataclass
 class FibLevels:
     """All Fibonacci levels derived from the most recent significant swing."""
@@ -53,6 +54,7 @@ class FibLevels:
     d_1618: float
     d_2618: float
 
+
 @dataclass
 class StructuralTarget:
     """A single max-high or max-downside price target with confluence metadata."""
@@ -64,6 +66,7 @@ class StructuralTarget:
     fib_ratio: float | None = None
     zone_price: float | None = None
     score: float = 0.0
+
 
 def _find_swing(df: pd.DataFrame, window: int = 8) -> tuple[float, float]:
     """
@@ -103,6 +106,7 @@ def _find_swing(df: pd.DataFrame, window: int = 8) -> tuple[float, float]:
     sl = min(pivot_lows) if pivot_lows else float(np.nanmin(lows))
     return sh, sl
 
+
 def _build_fib_levels(swing_high: float, swing_low: float) -> FibLevels:
     rng = swing_high - swing_low
     if rng <= 0:
@@ -134,6 +138,7 @@ def _build_fib_levels(swing_high: float, swing_low: float) -> FibLevels:
         d_1618=ext_dn(1.618),
         d_2618=ext_dn(2.618),
     )
+
 
 def _score_level(
     level: float,
@@ -168,6 +173,7 @@ def _score_level(
 
     return round(score, 2)
 
+
 def _confluence_label(
     fib_ratio: float | None,
     zone_price: float | None,
@@ -181,6 +187,7 @@ def _confluence_label(
     if not parts:
         parts.append("2× ATR" if method == "atr" else "S/R zone")
     return " + ".join(parts)
+
 
 def _best_target(
     candidates: list[tuple[float, float | None]],  # (price, fib_ratio)
@@ -248,6 +255,7 @@ def _best_target(
         confluence="2× ATR",
         score=0.0,
     )
+
 
 def compute_price_targets(
     df: pd.DataFrame,

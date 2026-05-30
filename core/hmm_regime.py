@@ -23,12 +23,14 @@ _PRIORS: dict[str, dict[str, float]] = {
     "unknown": {"bounce": 0.40, "break": 0.30, "consolidate": 0.30},
 }
 
+
 @dataclass
 class HMMState:
     label: str
     mean_return: float
     volatility: float
     probability: float  # P(currently in this state)
+
 
 @dataclass
 class HMMResult:
@@ -63,10 +65,12 @@ class HMMResult:
             "transition_matrix": [[round(v, 4) for v in row] for row in self.transition_matrix],
         }
 
+
 def _gauss_pdf(x: np.ndarray, mu: float, sigma: float) -> np.ndarray:
     """Gaussian pdf - safe against zero sigma."""
     sigma = max(sigma, 1e-9)
     return np.exp(-0.5 * ((x - mu) / sigma) ** 2) / (sigma * np.sqrt(2 * np.pi))
+
 
 def _forward(
     x: np.ndarray, pi: np.ndarray, A: np.ndarray, mus: np.ndarray, sigs: np.ndarray
@@ -96,6 +100,7 @@ def _forward(
 
     return alpha, c
 
+
 def _backward(x: np.ndarray, c: np.ndarray, A: np.ndarray, mus: np.ndarray, sigs: np.ndarray) -> np.ndarray:
     """Scaled backward algorithm. Returns beta (T × K)."""
     T, K = len(x), A.shape[0]
@@ -107,6 +112,7 @@ def _backward(x: np.ndarray, c: np.ndarray, A: np.ndarray, mus: np.ndarray, sigs
         beta[t] = (A @ (b * beta[t + 1])) / c[t + 1]
 
     return beta
+
 
 def _baum_welch(
     x: np.ndarray, K: int, seed: int = 0
@@ -167,6 +173,7 @@ def _baum_welch(
 
     return pi, A, mus, sigs, prev_ll
 
+
 def _label_states(mus: np.ndarray, sigs: np.ndarray) -> list[str]:
     """Auto-label states: highest σ → volatile, highest |μ| → trending, rest → ranging."""
     K = len(mus)
@@ -187,6 +194,7 @@ def _label_states(mus: np.ndarray, sigs: np.ndarray) -> list[str]:
         labels[i] = "ranging"
 
     return labels
+
 
 def _fit_hmm(returns: np.ndarray) -> HMMResult:
     """Fit Gaussian HMM with multiple random restarts, pick best log-likelihood."""
@@ -245,6 +253,7 @@ def _fit_hmm(returns: np.ndarray) -> HMMResult:
         n_bars_used=len(returns),
     )
 
+
 def _heuristic_regime(returns: np.ndarray) -> HMMResult:
     """
     Volatility/momentum 3-way classifier - O(n), no fitting needed.
@@ -294,6 +303,7 @@ def _heuristic_regime(returns: np.ndarray) -> HMMResult:
         n_bars_used=n,
     )
 
+
 def _unknown_result(n: int, error: str) -> HMMResult:
     state_list = [
         HMMState(label="ranging", mean_return=0.0, volatility=0.01, probability=0.50),
@@ -310,6 +320,7 @@ def _unknown_result(n: int, error: str) -> HMMResult:
         n_bars_used=n,
         error=error,
     )
+
 
 def analyse_hmm(returns: Sequence[float]) -> HMMResult:
     """
@@ -337,6 +348,7 @@ def analyse_hmm(returns: Sequence[float]) -> HMMResult:
             return _heuristic_regime(arr) if len(arr) >= 10 else _unknown_result(0, str(exc))
         except Exception:
             return _unknown_result(0, str(exc)[:80])
+
 
 def blend_zone_probability(
     hmm: HMMResult,
