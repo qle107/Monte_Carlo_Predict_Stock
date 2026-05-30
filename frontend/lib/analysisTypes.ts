@@ -1,5 +1,3 @@
-// Mirrors the dict returned by api/analysis.py _run_analysis() / GET /api/signal.
-
 export interface Signal {
   composite: number; // -1..1
   confidence: number; // 0..1

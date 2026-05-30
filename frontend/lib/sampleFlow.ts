@@ -1,7 +1,5 @@
 import type { ScanResponse, UnusualOption } from "./types";
 
-// Shown when the FastAPI backend is unreachable, so the layout is visible
-// without a running server. Mirrors the reference flow screenshot.
 function mk(p: Partial<UnusualOption>): UnusualOption {
   return {
     ticker: "",

@@ -13,7 +13,6 @@ body {
   font-feature-settings: "tnum";
 }
 
-/* tabular numbers for all financial figures */
 .tnum {
   font-variant-numeric: tabular-nums;
 }
@@ -28,4 +27,30 @@ body {
 }
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+@layer components {
+  .panel {
+    @apply rounded-xl border border-line bg-panel p-4;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md text-[12px] font-semibold
+           transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn border border-[#1f6feb] bg-[#1f6feb] px-3 py-1.5 text-white hover:bg-[#388bfd];
+  }
+  .btn-ghost {
+    @apply btn border border-line bg-[#161c23] px-3 py-1.5 text-ink hover:border-line2;
+  }
+  .field {
+    @apply rounded-md border border-line bg-[#161c23] px-2.5 py-1.5 text-[12px] text-ink
+           outline-none hover:border-line2 focus:border-line2;
+  }
+  .chip {
+    @apply whitespace-nowrap rounded-full border border-line bg-[#161c23] px-2.5 py-1 text-[11.5px] text-muted;
+  }
+  .chip-good {
+    @apply chip border-up/25 bg-up/10 text-up;
+  }
 }

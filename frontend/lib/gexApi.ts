@@ -1,6 +1,5 @@
 import type { OptionsFlow } from "./gexTypes";
 
-// GET /api/options/gex?ticker=XXX
 export async function fetchGex(ticker: string): Promise<OptionsFlow> {
   const res = await fetch(`/api/options/gex?ticker=${encodeURIComponent(ticker.toUpperCase().trim())}`, {
     cache: "no-store",

@@ -1,6 +1,5 @@
 import type { ScanParams, ScanReport } from "./scannerTypes";
 
-// POST /api/scan — breakout/breakdown scan over a watchlist.
 export async function runScan(p: ScanParams): Promise<ScanReport> {
   const res = await fetch("/api/scan", {
     method: "POST",
@@ -26,7 +25,7 @@ export async function runScan(p: ScanParams): Promise<ScanReport> {
 }
 
 export const SCAN_WATCHLISTS: { value: string; label: string }[] = [
-  { value: "sp500_large", label: "S&P 500 large" },
+  { value: "sp500_large", label: "s&p 500 large" },
   { value: "momentum", label: "momentum" },
   { value: "tech", label: "tech" },
   { value: "biotech", label: "biotech" },

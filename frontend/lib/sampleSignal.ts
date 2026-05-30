@@ -1,6 +1,5 @@
 import type { AnalysisResult } from "./analysisTypes";
 
-// Offline fallback so /signal renders without a running backend.
 const median = [62.1, 62.4, 62.9, 63.2, 63.0, 63.6, 64.1, 64.5, 64.9, 65.2, 65.6];
 const p75 = median.map((v, i) => v + 0.6 + i * 0.18);
 const p25 = median.map((v, i) => v - 0.6 - i * 0.16);
@@ -20,9 +19,9 @@ export const SAMPLE_SIGNAL: AnalysisResult = {
     base_drift: 0.0004,
     signal_adj: 0.0006,
     vol_adj: 0.93,
-    label: "Bullish",
+    label: "bullish",
     reasoning:
-      "EMA9 > EMA21 with rising MACD histogram; OBV slope positive; price above VWAP. ADX 24 confirms trend.",
+      "ema9 > ema21 with rising macd histogram; obv slope positive; price above vwap. adx 24 confirms trend.",
     gap_warning: "",
     sub_scores: {
       rsi: 0.31,
@@ -41,7 +40,7 @@ export const SAMPLE_SIGNAL: AnalysisResult = {
   },
   regime: {
     regime: "weak_uptrend",
-    verdict: "Trending up, moderate conviction",
+    verdict: "trending up, moderate conviction",
     potential_up: 52,
     potential_down: 28,
     potential_flat: 20,
@@ -101,7 +100,8 @@ export const SAMPLE_SIGNAL: AnalysisResult = {
     stop: 60.2,
     target: 66.4,
     rr: 2.3,
-    reason: "Breakout pullback with MC prob_up 58%",
+    reason: "breakout pullback with mc prob_up 58%",
   },
   warnings: [],
+  candles: [],
 };

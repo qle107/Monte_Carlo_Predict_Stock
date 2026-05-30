@@ -1,10 +1,10 @@
 "use client";
 
 import type { MC } from "@/lib/analysisTypes";
+import { label } from "@/lib/display";
 
 type Pt = { x: number; y: number };
 
-// Catmull-Rom → cubic Bézier smoothing (segments only, assumes pen at pts[0]).
 function segs(p: Pt[]): string {
   let d = "";
   for (let i = 0; i < p.length - 1; i++) {
@@ -26,85 +26,134 @@ const band = (top: Pt[], bot: Pt[]) => {
   return `${smooth(top)} L${r[0].x},${r[0].y} ${segs(r)} Z`;
 };
 
-export default function McFanChart({ mc, spot }: { mc: MC; spot: number }) {
-  const med = mc.median_path || [];
-  const n = med.length;
-  if (n < 2) return <div className="text-[12px] text-muted">No simulation path data.</div>;
+function barsPerDay(interval: string): number {
+  switch (interval) {
+    case "1d": return 1;
+    case "4h": return 2;
+    case "1h": return 7;
+    case "30m": return 13;
+    case "15m": return 26;
+    case "5m": return 78;
+    case "2m": return 195;
+    case "1m": return 390;
+    default: return 1;
+  }
+}
+
+const HORIZONS = [
+  { label: "1d", days: 1 },
+  { label: "3d", days: 3 },
+  { label: "1w", days: 5 },
+];
+
+export default function McFanChart({
+  mc,
+  spot,
+  interval = "1d",
+}: {
+  mc: MC;
+  spot: number;
+  interval?: string;
+}) {
+  if (!spot || spot <= 0) {
+    return <div className="text-[12px] text-muted">No projection data.</div>;
+  }
+
+  const nf = Math.max(1, (mc.median_path?.length || 2) - 1);
+  const muStep = Math.log((mc.expected_price || spot) / spot) / nf;
+  const p75 = mc.p75_price || spot;
+  const p25 = mc.p25_price || spot;
+  const sigmaTotal = Math.max(1e-6, Math.log(Math.max(p75, 1e-6) / Math.max(p25, 1e-6)) / (2 * 0.6745));
+  const sigmaStep = sigmaTotal / Math.sqrt(nf);
+  const bpd = barsPerDay(interval);
+
+  const maxDays = HORIZONS[HORIZONS.length - 1].days;
+  const project = (days: number) => {
+    const steps = days * bpd;
+    const median = spot * Math.exp(muStep * steps);
+    const halfBand = 0.6745 * sigmaStep * Math.sqrt(Math.max(steps, 0));
+    return { median, hi: median * Math.exp(halfBand), lo: median * Math.exp(-halfBand) };
+  };
+
+  const SAMPLES = 48;
+  const days: number[] = Array.from({ length: SAMPLES + 1 }, (_, i) => (i / SAMPLES) * maxDays);
+  const medArr = days.map((t) => project(t).median);
+  const hiArr = days.map((t) => project(t).hi);
+  const loArr = days.map((t) => project(t).lo);
 
   const W = 560;
   const H = 230;
   const padX = 6;
   const padR = 56;
-  const padY = 14;
+  const padY = 16;
 
-  const all = [mc.p10_band, mc.p90_band, mc.lower_band, mc.upper_band, med, [spot]];
   let lo = Infinity;
   let hi = -Infinity;
-  for (const s of all) for (const v of s) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  for (const v of [...hiArr, ...loArr, spot]) {
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }
   const span = hi - lo || 1;
 
-  const x = (i: number) => padX + (i / (n - 1)) * (W - padX - padR);
+  const x = (t: number) => padX + (t / maxDays) * (W - padX - padR);
   const y = (v: number) => padY + (1 - (v - lo) / span) * (H - 2 * padY);
-  const pts = (arr: number[]) => arr.slice(0, n).map((v, i) => ({ x: x(i), y: y(v) }));
+  const toPts = (arr: number[]) => arr.map((v, i) => ({ x: x(days[i]), y: y(v) }));
 
-  const lastX = x(n - 1);
-  const upPrice = mc.p90_band[n - 1] ?? mc.upper_band[n - 1] ?? med[n - 1];
-  const midPrice = med[n - 1];
-  const dnPrice = mc.p10_band[n - 1] ?? mc.lower_band[n - 1] ?? med[n - 1];
+  const medPts = toPts(medArr);
+  const hiPts = toPts(hiArr);
+  const loPts = toPts(loArr);
 
-  const node = (price: number, color: string, label: string) => {
-    const ny = y(price);
-    return (
-      <g>
-        <line x1={lastX} x2={lastX + 8} y1={ny} y2={ny} stroke={color} strokeWidth={1} opacity={0.6} />
-        <circle cx={lastX} cy={ny} r={3.2} fill={color} stroke="#0b0e11" strokeWidth={1} />
-        <text x={lastX + 11} y={ny - 2} fontSize={10} fontWeight={700} fill={color}>${price.toFixed(2)}</text>
-        <text x={lastX + 11} y={ny + 8} fontSize={8} fill="#7d8b99">{label}</text>
-      </g>
-    );
-  };
+  const horizonNodes = HORIZONS.map((h) => {
+    const p = project(h.days);
+    return { ...h, ...p, px: x(h.days), py: y(p.median) };
+  });
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
       <defs>
-        <linearGradient id="mcOuter" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#58a6ff" stopOpacity="0.04" />
-          <stop offset="100%" stopColor="#58a6ff" stopOpacity="0.16" />
+        <linearGradient id="mcInner" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#58a6ff" stopOpacity="0.22" />
+          <stop offset="100%" stopColor="#58a6ff" stopOpacity="0.02" />
         </linearGradient>
-        <linearGradient id="mcInner" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#58a6ff" stopOpacity="0.10" />
-          <stop offset="100%" stopColor="#58a6ff" stopOpacity="0.30" />
-        </linearGradient>
-        <linearGradient id="mcLine" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#388bfd" />
-          <stop offset="100%" stopColor="#7cc7ff" />
-        </linearGradient>
-        <filter id="mcGlow" x="-20%" y="-40%" width="140%" height="180%">
-          <feGaussianBlur stdDeviation="3" result="b" />
-          <feMerge>
-            <feMergeNode in="b" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
       </defs>
 
-      {/* outer P10–P90 band */}
-      <path d={band(pts(mc.p90_band), pts(mc.p10_band))} fill="url(#mcOuter)" />
-      {/* inner P25–P75 band */}
-      <path d={band(pts(mc.upper_band), pts(mc.lower_band))} fill="url(#mcInner)" />
+      <path d={band(hiPts, loPts)} fill="url(#mcInner)" />
 
-      {/* spot reference */}
-      <line x1={padX} x2={lastX} y1={y(spot)} y2={y(spot)} stroke="#7d8b99" strokeWidth={1} strokeDasharray="4 4" opacity={0.7} />
-      <text x={padX + 2} y={y(spot) - 4} fontSize={8.5} fill="#7d8b99">spot ${spot.toFixed(2)}</text>
+      <line x1={padX} x2={x(maxDays)} y1={y(spot)} y2={y(spot)} stroke="#7d8b99" strokeWidth={1} strokeDasharray="4 4" opacity={0.7} />
+      <text x={padX + 2} y={y(spot) - 4} fontSize={8.5} fill="#7d8b99">{label("spot")} ${spot.toFixed(2)}</text>
 
-      {/* median line: soft glow + crisp gradient stroke */}
-      <path d={smooth(pts(med))} fill="none" stroke="#58a6ff" strokeWidth={3} opacity={0.35} filter="url(#mcGlow)" />
-      <path d={smooth(pts(med))} fill="none" stroke="url(#mcLine)" strokeWidth={2.2} strokeLinecap="round" />
+      <path d={smooth(medPts)} fill="none" stroke="#58a6ff" strokeWidth={2.2} strokeLinecap="round" />
 
-      {/* end-of-horizon price nodes (up / median / down) */}
-      {node(upPrice, "#3fb950", "P90")}
-      {node(midPrice, "#7cc7ff", "median")}
-      {node(dnPrice, "#f0556d", "P10")}
+      {horizonNodes.map((h) => {
+        const up = h.median >= spot;
+        const dotColor = up ? "#3fb950" : "#f0556d";
+        const labelAbove = h.py > padY + 26;
+        return (
+          <g key={h.label}>
+            <line x1={h.px} x2={h.px} y1={y(spot)} y2={h.py} stroke={dotColor} strokeWidth={1} strokeDasharray="3 3" opacity={0.45} />
+            <circle cx={h.px} cy={h.py} r={3.4} fill={dotColor} stroke="#0b0e11" strokeWidth={1} />
+            <text
+              x={h.px}
+              y={labelAbove ? h.py - 9 : h.py + 16}
+              fontSize={10}
+              fontWeight={700}
+              fill={dotColor}
+              textAnchor="middle"
+            >
+              ${h.median.toFixed(2)}
+            </text>
+            <text
+              x={h.px}
+              y={labelAbove ? h.py - 19 : h.py + 25}
+              fontSize={8}
+              fill="#7d8b99"
+              textAnchor="middle"
+            >
+              {h.label}
+            </text>
+          </g>
+        );
+      })}
     </svg>
   );
 }

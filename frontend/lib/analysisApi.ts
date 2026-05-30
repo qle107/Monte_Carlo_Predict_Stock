@@ -1,6 +1,5 @@
 import type { AnalysisResult } from "./analysisTypes";
 
-// GET /api/signal triggers a fresh analysis with the server's current config.
 export async function fetchSignal(): Promise<AnalysisResult> {
   const res = await fetch("/api/signal", { cache: "no-store" });
   if (!res.ok) {
@@ -18,7 +17,6 @@ export async function fetchSignal(): Promise<AnalysisResult> {
   return data;
 }
 
-// POST /api/config with an arbitrary patch, then re-run analysis.
 export async function setConfigAndAnalyze(patch: Record<string, unknown>): Promise<AnalysisResult> {
   const res = await fetch("/api/config", {
     method: "POST",
@@ -35,7 +33,6 @@ export async function setConfigAndAnalyze(patch: Record<string, unknown>): Promi
     }
     throw new Error(`${res.status} ${detail}`);
   }
-  // Config change kicks the poll loop; fetch a fresh result.
   return fetchSignal();
 }
 
@@ -43,16 +40,14 @@ export function setTickerAndAnalyze(ticker: string): Promise<AnalysisResult> {
   return setConfigAndAnalyze({ ticker: ticker.toUpperCase().trim() });
 }
 
-// Mirrors VALID_INTERVALS in config.py.
 export const INTERVALS = ["1m", "2m", "5m", "15m", "30m", "1h", "4h", "1d"];
 
-// Mirrors VALID_MC_MODELS in config.py.
 export const MC_MODELS: { value: string; label: string }[] = [
-  { value: "gaussian", label: "Gaussian GBM" },
-  { value: "student_t", label: "Student-t" },
-  { value: "garch", label: "GARCH(1,1)" },
-  { value: "bootstrap", label: "Bootstrap" },
-  { value: "jump", label: "Jump-diffusion" },
-  { value: "ensemble", label: "Ensemble" },
-  { value: "microstructure", label: "Microstructure" },
+  { value: "gaussian", label: "gaussian" },
+  { value: "student_t", label: "student-t" },
+  { value: "garch", label: "garch" },
+  { value: "bootstrap", label: "bootstrap" },
+  { value: "jump", label: "jump" },
+  { value: "ensemble", label: "ensemble" },
+  { value: "microstructure", label: "microstructure" },
 ];

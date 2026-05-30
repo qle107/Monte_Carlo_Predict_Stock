@@ -1,6 +1,5 @@
 import type { UnusualOption } from "./types";
 
-// Standard normal CDF (Abramowitz & Stegun 7.1.26 approximation).
 export function normCdf(x: number): number {
   const t = 1 / (1 + 0.2316419 * Math.abs(x));
   const d = 0.3989423 * Math.exp((-x * x) / 2);
@@ -12,7 +11,6 @@ export function normCdf(x: number): number {
   return x > 0 ? 1 - p : p;
 }
 
-// Black–Scholes delta from a chain snapshot. r = 5% risk-free.
 export function bsDelta(o: UnusualOption, r = 0.05): number {
   const sigma = (o.implied_vol || 0) / 100;
   const T = Math.max(o.days_to_expiry || 0, 0.5) / 365;

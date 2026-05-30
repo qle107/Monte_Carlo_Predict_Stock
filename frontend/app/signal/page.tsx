@@ -1,7 +1,7 @@
 import SignalPanel from "@/components/SignalPanel";
 
 export const metadata = {
-  title: "Signal & Monte Carlo — MC Trader",
+  title: "Signal | MC Trader",
 };
 
 export default function SignalPage() {

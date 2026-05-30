@@ -1,5 +1,3 @@
-// Mirrors core/options_flow.py OptionsFlow.to_dict().
-
 export interface GexBar {
   strike: number;
   gex: number; // net dealer gamma exposure at this strike

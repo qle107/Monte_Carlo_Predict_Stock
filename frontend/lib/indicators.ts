@@ -1,13 +1,6 @@
 import type { Candle } from "./analysisTypes";
 
-// Client-side overlay math computed from the candle series. Mirrors the backend
-// indicator intent for visualization only (the authoritative values come from
-// /api/signal). NaN is used for the warm-up region so lines start cleanly.
-
 export function ema(values: number[], period: number): number[] {
-  // Seeded EMA computed from the first bar so the line is visible even when the
-  // series is shorter than `period` (e.g. EMA200 on ~200 candles). Early values
-  // are an approximation — these overlays are for display only.
   const out = new Array(values.length).fill(NaN);
   if (values.length === 0) return out;
   const k = 2 / (period + 1);
@@ -51,7 +44,6 @@ export function bollinger(values: number[], period = 20, k = 2): Bollinger {
   return { mid, upper, lower };
 }
 
-// Cumulative VWAP over the visible window (typical price weighted by volume).
 export function vwap(candles: Candle[]): number[] {
   const out = new Array(candles.length).fill(NaN);
   let cumPV = 0;

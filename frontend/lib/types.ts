@@ -1,5 +1,3 @@
-// Mirrors core/options_flow.py UnusualOption.to_dict() and scan_unusual_options().
-
 export type OptionType = "call" | "put";
 export type TradeStyle = "sweep" | "block";
 export type ExecSide = "ask" | "bid" | "mid";
@@ -55,7 +53,6 @@ export interface ScanResponse {
   scanned_at: string; // ISO-8601
 }
 
-// Row enriched client-side with derived fields used by the table.
 export interface FlowRow extends UnusualOption {
   _delta: number;
   _time: string; // HH:MM:SS
@@ -73,8 +70,6 @@ export interface FlowFilters {
 }
 
 export const DEFAULT_FILTERS: FlowFilters = {
-  // Default to a small/fast universe. "all optionable" (~500 tickers) can take
-  // minutes and trips the dev proxy's socket timeout — pick it explicitly.
   watchlist: "momentum",
   min_sweep_premium: 50_000,
   min_block_premium: 100_000,

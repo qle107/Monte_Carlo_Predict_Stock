@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import type { Candle } from "@/lib/analysisTypes";
+import { label } from "@/lib/display";
 import { bollinger, ema, vwap } from "@/lib/indicators";
 
 export interface ChartLevel {
@@ -119,7 +120,6 @@ export default function PriceChart({
         onMouseMove={onMove}
         onMouseLeave={() => setHover(null)}
       >
-        {/* horizontal grid + right axis labels */}
         {gridVals.map((v, i) => (
           <g key={i}>
             <line x1={PL} x2={W - PR} y1={yP(v)} y2={yP(v)} stroke="#141a20" strokeWidth={1} />
@@ -129,7 +129,6 @@ export default function PriceChart({
           </g>
         ))}
 
-        {/* Bollinger bands */}
         {overlays.bb && (
           <>
             <path d={poly(x, yP, bb.upper)} fill="none" stroke="rgba(88,166,255,0.40)" strokeWidth={1} />
@@ -138,7 +137,6 @@ export default function PriceChart({
           </>
         )}
 
-        {/* Candles */}
         {candles.map((c, i) => {
           const up = c.c >= c.o;
           const col = up ? "#3fb950" : "#f0556d";
@@ -163,23 +161,20 @@ export default function PriceChart({
           );
         })}
 
-        {/* Overlays */}
         {overlays.vwap && <path d={poly(x, yP, vw)} fill="none" stroke="#bc6bd9" strokeWidth={1.4} />}
         {overlays.ema9 && <path d={poly(x, yP, e9)} fill="none" stroke="#f2c14e" strokeWidth={1.4} />}
         {overlays.ema21 && <path d={poly(x, yP, e21)} fill="none" stroke="#58a6ff" strokeWidth={1.4} />}
         {overlays.ema200 && <path d={poly(x, yP, e200)} fill="none" stroke="#e6edf3" strokeWidth={1.2} opacity={0.7} />}
 
-        {/* Levels */}
         {levels.map((lv, i) => (
           <g key={i}>
             <line x1={PL} x2={W - PR} y1={yP(lv.price)} y2={yP(lv.price)} stroke={lv.color} strokeWidth={1} strokeDasharray="5 3" opacity={0.85} />
             <text x={PL + 3} y={yP(lv.price) - 3} fontSize={9} fill={lv.color}>
-              {lv.label} {lv.price.toFixed(2)}
+              {label(lv.label)} {lv.price.toFixed(2)}
             </text>
           </g>
         ))}
 
-        {/* Crosshair */}
         {hc && hover != null && (
           <>
             <line x1={x(hover)} x2={x(hover)} y1={PT} y2={VOL_T + VOL_H} stroke="#7d8b99" strokeWidth={1} strokeDasharray="3 3" />
@@ -188,16 +183,15 @@ export default function PriceChart({
         )}
       </svg>
 
-      {/* Tooltip */}
       {hc && (
         <div className="pointer-events-none absolute left-2 top-2 rounded-md border border-line bg-[#0d1217]/95 px-2.5 py-1.5 text-[11px] tnum">
           <div className="text-dim">{new Date(hc.t).toLocaleString()}</div>
           <div className="mt-0.5 flex gap-3">
-            <span>O <b className="text-ink">{hc.o.toFixed(2)}</b></span>
-            <span>H <b className="text-up">{hc.h.toFixed(2)}</b></span>
-            <span>L <b className="text-down">{hc.l.toFixed(2)}</b></span>
-            <span>C <b className={hc.c >= hc.o ? "text-up" : "text-down"}>{hc.c.toFixed(2)}</b></span>
-            <span className="text-muted">V {hc.v.toLocaleString()}</span>
+            <span>o <b className="text-ink">{hc.o.toFixed(2)}</b></span>
+            <span>h <b className="text-up">{hc.h.toFixed(2)}</b></span>
+            <span>l <b className="text-down">{hc.l.toFixed(2)}</b></span>
+            <span>c <b className={hc.c >= hc.o ? "text-up" : "text-down"}>{hc.c.toFixed(2)}</b></span>
+            <span className="text-muted">v {hc.v.toLocaleString()}</span>
           </div>
         </div>
       )}

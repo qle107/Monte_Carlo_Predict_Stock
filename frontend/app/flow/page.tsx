@@ -1,7 +1,7 @@
 import FlowFeed from "@/components/FlowFeed";
 
 export const metadata = {
-  title: "Options Flow — MC Trader",
+  title: "Options Flow | MC Trader",
 };
 
 export default function FlowPage() {

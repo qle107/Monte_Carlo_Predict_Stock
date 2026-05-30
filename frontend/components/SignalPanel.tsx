@@ -1,10 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { displayText, label } from "@/lib/display";
 import { fetchSignal, INTERVALS, MC_MODELS, setConfigAndAnalyze, setTickerAndAnalyze } from "@/lib/analysisApi";
 import type { AnalysisResult } from "@/lib/analysisTypes";
 import { SAMPLE_SIGNAL } from "@/lib/sampleSignal";
 import McFanChart from "./McFanChart";
+import Select from "./Select";
+import StatusBadge from "./StatusBadge";
 
 export default function SignalPanel() {
   const [data, setData] = useState<AnalysisResult | null>(null);
@@ -22,9 +25,7 @@ export default function SignalPanel() {
     } catch (err) {
       setData(SAMPLE_SIGNAL);
       setStatus("offline");
-      setBanner(
-        `Couldn't reach the API (${(err as Error).message}). Showing sample analysis — start FastAPI and refresh.`
-      );
+      setBanner(`Could not reach API (${(err as Error).message}). Showing sample data.`);
     }
   }, []);
 
@@ -34,34 +35,36 @@ export default function SignalPanel() {
 
   const d = data;
   const horizons = d ? projectHorizons(d) : [];
+  const dotClass =
+    status === "live"
+      ? "bg-up shadow-[0_0_7px_#3fb950]"
+      : status === "loading"
+      ? "bg-gold"
+      : status === "offline"
+      ? "bg-gold"
+      : "bg-dim";
 
   return (
     <div className="pt-3">
-      {/* Header */}
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <h1 className="m-0 text-[17px] font-semibold tracking-tight">
           Signal &amp; Monte Carlo
-          {d && <span className="ml-2 text-[13px] font-normal text-muted">{d.ticker} · {d.interval} · {d.mc_model}</span>}
+          {d && (
+            <span className="ml-2 text-[13px] font-normal text-muted">
+              {d.ticker} / {d.interval} / {label(d.mc_model)}
+            </span>
+          )}
         </h1>
         <div className="flex-1" />
-        <span className="flex items-center gap-1.5 text-[12px] text-muted">
-          <span
-            className={
-              "inline-block h-[7px] w-[7px] rounded-full " +
-              (status === "live" ? "bg-up shadow-[0_0_7px_#3fb950]" : status === "loading" ? "bg-gold" : "bg-dim")
-            }
-          />
-          {status}
-        </span>
-        <select
+        <StatusBadge status={status} tone={dotClass} />
+        <Select
           value={d?.interval ?? "15m"}
-          onChange={(e) => load(() => setConfigAndAnalyze({ interval: e.target.value }))}
+          onChange={(v) => load(() => setConfigAndAnalyze({ interval: v }))}
+          options={INTERVALS.map((i) => ({ value: i, label: i }))}
           disabled={status === "loading"}
-          title="Timeframe"
-          className="rounded-md border border-line bg-[#161c23] px-2 py-1.5 text-[12px] outline-none hover:border-[#2c3a47] disabled:opacity-50"
-        >
-          {INTERVALS.map((i) => <option key={i} value={i}>{i}</option>)}
-        </select>
+          title="timeframe"
+          width={84}
+        />
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -72,22 +75,12 @@ export default function SignalPanel() {
           <input
             value={tickerInput}
             onChange={(e) => setTickerInput(e.target.value)}
-            placeholder="ticker"
-            className="w-24 rounded-md border border-line bg-[#161c23] px-2.5 py-1.5 text-[12px] uppercase outline-none focus:border-[#2c3a47]"
+            placeholder="Ticker"
+            className="field w-24 uppercase"
           />
-          <button
-            type="submit"
-            className="rounded-md border border-[#1f6feb] bg-[#1f6feb] px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-[#388bfd]"
-          >
-            Load
-          </button>
+          <button type="submit" className="btn-primary">Load</button>
         </form>
-        <button
-          onClick={() => load(fetchSignal)}
-          className="rounded-md border border-line bg-[#161c23] px-3 py-1.5 text-[12px] hover:border-[#2c3a47]"
-        >
-          Refresh
-        </button>
+        <button onClick={() => load(fetchSignal)} className="btn-ghost">Refresh</button>
       </div>
 
       {banner && (
@@ -97,36 +90,36 @@ export default function SignalPanel() {
       )}
 
       {!d ? (
-        <div className="rounded-xl border border-line bg-panel p-10 text-center text-muted">Loading analysis…</div>
+        <div className="rounded-xl border border-line bg-panel p-10 text-center text-muted">
+          Loading...
+        </div>
       ) : (
         <>
-          {/* Stat strip */}
           <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Stat label="Price" value={`$${d.current_price.toFixed(2)}`} />
+            <Stat name="price" value={`$${d.current_price.toFixed(2)}`} />
             <Stat
-              label="Signal"
-              value={d.signal.label}
+              name="signal"
+              value={displayText(d.signal.label)}
               tone={d.signal.composite > 0.05 ? "up" : d.signal.composite < -0.05 ? "down" : "muted"}
-              sub={`conf ${(d.signal.confidence * 100).toFixed(0)}%`}
+              sub={`${label("conf")} ${(d.signal.confidence * 100).toFixed(0)}%`}
             />
             <Stat
-              label="MC prob up"
+              name="mc prob up"
               value={`${d.mc.prob_up.toFixed(1)}%`}
               tone={d.mc.prob_up >= 50 ? "up" : "down"}
-              sub={`exp ${d.mc.expected_return >= 0 ? "+" : ""}${d.mc.expected_return.toFixed(1)}%`}
+              sub={`${label("exp")} ${d.mc.expected_return >= 0 ? "+" : ""}${d.mc.expected_return.toFixed(1)}%`}
             />
-            <Stat label="Regime" value={prettyRegime(d.regime.regime)} sub={`Hurst ${d.regime.hurst.toFixed(2)}`} />
+            <Stat name="regime" value={label(d.regime.regime)} sub={`${label("hurst")} ${d.regime.hurst.toFixed(2)}`} />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
-            {/* Signal card */}
-            <Card title="Signal">
+            <Card title="signal">
               <Gauge value={d.signal.composite} />
-              <Labeled label="Confidence">
+              <Labeled name="confidence">
                 <Bar pct={d.signal.confidence * 100} color="#58a6ff" />
                 <span className="ml-2 text-[12px] text-muted">{(d.signal.confidence * 100).toFixed(0)}%</span>
               </Labeled>
-              <p className="mt-2 text-[12px] leading-relaxed text-muted">{d.signal.reasoning}</p>
+              <p className="mt-2 text-[12px] leading-relaxed text-muted">{displayText(d.signal.reasoning)}</p>
               {Object.keys(d.signal.sub_scores || {}).length > 0 && (
                 <div className="mt-3 space-y-1.5">
                   {Object.entries(d.signal.sub_scores).map(([k, v]) => (
@@ -136,112 +129,106 @@ export default function SignalPanel() {
               )}
             </Card>
 
-            {/* Monte Carlo card */}
-            <section className="rounded-xl border border-line bg-panel p-4">
+            <section className="panel">
               <div className="mb-3 flex items-center justify-between gap-2">
-                <h2 className="text-[11px] font-semibold uppercase tracking-wider text-dim">Monte Carlo</h2>
-                <select
+                <h2 className="text-[11px] font-semibold tracking-wide text-dim">Monte Carlo</h2>
+                <Select
                   value={d.mc.model}
-                  onChange={(e) => load(() => setConfigAndAnalyze({ mc_model: e.target.value }))}
+                  onChange={(v) => load(() => setConfigAndAnalyze({ mc_model: v }))}
+                  options={MC_MODELS.map((m) => ({ value: m.value, label: label(m.label) }))}
                   disabled={status === "loading"}
-                  title="Monte Carlo model"
-                  className="rounded-md border border-line bg-[#161c23] px-2 py-1 text-[11.5px] outline-none hover:border-[#2c3a47] disabled:opacity-50"
-                >
-                  {MC_MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                </select>
+                  title="mc model"
+                  align="right"
+                  width={148}
+                />
               </div>
 
-              <McFanChart mc={d.mc} spot={d.current_price} />
+              <McFanChart mc={d.mc} spot={d.current_price} interval={d.interval} />
 
               <div className="mt-3">
                 <ProbBar up={d.mc.prob_up} flat={d.mc.prob_flat} down={d.mc.prob_down} />
               </div>
 
-              {/* headline numbers */}
               <div className="mt-3 grid grid-cols-3 gap-3">
-                <Big label="Expected" value={`$${d.mc.expected_price.toFixed(2)}`} sub={`${d.mc.expected_return >= 0 ? "+" : ""}${d.mc.expected_return.toFixed(1)}%`} tone={d.mc.expected_return >= 0 ? "up" : "down"} />
-                <Big label="Median" value={`$${d.mc.median_price.toFixed(2)}`} />
-                <Big label="CVaR 5%" value={`${d.mc.cvar_5.toFixed(1)}%`} tone="down" />
+                <Big name="expected" value={`$${d.mc.expected_price.toFixed(2)}`} sub={`${d.mc.expected_return >= 0 ? "+" : ""}${d.mc.expected_return.toFixed(1)}%`} tone={d.mc.expected_return >= 0 ? "up" : "down"} />
+                <Big name="median" value={`$${d.mc.median_price.toFixed(2)}`} />
+                <Big name="cvar 5%" value={`${d.mc.cvar_5.toFixed(1)}%`} tone="down" />
               </div>
 
               <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1.5 text-[12px]">
-                <KV k="P25–P75" v={`$${d.mc.p25_price.toFixed(2)} – $${d.mc.p75_price.toFixed(2)}`} />
-                <KV k="P10–P90" v={`$${d.mc.p10_price.toFixed(2)} – $${d.mc.p90_price.toFixed(2)}`} />
+                <KV k="P25-P75" v={`$${d.mc.p25_price.toFixed(2)} - $${d.mc.p75_price.toFixed(2)}`} />
+                <KV k="P10-P90" v={`$${d.mc.p10_price.toFixed(2)} - $${d.mc.p90_price.toFixed(2)}`} />
               </div>
 
-              {/* horizon projection nodes */}
               <div className="mt-4">
-                <div className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-dim">
-                  Projected price · horizon
+                <div className="mb-1.5 text-[10.5px] font-semibold tracking-wide text-dim">
+                  {label("projected price")}
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   {horizons.map((h) => (
                     <div key={h.label} className="rounded-lg border border-line bg-[#0d1217] p-2.5">
                       <div className="flex items-center justify-between">
                         <span className="text-[11px] text-muted">{h.label}</span>
-                        <span className={"text-[11px] font-semibold " + (h.ret >= 0 ? "text-up" : "text-down")}>
+                        <span className={"text-[11px] font-semibold tnum " + (h.ret >= 0 ? "text-up" : "text-down")}>
                           {h.ret >= 0 ? "+" : ""}{h.ret.toFixed(1)}%
                         </span>
                       </div>
                       <div className="mt-0.5 text-[15px] font-semibold tnum">${h.median.toFixed(2)}</div>
-                      <div className="text-[10.5px] tnum text-dim">${h.lo.toFixed(2)} – ${h.hi.toFixed(2)}</div>
+                      <div className="text-[10.5px] tnum text-dim">${h.lo.toFixed(2)} - ${h.hi.toFixed(2)}</div>
                     </div>
                   ))}
                 </div>
               </div>
 
               <p className="mt-2 text-[10.5px] text-dim">
-                Horizon prices extrapolate the {d.mc.model} drift &amp; vol (lognormal, ±0.67σ band).
-                SE: prob_up ±{d.mc.prob_up_se.toFixed(1)} · prob_down ±{d.mc.prob_down_se.toFixed(1)} · CVaR ±{d.mc.cvar_5_se.toFixed(1)}
+                Horizon prices extrapolate {label(d.mc.model)} drift and vol. SE: up +/-{d.mc.prob_up_se.toFixed(1)}, down +/-{d.mc.prob_down_se.toFixed(1)}.
               </p>
             </section>
 
-            {/* Regime card */}
-            <Card title="Regime">
+            <Card title="regime">
               <div className="mb-1 flex items-baseline justify-between">
-                <span className="text-[14px] font-semibold">{prettyRegime(d.regime.regime)}</span>
-                <span className="text-[12px] text-muted">{d.regime.verdict}</span>
+                <span className="text-[14px] font-semibold">{label(d.regime.regime)}</span>
+                <span className="text-[12px] text-muted">{displayText(d.regime.verdict)}</span>
               </div>
               <PotentialBar up={d.regime.potential_up} flat={d.regime.potential_flat} down={d.regime.potential_down} />
               <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1.5 text-[12px] sm:grid-cols-3">
-                <KV k="Trend score" v={d.regime.trend_score.toFixed(2)} tone={d.regime.trend_score >= 0 ? "up" : "down"} />
-                <KV k="Range score" v={d.regime.range_score.toFixed(2)} />
-                <KV k="Hurst" v={d.regime.hurst.toFixed(2)} />
-                <KV k="Donchian pos" v={d.regime.donchian_pos.toFixed(2)} />
-                <KV k="Compression" v={d.regime.range_compression.toFixed(2)} />
+                <KV k="trend score" v={d.regime.trend_score.toFixed(2)} tone={d.regime.trend_score >= 0 ? "up" : "down"} />
+                <KV k="range score" v={d.regime.range_score.toFixed(2)} />
+                <KV k="hurst" v={d.regime.hurst.toFixed(2)} />
+                <KV k="donchian pos" v={d.regime.donchian_pos.toFixed(2)} />
+                <KV k="compression" v={d.regime.range_compression.toFixed(2)} />
                 <KV k="HH/HL/LH/LL" v={`${d.regime.hh_count}/${d.regime.hl_count}/${d.regime.lh_count}/${d.regime.ll_count}`} />
               </div>
               {(d.regime.breakout_up || d.regime.breakout_down) && (
                 <div className="mt-2">
                   <span className={"rounded-md px-2 py-0.5 text-[11px] font-semibold " + (d.regime.breakout_up ? "bg-up/15 text-up" : "bg-down/15 text-down")}>
-                    {d.regime.breakout_up ? "▲ Breakout up" : "▼ Breakout down"}
+                    {d.regime.breakout_up ? "Breakout up" : "Breakout down"}
                   </span>
                 </div>
               )}
             </Card>
 
-            {/* Trade setup card */}
-            <Card title="Trade setup">
+            <Card title="trade setup">
               {d.trade_setup?.valid ? (
                 <>
                   <div className="mb-2">
-                    <span className={"rounded-md px-2.5 py-1 text-[12px] font-bold uppercase " + (d.trade_setup.side === "long" ? "bg-up/15 text-up" : d.trade_setup.side === "short" ? "bg-down/15 text-down" : "bg-[#161c23] text-muted")}>
-                      {d.trade_setup.side}
+                    <span className={"rounded-md px-2.5 py-1 text-[12px] font-bold " + (d.trade_setup.side === "long" ? "bg-up/15 text-up" : d.trade_setup.side === "short" ? "bg-down/15 text-down" : "bg-[#161c23] text-muted")}>
+                      {label(d.trade_setup.side)}
                     </span>
                   </div>
                   <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[12px] sm:grid-cols-4">
-                    {d.trade_setup.entry != null && <KV k="Entry" v={`$${Number(d.trade_setup.entry).toFixed(2)}`} />}
-                    {d.trade_setup.stop != null && <KV k="Stop" v={`$${Number(d.trade_setup.stop).toFixed(2)}`} tone="down" />}
-                    {d.trade_setup.target != null && <KV k="Target" v={`$${Number(d.trade_setup.target).toFixed(2)}`} tone="up" />}
+                    {d.trade_setup.entry != null && <KV k="entry" v={`$${Number(d.trade_setup.entry).toFixed(2)}`} />}
+                    {d.trade_setup.stop != null && <KV k="stop" v={`$${Number(d.trade_setup.stop).toFixed(2)}`} tone="down" />}
+                    {d.trade_setup.target != null && <KV k="target" v={`$${Number(d.trade_setup.target).toFixed(2)}`} tone="up" />}
                     {d.trade_setup.rr != null && <KV k="R:R" v={`${Number(d.trade_setup.rr).toFixed(2)}`} />}
                   </div>
-                  {d.trade_setup.reason && <p className="mt-2 text-[12px] text-muted">{d.trade_setup.reason}</p>}
+                  {d.trade_setup.reason && <p className="mt-2 text-[12px] text-muted">{displayText(d.trade_setup.reason)}</p>}
                 </>
               ) : (
-                <p className="text-[12px] text-muted">No valid setup. {d.trade_setup?.reason || ""}</p>
+                <p className="text-[12px] text-muted">No valid setup. {d.trade_setup?.reason ? displayText(d.trade_setup.reason) : ""}</p>
               )}
               {d.warnings?.length > 0 && (
-                <p className="mt-2 text-[12px] text-gold">⚠ {d.warnings.join(" · ")}</p>
+                <p className="mt-2 text-[12px] text-gold">Warnings: {d.warnings.map(displayText).join("; ")}</p>
               )}
             </Card>
           </div>
@@ -251,23 +238,21 @@ export default function SignalPanel() {
   );
 }
 
-/* ---------- small presentational pieces ---------- */
-
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-line bg-panel p-4">
-      <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-dim">{title}</h2>
+    <section className="panel">
+      <h2 className="mb-3 text-[11px] font-semibold tracking-wide text-dim">{label(title)}</h2>
       {children}
     </section>
   );
 }
 
-function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "up" | "down" | "muted" }) {
+function Stat({ name, value, sub, tone }: { name: string; value: string; sub?: string; tone?: "up" | "down" | "muted" }) {
   const c = tone === "up" ? "text-up" : tone === "down" ? "text-down" : "text-ink";
   return (
     <div className="rounded-xl border border-line bg-panel p-3">
-      <div className="text-[11px] uppercase tracking-wider text-dim">{label}</div>
-      <div className={"mt-1 text-[18px] font-semibold " + c}>{value}</div>
+      <div className="text-[11px] tracking-wide text-dim">{label(name)}</div>
+      <div className={"mt-1 text-[18px] font-semibold tnum " + c}>{value}</div>
       {sub && <div className="text-[11px] text-muted">{sub}</div>}
     </div>
   );
@@ -277,16 +262,16 @@ function KV({ k, v, tone }: { k: string; v: string; tone?: "up" | "down" }) {
   const c = tone === "up" ? "text-up" : tone === "down" ? "text-down" : "text-ink";
   return (
     <div className="flex items-baseline justify-between gap-2">
-      <span className="text-muted">{k}</span>
-      <span className={"font-medium " + c}>{v}</span>
+      <span className="text-muted">{label(k)}</span>
+      <span className={"font-medium tnum " + c}>{v}</span>
     </div>
   );
 }
 
-function Labeled({ label, children }: { label: string; children: React.ReactNode }) {
+function Labeled({ name, children }: { name: string; children: React.ReactNode }) {
   return (
     <div className="mt-3 flex items-center">
-      <span className="w-24 text-[12px] text-muted">{label}</span>
+      <span className="w-24 text-[12px] text-muted">{label(name)}</span>
       <span className="flex flex-1 items-center">{children}</span>
     </div>
   );
@@ -300,18 +285,20 @@ function Bar({ pct, color }: { pct: number; color: string }) {
   );
 }
 
-// composite gauge from -1 to +1
 function Gauge({ value }: { value: number }) {
   const pct = ((Math.max(-1, Math.min(1, value)) + 1) / 2) * 100;
   return (
     <div>
       <div className="relative h-2.5 w-full overflow-hidden rounded bg-gradient-to-r from-down via-[#2a323b] to-up">
-        <span className="absolute top-1/2 h-4 w-[2px] -translate-y-1/2 bg-white" style={{ left: `${pct}%` }} />
+        <span
+          className="absolute top-1/2 h-4 w-[2px] -translate-x-1/2 -translate-y-1/2 rounded bg-ink"
+          style={{ left: `${pct}%` }}
+        />
       </div>
-      <div className="mt-1 flex justify-between text-[10px] text-dim">
-        <span>bearish</span>
-        <span className="text-ink">composite {value.toFixed(2)}</span>
-        <span>bullish</span>
+      <div className="mt-1.5 flex justify-between text-[10px] text-dim">
+        <span>Bearish</span>
+        <span className="text-ink">{label("composite")} <b className="tnum">{value.toFixed(2)}</b></span>
+        <span>Bullish</span>
       </div>
     </div>
   );
@@ -322,9 +309,9 @@ function SubScore({ name, value }: { name: string; value: number }) {
   const pos = value >= 0;
   return (
     <div className="flex items-center gap-2 text-[11px]">
-      <span className="w-20 text-muted">{name}</span>
+      <span className="w-20 text-muted">{label(name)}</span>
       <span className="relative h-1.5 flex-1 rounded bg-[#1c242c]">
-        <span className="absolute top-0 h-full w-[1px] bg-dim" style={{ left: "50%" }} />
+        <span className="absolute top-0 h-full w-px bg-dim" style={{ left: "50%" }} />
         <span
           className="absolute top-0 h-full rounded"
           style={{
@@ -334,7 +321,7 @@ function SubScore({ name, value }: { name: string; value: number }) {
           }}
         />
       </span>
-      <span className="w-10 text-right text-muted">{value.toFixed(2)}</span>
+      <span className="w-10 text-right tnum text-muted">{value.toFixed(2)}</span>
     </div>
   );
 }
@@ -343,14 +330,14 @@ function ProbBar({ up, flat, down }: { up: number; flat: number; down: number })
   return (
     <div>
       <div className="flex h-5 overflow-hidden rounded">
-        <span className="flex items-center justify-center bg-up/80 text-[10px] font-semibold text-black" style={{ width: `${up}%` }}>{up >= 8 ? `${up.toFixed(0)}%` : ""}</span>
-        <span className="flex items-center justify-center bg-[#3a424b] text-[10px] text-muted" style={{ width: `${flat}%` }}>{flat >= 8 ? `${flat.toFixed(0)}%` : ""}</span>
-        <span className="flex items-center justify-center bg-down/80 text-[10px] font-semibold text-black" style={{ width: `${down}%` }}>{down >= 8 ? `${down.toFixed(0)}%` : ""}</span>
+        <span className="flex items-center justify-center bg-up/80 text-[10px] font-bold text-black" style={{ width: `${up}%` }}>{up >= 8 ? `${up.toFixed(0)}%` : ""}</span>
+        <span className="flex items-center justify-center bg-[#1c242c] text-[10px] text-muted" style={{ width: `${flat}%` }}>{flat >= 8 ? `${flat.toFixed(0)}%` : ""}</span>
+        <span className="flex items-center justify-center bg-down/80 text-[10px] font-bold text-black" style={{ width: `${down}%` }}>{down >= 8 ? `${down.toFixed(0)}%` : ""}</span>
       </div>
-      <div className="mt-1 flex justify-between text-[10px] text-dim">
-        <span className="text-up">up {up.toFixed(1)}%</span>
-        <span>flat {flat.toFixed(1)}%</span>
-        <span className="text-down">down {down.toFixed(1)}%</span>
+      <div className="mt-1.5 flex justify-between text-[10px] text-dim">
+        <span className="text-up">Up {up.toFixed(1)}%</span>
+        <span>Flat {flat.toFixed(1)}%</span>
+        <span className="text-down">Down {down.toFixed(1)}%</span>
       </div>
     </div>
   );
@@ -361,34 +348,29 @@ function PotentialBar({ up, flat, down }: { up: number; flat: number; down: numb
     <div>
       <div className="flex h-4 overflow-hidden rounded">
         <span className="bg-up/70" style={{ width: `${up}%` }} />
-        <span className="bg-[#3a424b]" style={{ width: `${flat}%` }} />
+        <span className="bg-[#1c242c]" style={{ width: `${flat}%` }} />
         <span className="bg-down/70" style={{ width: `${down}%` }} />
       </div>
-      <div className="mt-1 flex justify-between text-[10px] text-dim">
-        <span className="text-up">▲ {up.toFixed(0)}</span>
-        <span>flat {flat.toFixed(0)}</span>
-        <span className="text-down">▼ {down.toFixed(0)}</span>
+      <div className="mt-1.5 flex justify-between text-[10px] text-dim">
+        <span className="text-up">{up.toFixed(0)} Up</span>
+        <span>Flat {flat.toFixed(0)}</span>
+        <span className="text-down">{down.toFixed(0)} Down</span>
       </div>
     </div>
   );
 }
 
-function Big({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "up" | "down" }) {
+function Big({ name, value, sub, tone }: { name: string; value: string; sub?: string; tone?: "up" | "down" }) {
   const c = tone === "up" ? "text-up" : tone === "down" ? "text-down" : "text-ink";
   return (
     <div className="rounded-lg border border-line bg-[#0d1217] p-2.5">
-      <div className="text-[10.5px] uppercase tracking-wider text-dim">{label}</div>
-      <div className={"mt-0.5 text-[16px] font-semibold tnum " + c}>{value}</div>
-      {sub && <div className={"text-[11px] " + c}>{sub}</div>}
+      <div className="text-[10.5px] tracking-wide text-dim">{label(name)}</div>
+      <div className={"mt-1 text-[16px] font-bold tnum " + c}>{value}</div>
+      {sub && <div className={"text-[11px] tnum " + c}>{sub}</div>}
     </div>
   );
 }
 
-function prettyRegime(r: string): string {
-  return (r || "—").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-// Approximate trading bars per day for each candle interval.
 function barsPerDay(interval: string): number {
   switch (interval) {
     case "1d": return 1;
@@ -405,9 +387,6 @@ function barsPerDay(interval: string): number {
 
 interface Horizon { label: string; days: number; median: number; lo: number; hi: number; ret: number }
 
-// Project price at 1-day / 3-day / 1-week horizons by extrapolating the MC's
-// per-step log-drift and band width (lognormal, ±0.67σ ≈ P25/P75). This reaches
-// beyond the simulated window, so it's an extrapolation, not a re-simulation.
 function projectHorizons(d: AnalysisResult): Horizon[] {
   const spot = d.current_price || 0;
   const nf = Math.max(1, (d.mc.median_path?.length || 2) - 1);
@@ -427,8 +406,8 @@ function projectHorizons(d: AnalysisResult): Horizon[] {
   };
 
   return [
-    { label: "1 Day", days: 1 },
-    { label: "3 Days", days: 3 },
-    { label: "1 Week", days: 5 },
+    { label: "1d", days: 1 },
+    { label: "3d", days: 3 },
+    { label: "1w", days: 5 },
   ].map((h) => ({ ...h, ...project(h.days) }));
 }

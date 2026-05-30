@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchFlow, WATCHLISTS } from "@/lib/api";
 import { bsDelta } from "@/lib/blackScholes";
+import { label } from "@/lib/display";
 import {
   cap,
   fmtExpiry,
@@ -20,6 +21,8 @@ import {
   type ScanResponse,
   type ScanSummary,
 } from "@/lib/types";
+import Select from "./Select";
+import StatusBadge from "./StatusBadge";
 
 type SortKey =
   | "time"
@@ -46,22 +49,25 @@ interface Col {
 }
 
 const COLS: Col[] = [
-  { key: "time", label: "Time", align: "l", sortable: false },
-  { key: "value", label: "Value", align: "r" },
-  { key: "ticker", label: "Ticker", align: "l" },
-  { key: "spot", label: "Spot", align: "r" },
-  { key: "strike", label: "Strike", align: "r" },
-  { key: "pc", label: "PC", align: "l" },
-  { key: "exp", label: "Exp.", align: "r" },
-  { key: "side", label: "X", align: "l" },
-  { key: "type", label: "Type", align: "l" },
-  { key: "price", label: "Price", align: "r" },
-  { key: "size", label: "Size", align: "r" },
-  { key: "sig", label: "SigScore", align: "r" },
-  { key: "ret", label: "Peak Return", align: "r" },
-  { key: "delta", label: "Δ", align: "r" },
-  { key: "vol", label: "Volume", align: "r" },
+  { key: "time", label: "time", align: "l", sortable: false },
+  { key: "value", label: "value", align: "r" },
+  { key: "ticker", label: "ticker", align: "l" },
+  { key: "spot", label: "spot", align: "r" },
+  { key: "strike", label: "strike", align: "r" },
+  { key: "pc", label: "cp", align: "l" },
+  { key: "exp", label: "exp", align: "r" },
+  { key: "side", label: "side", align: "l" },
+  { key: "type", label: "type", align: "l" },
+  { key: "price", label: "price", align: "r" },
+  { key: "size", label: "size", align: "r" },
+  { key: "sig", label: "score", align: "r" },
+  { key: "ret", label: "chg%", align: "r" },
+  { key: "delta", label: "delta", align: "r" },
+  { key: "vol", label: "oi", align: "r" },
 ];
+
+// Render table rows in chunks so large scans do not block the main thread.
+const CHUNK = 80;
 
 function sortVal(r: FlowRow, k: SortKey): number | string {
   switch (k) {
@@ -83,6 +89,32 @@ function sortVal(r: FlowRow, k: SortKey): number | string {
   }
 }
 
+function Chip({ children }: { children: React.ReactNode }) {
+  return <span className="chip-good">{children}</span>;
+}
+
+function SummaryStat({
+  label: name,
+  value,
+  sub,
+  tone = "text-ink",
+}: {
+  label: string;
+  value: number;
+  sub?: string;
+  tone?: string;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-lg border border-line bg-[#0d1217] px-3 py-2.5 text-center">
+      <div className="flex items-baseline justify-center gap-1.5">
+        <span className={"text-[17px] font-bold tnum " + tone}>{value}</span>
+        <span className="text-[11px] text-muted">{label(name)}</span>
+      </div>
+      {sub && <div className="mt-0.5 text-[10px] text-dim">{sub}</div>}
+    </div>
+  );
+}
+
 export default function FlowFeed() {
   const [rows, setRows] = useState<FlowRow[]>([]);
   const [summary, setSummary] = useState<ScanSummary | null>(null);
@@ -90,10 +122,9 @@ export default function FlowFeed() {
   const [status, setStatus] = useState<"idle" | "scanning" | "live" | "offline">("idle");
   const [banner, setBanner] = useState<string>("");
   const [filters, setFilters] = useState<FlowFilters>(DEFAULT_FILTERS);
-  const [autoSec, setAutoSec] = useState<number>(0);
   const [sortKey, setSortKey] = useState<SortKey>("value");
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [visible, setVisible] = useState<number>(CHUNK);
   const abortRef = useRef<AbortController | null>(null);
 
   const ingest = useCallback((data: ScanResponse) => {
@@ -124,29 +155,11 @@ export default function FlowFeed() {
       if ((err as Error).name === "AbortError") return; // superseded, ignore
       ingest(SAMPLE_FLOW);
       setStatus("offline");
-      setBanner(
-        `Couldn't reach the API (${(err as Error).message}). Showing sample layout — start FastAPI (uvicorn api.server:app) and Scan again for live flow.`
-      );
+      setBanner(`Could not reach API (${(err as Error).message}). Showing sample data.`);
     }
   }, [filters, ingest]);
 
-  // initial scan
-  useEffect(() => {
-    scan();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // auto-refresh
-  useEffect(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    if (autoSec > 0) {
-      timerRef.current = setInterval(scan, autoSec * 1000);
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-      abortRef.current?.abort();
-    };
-  }, [autoSec, scan]);
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const sorted = useMemo(() => {
     const copy = [...rows];
@@ -161,6 +174,27 @@ export default function FlowFeed() {
     return copy;
   }, [rows, sortKey, sortDir]);
 
+  // Reveal rows in chunks for large result sets.
+  useEffect(() => {
+    if (sorted.length <= CHUNK) {
+      setVisible(sorted.length);
+      return;
+    }
+    setVisible(CHUNK);
+    let v = CHUNK;
+    let raf = 0;
+    const step = () => {
+      v = Math.min(sorted.length, v + CHUNK);
+      setVisible(v);
+      if (v < sorted.length) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [sorted]);
+
+  const shown = visible >= sorted.length ? sorted : sorted.slice(0, visible);
+  const loadingFirst = status === "scanning" && rows.length === 0;
+
   function onSort(c: Col) {
     if (c.sortable === false) return;
     if (sortKey === c.key) {
@@ -173,72 +207,66 @@ export default function FlowFeed() {
 
   return (
     <div className="pt-3">
-      {/* Header */}
-      <div className="mb-3 flex flex-wrap items-center gap-3">
-        <h1 className="m-0 text-[17px] font-semibold tracking-tight">
-          Options Flow
-          <span className="ml-2 text-[12px] font-normal text-muted">
-            sweeps &amp; blocks · ask-side conviction
-          </span>
-        </h1>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <h1 className="m-0 text-[17px] font-semibold tracking-tight">Options Flow</h1>
         <div className="flex-1" />
-        <span className="flex items-center gap-1.5 text-[12px] text-muted">
-          <span
-            className={
-              "inline-block h-[7px] w-[7px] rounded-full " +
-              (status === "live" ? "bg-up shadow-[0_0_7px_#3fb950]" : status === "scanning" ? "bg-gold" : "bg-dim")
-            }
+        <StatusBadge
+          status={status}
+          tone={
+            status === "live"
+              ? "bg-up shadow-[0_0_7px_#3fb950]"
+              : status === "scanning"
+              ? "bg-gold"
+              : status === "offline"
+              ? "bg-gold"
+              : "bg-dim"
+          }
+        />
+        {/* unusual-options scan field: minimum volume / open-interest ratio */}
+        <label className="field flex cursor-text items-center gap-1.5" title="minimum volume / open-interest ratio">
+          <span className="whitespace-nowrap text-dim">Vol/OI &gt;=</span>
+          <input
+            type="number"
+            min={0}
+            step={0.5}
+            value={filters.vol_oi_threshold}
+            onChange={(e) => setFilters((f) => ({ ...f, vol_oi_threshold: Math.max(0, Number(e.target.value) || 0) }))}
+            className="w-10 bg-transparent text-right font-semibold tnum text-ink outline-none"
           />
-          {status}
-        </span>
-        <select
-          className="rounded-md border border-line bg-[#161c23] px-2.5 py-1.5 text-[12px]"
+        </label>
+        <Select
           value={filters.watchlist}
-          onChange={(e) => setFilters((f) => ({ ...f, watchlist: e.target.value }))}
-        >
-          {WATCHLISTS.map((w) => (
-            <option key={w.value} value={w.value}>{w.label}</option>
-          ))}
-        </select>
-        <select
-          className="rounded-md border border-line bg-[#161c23] px-2.5 py-1.5 text-[12px]"
-          value={autoSec}
-          onChange={(e) => setAutoSec(Number(e.target.value))}
-        >
-          <option value={0}>manual</option>
-          <option value={30}>30s</option>
-          <option value={60}>60s</option>
-          <option value={120}>2m</option>
-        </select>
-        <button
-          onClick={scan}
-          className="rounded-md border border-[#1f6feb] bg-[#1f6feb] px-3.5 py-1.5 text-[12px] font-semibold text-white hover:bg-[#388bfd]"
-        >
-          Scan
+          onChange={(v) => setFilters((f) => ({ ...f, watchlist: v }))}
+          options={WATCHLISTS}
+          title="watchlist"
+          width={156}
+        />
+        <button onClick={scan} disabled={status === "scanning"} className="btn-primary">
+          {status === "scanning" ? "Scanning..." : "Scan"}
         </button>
       </div>
 
-      {/* Filter chips */}
       <div className="mb-3 flex flex-wrap gap-1.5">
-        <Chip>Sweeps ≥ <b className="text-ink">{fmtValue(filters.min_sweep_premium)}</b></Chip>
-        <Chip>Blocks ≥ <b className="text-ink">{fmtValue(filters.min_block_premium)}</b></Chip>
-        {filters.exclude_high_volume_etfs && <Chip>Excl. high-volume ETFs</Chip>}
-        {filters.exclude_bid_side && <Chip>Ask-side only <span className="text-dim">(bid hidden)</span></Chip>}
+        <Chip>Sweeps &gt;= <b className="text-ink">{fmtValue(filters.min_sweep_premium)}</b></Chip>
+        <Chip>Blocks &gt;= <b className="text-ink">{fmtValue(filters.min_block_premium)}</b></Chip>
+        <Chip>Vol/OI &gt;= <b className="text-ink">{filters.vol_oi_threshold}x</b></Chip>
+        <Chip>&lt;= <b className="text-ink">{filters.max_dte}</b> DTE</Chip>
+        {filters.exclude_high_volume_etfs && <Chip>Excl. ETFs</Chip>}
+        {filters.exclude_bid_side && <Chip>Ask side only</Chip>}
       </div>
 
-      {/* Summary */}
       {summary && (
-        <div className="mb-3 flex flex-wrap gap-4 text-[12px] text-muted">
-          <span><b className="text-ink">{summary.total_hits}</b> prints</span>
-          <span className="text-sweep"><b>{summary.sweep_count}</b> sweeps</span>
-          <span className="text-blue"><b>{summary.block_count}</b> blocks</span>
-          <span className="text-up"><b>{summary.bullish_count}</b> bullish</span>
-          <span className="text-down"><b>{summary.bearish_count}</b> bearish</span>
-          <span><b className="text-ink">{summary.tickers_scanned}</b> scanned</span>
-          {summary.excluded_etf_count > 0 && (
-            <span><b className="text-ink">{summary.excluded_etf_count}</b> ETFs excluded</span>
-          )}
-          <span className="text-dim">@ {scannedAt}</span>
+        <div className="mb-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
+          <SummaryStat label="prints" value={summary.total_hits} />
+          <SummaryStat label="sweeps" value={summary.sweep_count} tone="text-sweep" />
+          <SummaryStat label="blocks" value={summary.block_count} tone="text-blue" />
+          <SummaryStat label="bullish" value={summary.bullish_count} tone="text-up" />
+          <SummaryStat label="bearish" value={summary.bearish_count} tone="text-down" />
+          <SummaryStat
+            label="scanned"
+            value={summary.tickers_scanned}
+            sub={summary.excluded_etf_count > 0 ? `${summary.excluded_etf_count} ${label("etfs excl")}` : `@ ${scannedAt}`}
+          />
         </div>
       )}
 
@@ -248,7 +276,6 @@ export default function FlowFeed() {
         </div>
       )}
 
-      {/* Table */}
       <div className="overflow-x-auto rounded-xl border border-line bg-panel">
         <table className="w-full tnum border-collapse text-[13px]">
           <thead>
@@ -258,53 +285,61 @@ export default function FlowFeed() {
                   key={c.key}
                   onClick={() => onSort(c)}
                   className={
-                    "sticky top-0 whitespace-nowrap border-b border-line bg-[#0d1217] px-2.5 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-dim " +
+                    "sticky top-0 z-10 whitespace-nowrap border-b border-line bg-[#0b1015] px-2.5 py-2.5 text-[10.5px] font-semibold tracking-wide text-dim " +
                     (c.align === "l" ? "text-left " : "text-right ") +
-                    (c.sortable === false ? "cursor-default" : "cursor-pointer select-none")
+                    (c.sortable === false ? "cursor-default" : "cursor-pointer select-none hover:text-muted ") +
+                    (sortKey === c.key && c.sortable !== false ? "text-blue" : "")
                   }
                 >
-                  {c.label}
+                  {label(c.label)}
                   {sortKey === c.key && c.sortable !== false && (
-                    <span className="ml-1 text-[9px] text-blue">{sortDir < 0 ? "▼" : "▲"}</span>
+                    <span className="ml-1 text-[9px] text-blue">{sortDir < 0 ? "v" : "^"}</span>
                   )}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {sorted.length === 0 ? (
+            {loadingFirst ? (
+              Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)
+            ) : shown.length === 0 ? (
               <tr>
-                <td colSpan={COLS.length} className="p-10 text-center text-muted">
-                  No qualifying sweeps or blocks.
+                <td colSpan={COLS.length} className="p-12 text-center text-muted">
+                  {status === "idle" ? "Press Scan to load options flow." : "No rows."}
                 </td>
               </tr>
             ) : (
-              sorted.map((r, i) => <Row key={i} r={r} />)
+              shown.map((r, i) => <Row key={`${r.ticker}-${r.strike}-${r.expiry}-${r.option_type}-${i}`} r={r} />)
             )}
           </tbody>
         </table>
       </div>
 
-      {/* Footnote */}
-      <p className="mt-2.5 text-[11px] leading-relaxed text-dim">
-        <b>Data notes.</b> Built on <code className="rounded bg-[#161c23] px-1 text-[#a9c7e8]">/api/options/unusual</code> (yfinance snapshot).{" "}
-        <b>Sweep/Block</b> approximated from volume/OI; <b>X</b> (Ask/Bid) is a last-vs-bid/ask lean — bid-side filtered server-side.{" "}
-        <b>Time</b> is the scan timestamp (snapshot, not per-trade tape). <b>Size</b> = day volume; <b>Volume</b> = open interest.{" "}
-        <b>Δ</b> is Black–Scholes, computed client-side.
+      <p className="mt-2.5 flex items-center gap-2 text-[11px] text-dim">
+        <span>yfinance chain snapshot. Sweep/block and side are approximations.</span>
+        {sorted.length > 0 && (
+          <span className="text-dim/80">
+            Showing {Math.min(visible, sorted.length).toLocaleString()} / {sorted.length.toLocaleString()}
+          </span>
+        )}
       </p>
     </div>
   );
 }
 
-function Chip({ children }: { children: React.ReactNode }) {
+const SkeletonRow = memo(function SkeletonRow() {
   return (
-    <span className="whitespace-nowrap rounded-full border border-[#244] bg-[#10211c] px-2.5 py-1 text-[11.5px] text-[#9fe0bf]">
-      {children}
-    </span>
+    <tr className="border-b border-[#10161c]">
+      {COLS.map((c) => (
+        <td key={c.key} className="px-2.5 py-[9px]">
+          <div className={"h-3 animate-pulse rounded bg-[#1c242c] " + (c.align === "r" ? "ml-auto w-10" : "w-12")} />
+        </td>
+      ))}
+    </tr>
   );
-}
+});
 
-function Row({ r }: { r: FlowRow }) {
+const Row = memo(function Row({ r }: { r: FlowRow }) {
   const isCall = r.option_type === "call";
   const big = r.total_premium >= 5e5;
   const sizeHot = (r.volume || 0) >= 150;
@@ -315,9 +350,10 @@ function Row({ r }: { r: FlowRow }) {
   const retColor = ret == null ? "text-dim" : ret > 0 ? "text-up" : "text-dim";
 
   return (
-    <tr className="border-b border-[#141a20] odd:bg-rowalt hover:bg-[#13202b]">
+    <tr className="group border-b border-[#10161c] odd:bg-rowalt hover:bg-[#13202b]">
       <td className="px-2.5 py-[7px] text-left text-[11px] text-muted">{r._time}</td>
-      <td className={"px-2.5 py-[7px] text-right font-bold " + (big ? "text-gold" : "text-ink")}>
+      <td className={"relative px-2.5 py-[7px] text-right font-bold " + (big ? "text-gold" : "text-ink")}>
+        {big && <span className="absolute inset-y-1 left-0 w-[2px] rounded-full bg-gold/70" />}
         {fmtValue(r.total_premium)}
       </td>
       <td className="px-2.5 py-[7px] text-left">
@@ -325,8 +361,8 @@ function Row({ r }: { r: FlowRow }) {
           className={
             "inline-block min-w-[48px] rounded-md border px-2 py-[3px] text-center text-[11.5px] font-bold tracking-wide " +
             (isCall
-              ? "border-up/30 bg-up/10 text-[#56d364]"
-              : "border-down/30 bg-down/10 text-[#ff7b93]")
+              ? "border-up/30 bg-up/10 text-up"
+              : "border-down/30 bg-down/10 text-down")
           }
         >
           {r.ticker}
@@ -348,9 +384,9 @@ function Row({ r }: { r: FlowRow }) {
       </td>
       <td className="px-2.5 py-[7px] text-right">
         <span className="inline-flex flex-col items-end gap-[3px]">
-          <span className="h-[7px] w-[74px] overflow-hidden rounded bg-[#1c242c]">
+          <span className="h-[7px] w-[74px] overflow-hidden rounded-full bg-[#1c242c]">
             <span
-              className="block h-full rounded"
+              className="block h-full rounded-full"
               style={{ width: `${Math.round(score * 100)}%`, background: sigColor(score) }}
             />
           </span>
@@ -364,4 +400,4 @@ function Row({ r }: { r: FlowRow }) {
       <td className="px-2.5 py-[7px] text-right text-muted">{(r.open_interest || 0).toLocaleString()}</td>
     </tr>
   );
-}
+});

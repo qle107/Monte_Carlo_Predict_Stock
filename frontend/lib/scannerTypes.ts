@@ -1,5 +1,3 @@
-// Mirrors core/scanner.py ScanResult + scan_tickers() report.
-
 export interface ScanResult {
   ticker: string;
   price: number;

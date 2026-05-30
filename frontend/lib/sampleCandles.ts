@@ -1,6 +1,5 @@
 import type { Candle } from "./analysisTypes";
 
-// Deterministic synthetic OHLCV series for the offline chart fallback.
 export function sampleCandles(n = 120, start = 55): Candle[] {
   let seed = 1337;
   const rnd = () => {

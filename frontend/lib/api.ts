@@ -1,6 +1,5 @@
 import type { FlowFilters, ScanResponse } from "./types";
 
-// Calls the FastAPI /api/options/unusual endpoint (proxied via next.config.mjs).
 export async function fetchFlow(f: FlowFilters, signal?: AbortSignal): Promise<ScanResponse> {
   const params = new URLSearchParams({
     top_n: String(f.top_n),
@@ -32,13 +31,13 @@ export async function fetchFlow(f: FlowFilters, signal?: AbortSignal): Promise<S
 }
 
 export const WATCHLISTS: { value: string; label: string }[] = [
-  { value: "momentum", label: "momentum" },
-  { value: "tech", label: "tech" },
-  { value: "biotech", label: "biotech" },
-  { value: "energy", label: "energy" },
-  { value: "defense", label: "defense" },
-  { value: "crypto", label: "crypto" },
-  { value: "financials", label: "financials" },
-  { value: "ev", label: "ev" },
-  { value: "", label: "all optionable (slow)" },
+  { value: "momentum", label: "Momentum" },
+  { value: "tech", label: "Tech" },
+  { value: "biotech", label: "Biotech" },
+  { value: "energy", label: "Energy" },
+  { value: "defense", label: "Defense" },
+  { value: "crypto", label: "Crypto" },
+  { value: "financials", label: "Financials" },
+  { value: "ev", label: "EV" },
+  { value: "", label: "All optionable (slow)" },
 ];
