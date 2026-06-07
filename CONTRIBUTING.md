@@ -1,6 +1,6 @@
 # Contributing to mc-trader
 
-Thank you for taking the time to contribute. This project is a self-hosted Monte Carlo stock analysis dashboard. Contributions of all kinds are welcome - bug fixes, math improvements, new models, docs, and tests.
+Thank you for contributing. This project is a self-hosted Monte Carlo stock research API. Bug fixes, math improvements, new models, docs, and tests are welcome.
 
 ## Quick start
 

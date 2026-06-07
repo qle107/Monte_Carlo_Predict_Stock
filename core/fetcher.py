@@ -12,22 +12,11 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-# Prevents duplicate network round-trips when the scanner fetches the same
-# ticker concurrently (e.g. scan pass + MC top-N pass both need AAPL/1d/60).
-# Cache is keyed by (ticker, interval, lookback, extended) and expires after
-# _CACHE_TTL seconds.  Thread-safe via a single RLock.
-
-_CACHE_TTL = 30.0  # seconds before a cached DataFrame is evicted
+_CACHE_TTL = 30.0
 _cache_lock = threading.RLock()
 _cache: dict = {}  # key -> (df, expire_time)
 
-# If two threads request the same (ticker, interval, lookback, extended) within
-# milliseconds of each other (both miss the TTL cache) the second thread waits
-# for the first (the "leader") to finish and then reads from the cache instead
-# of launching its own network request.  This eliminates the thundering-herd
-# duplicate fetch that happens when update_config restarts the poll loop while
-# also calling _run_analysis() immediately.
-
+# Coalesce concurrent cache misses for the same key.
 _inflight_lock = threading.RLock()
 _inflight: dict = {}  # key -> threading.Event
 

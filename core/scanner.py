@@ -12,6 +12,7 @@ import numpy as np
 
 from config import cfg
 
+from .expected_move import compute_expected_move, expected_move_for_ticker
 from .fetcher import fetch_candles
 from .indicators import compute_indicators
 from .montecarlo import run as run_mc
@@ -323,7 +324,6 @@ WATCHLISTS: dict[str, list[str]] = {
         "APA",
         "PR",
         "SM",
-        "CIVI",
         # Consumer / Retail
         "NKE",
         "LULU",
@@ -559,6 +559,15 @@ WATCHLISTS: dict[str, list[str]] = {
         "AMAT",
         "BKNG",
         "GS",
+        # AI infra / memory / space momentum additions (2026)
+        "CRWV",
+        "NBIS",
+        "SNDK",
+        "TE",
+        "QBTS",
+        "LUNR",
+        "RDW",
+        "PL",
     ],
     "tech": [
         "AAPL",
@@ -661,6 +670,13 @@ WATCHLISTS: dict[str, list[str]] = {
         "IONQ",
         "RGTI",
         "QUBT",
+        "QBTS",
+        "CRWV",
+        "NBIS",
+        "SNDK",
+        "MU",
+        "IREN",
+        "TE",
     ],
     "space": [
         "ASTS",
@@ -669,6 +685,10 @@ WATCHLISTS: dict[str, list[str]] = {
         "IRDM",
         "GSAT",
         "VSAT",
+        "LUNR",
+        "RDW",
+        "PL",
+        "SIDU",
         "LMT",
         "NOC",
         "RTX",
@@ -685,11 +705,9 @@ WATCHLISTS: dict[str, list[str]] = {
         "TER",
         "CGNX",
         "ROK",
-        "ABB",
         "SYM",
         "ZBRA",
         "AZTA",
-        "IRBT",
         "PATH",
         "NVDA",
         "BOTZ",
@@ -724,7 +742,6 @@ WATCHLISTS: dict[str, list[str]] = {
         "PSX",
         "EOG",
         "APA",
-        "CIVI",
         "FSLR",
         "ENPH",
         "PLUG",
@@ -843,6 +860,7 @@ class ScanResult:
     reasoning: str
     error: str | None = None
     elapsed_ms: float = 0.0
+    expected_move: dict | None = None  # 1d/1w 1σ-2σ ranges from realized vol
 
 
 # Scoring
@@ -938,6 +956,19 @@ async def _scan_one(
         score = _compute_scan_score(reg, sig, ind)
         direction, strength = _classify_direction(score, reg.regime)
 
+        # Expected-move ranges (realized vol). Daily scans reuse the candles
+        # already fetched; intraday scans fetch ~60 daily bars (cached).
+        if interval == "1d":
+            em = compute_expected_move(
+                df["close"].to_numpy(dtype=float),
+                spot=price,
+                daily_opens=df["open"].to_numpy(dtype=float),
+                daily_highs=df["high"].to_numpy(dtype=float),
+                daily_lows=df["low"].to_numpy(dtype=float),
+            )
+        else:
+            em = await loop.run_in_executor(None, expected_move_for_ticker, ticker, price)
+
         elapsed = (time.monotonic() - t0) * 1000
 
         return ScanResult(
@@ -968,6 +999,7 @@ async def _scan_one(
             price_vs_52w=ind.price_vs_52w,
             reasoning=sig.reasoning,
             elapsed_ms=round(elapsed, 1),
+            expected_move=em,
         )
 
     except Exception as e:

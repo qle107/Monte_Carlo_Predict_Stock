@@ -14,10 +14,11 @@ from scipy import optimize
 
 from config import cfg
 
+from .hawkes import fit_jump_params
 from .hurst import dfa
 from .signal import Signal
 
-# _calibrate_garch_mle() calls scipy.optimize.minimize (Nelder-Mead, 400 iter).
+# _calibrate_garch_mle() calls scipy.optimize.minimize (Nelder-Mead, 600 iter).
 # On a typical CPU this costs 50-200 ms per call.  With a 5-minute poll loop
 # the returns series barely changes between runs, so we cache the fitted params
 # keyed by a short hash of the input array and expire after 5 minutes.
@@ -56,6 +57,29 @@ def _garch_cache_put(key: str, params: tuple) -> None:
         _garch_cache[key] = (params, now + _GARCH_CACHE_TTL)
 
 
+_HAWKES_MISS = ("miss",)  # cache sentinel: "fit attempted, not usable"
+
+
+def _fit_hawkes_cached(recent_returns) -> tuple[float, float, float, float] | None:
+    """
+    Cached wrapper around core.hawkes.fit_jump_params (same 5-min TTL pattern
+    as the GARCH MLE cache; Hawkes MLE costs ~10-50 ms per call).
+    """
+    if recent_returns is None or len(recent_returns) < 40:
+        return None
+    arr = np.asarray(recent_returns, dtype=float)
+    arr = arr[np.isfinite(arr)]
+    if arr.size < 40:
+        return None
+    key = "hawkes-" + hashlib.md5(np.round(arr[-120:], 6).tobytes()).hexdigest()
+    cached = _garch_cache_get(key)
+    if cached is not None:
+        return None if cached == _HAWKES_MISS else cached
+    result = fit_jump_params(arr)
+    _garch_cache_put(key, _HAWKES_MISS if result is None else result)
+    return result
+
+
 # Microstructure model - tunable parameters
 
 
@@ -92,6 +116,20 @@ class _MSParams:
     # Hurst regime thresholds & multipliers
     hurst_trend: float = 0.55
     hurst_mean_rev: float = 0.45
+    # Significance gate: exact permutation test.  The OLS slope SE from a
+    # single realisation badly UNDERESTIMATES the sampling variability of the
+    # DFA exponent (the F(n) values are nearly collinear within a
+    # realisation, while the slope varies ~0.09 SD across realisations at
+    # N=128), so an SE-based gate barely filters anything.  Instead, shuffle
+    # the returns (kills serial correlation, keeps the marginal distribution
+    # AND the estimator's finite-sample bias) and compute the EXACT Monte
+    # Carlo p-value with the +1 correction (Phipson & Smyth 2010):
+    #     p = (1 + #{alpha_null >= alpha}) / (K + 1)
+    # Interpolated percentiles of a small null sample are anti-conservative;
+    # the exact p-value is guaranteed <= level under exchangeability.
+    # K = 79 makes p = 0.025 reachable with up to one tie (2/80).
+    hurst_n_shuffle: int = 79
+    hurst_p_value: float = 0.025  # one-sided level per regime direction
     reg_trend_drift: float = 1.50
     reg_trend_gravity: float = 0.60
     reg_trend_sigma: float = 1.05
@@ -108,7 +146,11 @@ class _MSParams:
 
     # Lookback windows
     garch_window: int = 90
-    hurst_window: int = 60
+    # DFA-1 with min_box=4 needs N >= 64 to get >= 3 box sizes (4, 8, 16) into
+    # the log-log regression; below that dfa() returns its 0.5 fallback.
+    # 128 gives 4 box sizes (4, 8, 16, 32) -> a usable slope estimate.
+    hurst_window: int = 128
+    hurst_min_n: int = 64
     cvd_slope_window: int = 20
     vol_avg_window: int = 20
     price_trend_window: int = 10
@@ -130,6 +172,9 @@ class MCResult:
     prob_flat: float
     prob_down: float
     median_price: float
+    # Outer band endpoints.  Nominally the 10th/90th percentiles, but when
+    # conformal calibration is active the levels are alpha/2 and 1-alpha/2
+    # (see band_alpha below) - the field names are kept for API stability.
     p10_price: float
     p90_price: float
     p25_price: float
@@ -154,9 +199,14 @@ class MCResult:
     prob_down_se: float = 0.0
     cvar_5_se: float = 0.0
 
+    # Miscoverage level actually used for the outer band (0.20 = P10/P90).
+    # Adjusted online by core.conformal.BandCalibrator (ACI).
+    band_alpha: float = 0.20
+
     # Microstructure-only diagnostics (None for other models)
     ms_regime: str | None = None
     ms_dfa_alpha: float | None = None  # DFA exponent (replaces ms_hurst)
+    ms_dfa_se: float | None = None  # OLS SE of the DFA slope (diagnostic; gate is a permutation test)
     ms_hurst: float | None = None  # Deprecated alias for ms_dfa_alpha; kept for one minor version
     ms_drift_bias: float | None = None
     ms_key_levels: dict | None = field(default=None)
@@ -255,16 +305,34 @@ def _innov_student_t(rng, n_sim, n_steps, kurtosis_excess: float):
 
 
 def _simulate_garch(
-    rng, n_sim, n_steps, base_sigma, recent_returns, alpha: float | None = None, beta: float | None = None
+    rng,
+    n_sim,
+    n_steps,
+    base_sigma,
+    recent_returns,
+    alpha: float | None = None,
+    beta: float | None = None,
+    gamma: float | None = None,
 ):
-    """GARCH(1,1) σ path. Returns (standardised innov, σ-per-step)."""
+    """GJR-GARCH(1,1) σ path. Returns (standardised innov, σ-per-step).
+
+    σ²_t = ω + (α + γ·1[ε_{t−1}<0])·ε²_{t−1} + β·σ²_{t−1}
+
+    The γ (leverage) term makes negative shocks raise volatility more than
+    positive shocks of the same size - the asymmetry consistently observed
+    in equity markets (Glosten-Jagannathan-Runkle 1993).  γ=0 reduces to
+    plain GARCH(1,1).  Stationarity: α + γ/2 + β < 1 (symmetric z).
+    """
     alpha = cfg.garch_alpha if alpha is None else alpha
     beta = cfg.garch_beta if beta is None else beta
-    if alpha + beta >= 1.0:
-        scale = 0.98 / (alpha + beta)
+    gamma = cfg.garch_gamma if gamma is None else gamma
+    persistence = alpha + 0.5 * gamma + beta
+    if persistence >= 1.0:
+        scale = 0.98 / persistence
         alpha *= scale
         beta *= scale
-    omega_factor = 1.0 - alpha - beta
+        gamma *= scale
+    omega_factor = 1.0 - alpha - 0.5 * gamma - beta
 
     sigma2_lr = base_sigma**2
     omega = omega_factor * sigma2_lr
@@ -283,7 +351,9 @@ def _simulate_garch(
     z = rng.standard_normal((n_sim, n_steps))
 
     for t in range(n_steps):
-        sigma2 = omega + alpha * (eps_prev**2) + beta * sigma2
+        # GJR leverage: the γ term only fires when the previous shock was negative
+        arch_coef = alpha + gamma * (eps_prev < 0)
+        sigma2 = omega + arch_coef * (eps_prev**2) + beta * sigma2
         sigma = np.sqrt(np.maximum(sigma2, 1e-12))
         eps = sigma * z[:, t]
         eps_out[:, t] = z[:, t]
@@ -291,6 +361,73 @@ def _simulate_garch(
         eps_prev = eps
 
     return eps_out, sigma_out
+
+
+def _optimal_block_length(x: np.ndarray) -> float:
+    """
+    Automatic optimal mean block length for the STATIONARY bootstrap.
+
+    Politis & White (2004), with the Patton, Politis & White (2009)
+    correction.  Replaces the fixed-rate heuristic b = N^{1/3}: the rate is
+    right but the constant depends on the series' dependence structure -
+    white noise wants tiny blocks, persistent series want much longer ones.
+
+        b_opt = ( 2·Ĝ² / D̂_SB )^{1/3} · N^{1/3}
+
+    where, with flat-top lag-window weights λ(·) and autocovariances R̂(k):
+
+        Ĝ    = Σ_{|k|≤2m} λ(k/2m)·|k|·R̂(k)
+        ĝ(0) = Σ_{|k|≤2m} λ(k/2m)·R̂(k)        [long-run variance estimate]
+        D̂_SB = 2·ĝ(0)²
+
+    The bandwidth m is the smallest lag after which K_n consecutive sample
+    autocorrelations all lie inside the band ±2·sqrt(log10(N)/N).
+    Result clipped to [2, min(3√N, N/3)].
+    """
+    n = int(x.size)
+    fallback = float(max(2, round(n ** (1.0 / 3.0))))
+    if n < 50:
+        return fallback
+
+    xc = x - float(np.mean(x))
+    denom = float(np.dot(xc, xc))  # n · R(0)
+    if denom <= 0:
+        return fallback
+
+    kn = max(5, int(np.ceil(np.log10(n))))
+    m_max = int(np.ceil(np.sqrt(n))) + kn
+    n_lags = min(m_max + kn, n - 1)
+    rho = np.array([float(np.dot(xc[:-k], xc[k:])) / denom for k in range(1, n_lags + 1)])
+
+    # Bandwidth: first m with K_n consecutive insignificant autocorrelations
+    band = 2.0 * np.sqrt(np.log10(n) / n)
+    m = m_max
+    for j in range(len(rho) - kn + 1):
+        if np.all(np.abs(rho[j : j + kn]) < band):
+            m = j  # lags m+1 .. m+K_n all inside the band
+            break
+    m = max(1, min(m, m_max))
+
+    M = 2 * m
+    M = min(M, len(rho))
+    k = np.arange(1, M + 1)
+    R0 = denom / n
+    Rk = rho[:M] * R0
+    # Flat-top (trapezoidal) lag window: 1 on [0, 1/2], linear to 0 on (1/2, 1]
+    lam = np.where(k <= m, 1.0, 2.0 * (1.0 - k / (2.0 * m)))
+    lam = np.clip(lam, 0.0, 1.0)
+
+    g_hat = R0 + 2.0 * float(np.sum(lam * Rk))  # ĝ(0), two-sided
+    G_hat = 2.0 * float(np.sum(lam * k * Rk))  # Ĝ, two-sided (k=0 term is 0)
+    D_sb = 2.0 * g_hat**2
+    if D_sb <= 1e-18 or not np.isfinite(G_hat):
+        return fallback
+
+    b = (2.0 * G_hat**2 / D_sb) ** (1.0 / 3.0) * n ** (1.0 / 3.0)
+    if not np.isfinite(b):
+        return fallback
+    b_max = float(np.ceil(min(3.0 * np.sqrt(n), n / 3.0)))
+    return float(min(max(b, 2.0), b_max))
 
 
 def _simulate_bootstrap(rng, n_sim, n_steps, recent_returns: Sequence[float], drift, sigma):
@@ -309,8 +446,8 @@ def _simulate_bootstrap(rng, n_sim, n_steps, recent_returns: Sequence[float], dr
         centred = centred * (sigma / emp_std)
 
     N = centred.size
-    b = max(2, round(N ** (1.0 / 3.0)))  # mean block length ~ N^{1/3}
-    p = 1.0 / b  # prob of starting a new block
+    b = _optimal_block_length(centred)  # Politis-White automatic selection
+    p = 1.0 / b  # prob of starting a new block (geometric mean length b)
 
     out = np.empty((n_sim, n_steps), dtype=float)
     for s in range(n_sim):
@@ -326,6 +463,94 @@ def _simulate_bootstrap(rng, n_sim, n_steps, recent_returns: Sequence[float], dr
     return (drift - 0.5 * sigma**2) + out
 
 
+def _simulate_fhs(
+    rng,
+    n_sim: int,
+    n_steps: int,
+    drift: float,
+    base_sigma: float,
+    recent_returns: Sequence[float],
+) -> np.ndarray:
+    """
+    Filtered Historical Simulation (Barone-Adesi et al. 1999).
+
+    1. Fit GJR-GARCH(1,1) to the recent returns (cached MLE).
+    2. Filter:  z_t = ε_t / σ_t  - standardised residuals.  After filtering,
+       the z_t are approximately i.i.d., so plain i.i.d. resampling is valid
+       (the serial dependence lives in the σ_t process, not in z_t).
+    3. Forward-simulate the GJR variance path and feed it RESAMPLED empirical
+       residuals instead of Gaussian draws.
+
+    This keeps the empirical distribution of shocks (skew, fat tails - no
+    distributional assumption) AND the conditional volatility dynamics.
+    Comparative VaR studies (e.g. arXiv:2505.05646) find GARCH+FHS calibrated
+    where plain historical simulation and GARCH-Normal are badly miscalibrated.
+
+    The fitted unconditional variance is rescaled to the engine's blended
+    `base_sigma²` so σ keeps its meaning across models.
+    """
+    rets = np.asarray(recent_returns, dtype=float)
+    rets = rets[np.isfinite(rets)]
+    if rets.size < 30:
+        # Not enough history to filter - Gaussian GARCH fallback
+        eps, sigma_path = _simulate_garch(rng, n_sim, n_steps, base_sigma, recent_returns)
+        return (drift - 0.5 * sigma_path**2) + sigma_path * eps
+
+    window = rets[-_PARAMS.garch_window :] if rets.size > _PARAMS.garch_window else rets
+    omega, alpha, gamma, beta = _calibrate_garch_mle(window)
+
+    # In-sample filter to extract standardised residuals
+    eps_hist = window - float(window.mean())
+    n = eps_hist.size
+    s2 = np.empty(n)
+    s2[0] = max(float(np.var(window)), 1e-10)
+    for i in range(1, n):
+        arch = (alpha + gamma * (eps_hist[i - 1] < 0.0)) * eps_hist[i - 1] ** 2
+        s2[i] = omega + arch + beta * s2[i - 1]
+    z_pool = eps_hist / np.sqrt(np.maximum(s2, 1e-12))
+    # Exact re-standardisation so sigma keeps its unit interpretation
+    z_pool = z_pool - float(z_pool.mean())
+    z_std = float(z_pool.std())
+    if z_std > 1e-9:
+        z_pool = z_pool / z_std
+
+    # Rescale the fitted process to the engine's volatility estimate.
+    #
+    # Anchor the SEED, not the fitted unconditional variance: MLE on a short
+    # window often drives persistence toward the 0.999 boundary, which
+    # inflates uncond = ω/(1−α−γ/2−β) arbitrarily and (if used as anchor)
+    # collapses the scale factor - the forward simulation would then start
+    # and stay far below base_sigma.  Anchoring the seed makes the FIRST
+    # simulated bar have variance base_sigma² by construction; the GJR
+    # dynamics evolve it from there, with the long-run reversion target
+    # bounded to ±3× base_sigma (in vol terms) for the same robustness
+    # reason.
+    persistence = alpha + 0.5 * gamma + beta
+    uncond = omega / max(1.0 - persistence, 1e-6)
+    s2_end = max(float(s2[-1]), 1e-12)
+    k = (base_sigma**2) / s2_end
+    lr_target = float(np.clip(k * uncond, base_sigma**2 / 9.0, base_sigma**2 * 9.0))
+    omega_t = lr_target * max(1.0 - persistence, 1e-6)
+    s2_last = base_sigma**2  # = s2_end * k
+    eps_last = float(eps_hist[-1]) * float(np.sqrt(k))
+
+    # Forward simulation: GJR variance path fed with resampled residuals
+    out = np.empty((n_sim, n_steps), dtype=float)
+    sigma2 = np.full(n_sim, s2_last)
+    eps_prev = np.full(n_sim, eps_last)
+    idx = rng.integers(0, n, size=(n_sim, n_steps))
+    for t in range(n_steps):
+        arch_coef = alpha + gamma * (eps_prev < 0)
+        sigma2 = omega_t + arch_coef * eps_prev**2 + beta * sigma2
+        sigma = np.sqrt(np.maximum(sigma2, 1e-12))
+        eps = sigma * z_pool[idx[:, t]]
+        # Itô correction (approximate for non-Gaussian z, exact to O(z³ skew))
+        out[:, t] = (drift - 0.5 * sigma**2) + eps
+        eps_prev = eps
+
+    return out
+
+
 def _simulate_jump(
     rng,
     n_sim,
@@ -335,8 +560,23 @@ def _simulate_jump(
     jump_intensity: float | None = None,
     jump_mean: float = 0.0,
     jump_sigma_mult: float | None = None,
+    hawkes: tuple[float, float, float, float] | None = None,
 ):
-    """Merton jump-diffusion log-return innovations."""
+    """Jump-diffusion log-return innovations.
+
+    hawkes = None          -> Merton: constant jump intensity λ.
+    hawkes = (μ,α,β,λ_now) -> self-exciting (Hawkes) intensity: each jump
+        kicks the intensity up by α, which then decays at rate β, so jumps
+        cluster (aftershocks) instead of arriving at a flat rate.  Parameters
+        come from core.hawkes fitted on large-move events (per-bar units).
+
+        The fitted process is re-anchored so its STATIONARY MEAN equals the
+        engine's target `jump_intensity`:  λ̄ = μ/(1−n) with branching ratio
+        n = α/β, so setting μ' = λ_target·(1−n) and keeping (α, β) preserves
+        both the mean jump rate and the cluster structure (n = expected
+        aftershocks per jump is scale-free).  The current intensity state is
+        carried over in relative terms: λ_now/λ̄_fit × λ_target.
+    """
     if jump_intensity is None:
         jump_intensity = cfg.jump_intensity
     if jump_sigma_mult is None:
@@ -345,13 +585,53 @@ def _simulate_jump(
 
     # Merton compensator for log-return path
     kappa = float(np.exp(jump_mean + 0.5 * sigma_jump**2) - 1.0)
+
+    if hawkes is not None and jump_intensity > 0:
+        mu_f, alpha_f, beta_f, lam_now = hawkes
+        beta_f = max(float(beta_f), 1e-3)
+
+        # Historical stationary mean (continuous-time MLE convention)
+        n_cont = float(np.clip(alpha_f / beta_f, 0.0, 0.95))
+        lam_bar_fit = mu_f / max(1.0 - n_cont, 1e-6)
+
+        # Discrete-consistent branching ratio for the per-bar recursion
+        # E_{t+1} = (E_t + α·N_t)·d with d = e^{-β}:  the excitation a jump
+        # contributes over its lifetime is α·Σ_{k>=1} d^k = α·d/(1−d)
+        # (the continuous α/β would over/under-state it).  Anchoring with
+        # n_disc makes the simulated stationary mean equal λ_target.
+        decay = float(np.exp(-beta_f))
+        n_disc = float(np.clip(alpha_f * decay / max(1.0 - decay, 1e-9), 0.0, 0.90))
+        alpha_eff = n_disc * (1.0 - decay) / max(decay, 1e-9)  # = α_f unless clipped
+
+        mu_s = jump_intensity * (1.0 - n_disc)  # re-anchored baseline
+        ratio_now = lam_now / max(lam_bar_fit, 1e-9)  # current state, relative
+        exc = np.full(n_sim, max(0.0, ratio_now * jump_intensity - mu_s))
+
+        z = rng.standard_normal((n_sim, n_steps))
+        u = rng.random((n_sim, n_steps))
+        jump_sizes = jump_mean + sigma_jump * rng.standard_normal((n_sim, n_steps))
+        out = np.empty((n_sim, n_steps), dtype=float)
+
+        for t in range(n_steps):
+            lam = np.minimum(mu_s + exc, 1.0)  # cap: p <= 1 - e^{-1} ~ 0.63
+            p = 1.0 - np.exp(-lam)
+            jump = u[:, t] < p
+            # Exact per-step Bernoulli compensator (per path, intensity-aware):
+            #   E[exp(jump part) | p] = (1-p) + p·E[e^J] = 1 + p·κ
+            comp = np.log1p(p * kappa)
+            out[:, t] = (drift - comp - 0.5 * sigma**2) + sigma * z[:, t] + jump * jump_sizes[:, t]
+            exc = (exc + alpha_eff * jump) * decay
+
+        return out
+
+    # Constant-intensity (Merton/Bernoulli) branch
     drift_eff = drift - jump_intensity * kappa
 
     # Diffusion part with Itô correction
     z = rng.standard_normal((n_sim, n_steps))
     diffusion = (drift_eff - 0.5 * sigma**2) + sigma * z
 
-    # Jump part: Poisson mask × Gaussian jump size
+    # Jump part: Bernoulli mask × Gaussian jump size
     jump_mask = rng.random((n_sim, n_steps)) < jump_intensity
     jump_size = jump_mean + sigma_jump * rng.standard_normal((n_sim, n_steps))
     return diffusion + jump_mask * jump_size
@@ -361,13 +641,15 @@ def _simulate_ensemble(
     rng, n_sim, n_steps, base_sigma, drift, recent_returns: Sequence[float] | None, kurtosis_excess: float
 ) -> np.ndarray:
     """
-    Adaptive blend of GARCH + bootstrap + jump returns.
+    Adaptive MIXTURE of GARCH + FHS + jump paths (each path is simulated
+    entirely under one component model; see docs/math.md §8).
 
-    Weights are now driven by the *empirical* characteristics of the
+    Weights are driven by the *empirical* characteristics of the
     recent return series:
       • higher excess kurtosis           -> more weight on jumps
       • higher vol-of-vol (regime drift) -> more weight on GARCH
-      • otherwise the bootstrap (real distribution) dominates
+      • otherwise FHS (empirical shock distribution + conditional vol)
+        dominates
 
     This replaces the previous hard-coded 0.45/0.35/0.20 split that
     ignored regime entirely.
@@ -403,26 +685,46 @@ def _simulate_ensemble(
         w_boot /= total
         w_jump /= total
 
-    _, sigma_path = _simulate_garch(rng, n_sim, n_steps, base_sigma, recent_returns)
-    eps_g = rng.standard_normal((n_sim, n_steps))
-    # Itô correction applied per-path per-step (σ varies across paths via GARCH)
-    ret_garch = (drift - 0.5 * sigma_path**2) + sigma_path * eps_g
+    # Mixture sampling: each path is drawn from exactly ONE component model.
+    #
+    # The previous implementation returned the weighted AVERAGE of the three
+    # models' (independent) log-returns, w_g·r_g + w_b·r_b + w_j·r_j.  A
+    # weighted average of independent draws has variance
+    #   (w_g² + w_b² + w_j²)·σ²  ≈ 0.4·σ²   (for typical weights)
+    # instead of σ², so the bands/CVaR were ~35-40% too narrow, and the
+    # per-component −½σ² Itô corrections then over-corrected the mean
+    # (downward drift bias).  Allocating each path to a single model gives
+    # the intended mixture distribution: correct variance AND correct mean,
+    # since each component preserves E[exp(r)] = exp(drift) on its own.
+    counts = rng.multinomial(n_sim, [w_garch, w_boot, w_jump])
+    n_g, n_b, n_j = (int(c) for c in counts)
 
-    if has_history:
-        ret_boot = _simulate_bootstrap(rng, n_sim, n_steps, recent_returns, drift, base_sigma)
-    else:
-        ret_boot = np.zeros((n_sim, n_steps))
+    parts: list[np.ndarray] = []
+    if n_g:
+        eps_g, sigma_path = _simulate_garch(rng, n_g, n_steps, base_sigma, recent_returns)
+        # Itô correction applied per-path per-step (σ varies across paths via GARCH)
+        parts.append((drift - 0.5 * sigma_path**2) + sigma_path * eps_g)
+    if n_b:
+        # FHS replaces the raw stationary bootstrap as the empirical component:
+        # it keeps the empirical shock distribution AND conditional vol dynamics
+        # (the stationary bootstrap remains available as a standalone model).
+        parts.append(_simulate_fhs(rng, n_b, n_steps, drift, base_sigma, recent_returns))
+    if n_j:
+        parts.append(
+            _simulate_jump(
+                rng,
+                n_j,
+                n_steps,
+                drift,
+                base_sigma,
+                jump_intensity=min(0.06, 0.03 + kurt_norm * 0.04),
+                hawkes=_fit_hawkes_cached(recent_returns),
+            )
+        )
 
-    ret_jump = _simulate_jump(
-        rng,
-        n_sim,
-        n_steps,
-        drift,
-        base_sigma,
-        jump_intensity=min(0.06, 0.03 + kurt_norm * 0.04),
-    )
-
-    return w_garch * ret_garch + w_boot * ret_boot + w_jump * ret_jump
+    out = np.vstack(parts)
+    rng.shuffle(out, axis=0)  # de-block model ordering for downstream subsampling
+    return out
 
 
 # Microstructure model
@@ -542,10 +844,16 @@ def _normalise_volume_profile(
     return None
 
 
-def _calibrate_garch_mle(returns: np.ndarray) -> tuple[float, float, float]:
+def _calibrate_garch_mle(returns: np.ndarray) -> tuple[float, float, float, float]:
     """
-    Fit GARCH(1,1) by maximum likelihood on a single returns series.
-    Returns (omega, alpha, beta). Falls back to config defaults on failure.
+    Fit GJR-GARCH(1,1) by maximum likelihood on a single returns series.
+    Returns (omega, alpha, gamma, beta). Falls back to config defaults on
+    failure.  γ is the leverage (asymmetry) coefficient:
+
+        σ²_t = ω + (α + γ·1[ε_{t−1}<0])·ε²_{t−1} + β·σ²_{t−1}
+
+    Stationarity (symmetric innovations): α + γ/2 + β < 1.
+    Unconditional variance: ω / (1 − α − γ/2 − β).
 
     Results are cached for 5 minutes keyed by a fingerprint of the returns
     array, so repeated calls inside the poll loop hit the cache instead of
@@ -561,15 +869,16 @@ def _calibrate_garch_mle(returns: np.ndarray) -> tuple[float, float, float]:
         cache_key = None
 
     def _nll(params, r):
-        omega, alpha, beta = params
-        if omega <= 0 or alpha < 0 or beta < 0 or alpha + beta >= 0.999:
+        omega, alpha, gamma, beta = params
+        if omega <= 0 or alpha < 0 or gamma < 0 or beta < 0 or alpha + 0.5 * gamma + beta >= 0.999:
             return 1e10
         n = len(r)
         eps = r - r.mean()
         s2 = np.empty(n)
         s2[0] = max(np.var(r), 1e-10)
         for i in range(1, n):
-            s2[i] = omega + alpha * eps[i - 1] ** 2 + beta * s2[i - 1]
+            arch = (alpha + gamma * (eps[i - 1] < 0)) * eps[i - 1] ** 2
+            s2[i] = omega + arch + beta * s2[i - 1]
             if s2[i] <= 0:
                 return 1e10
         return 0.5 * np.sum(np.log(2 * np.pi * s2) + eps**2 / s2)
@@ -577,21 +886,21 @@ def _calibrate_garch_mle(returns: np.ndarray) -> tuple[float, float, float]:
     try:
         opt = optimize.minimize(
             _nll,
-            x0=[1e-6, cfg.garch_alpha, cfg.garch_beta],
+            x0=[1e-6, cfg.garch_alpha, cfg.garch_gamma, cfg.garch_beta],
             args=(returns,),
             method="Nelder-Mead",
-            options={"maxiter": 400, "xatol": 1e-8},
+            options={"maxiter": 600, "xatol": 1e-8},
         )
-        omega, alpha, beta = opt.x
-        if omega <= 0 or alpha < 0 or beta < 0 or alpha + beta >= 0.999:
-            raise ValueError("non-stationary GARCH")
-        result = float(omega), float(alpha), float(beta)
+        omega, alpha, gamma, beta = opt.x
+        if omega <= 0 or alpha < 0 or gamma < 0 or beta < 0 or alpha + 0.5 * gamma + beta >= 0.999:
+            raise ValueError("non-stationary GJR-GARCH")
+        result = float(omega), float(alpha), float(gamma), float(beta)
     except Exception:
-        alpha, beta = cfg.garch_alpha, cfg.garch_beta
-        if alpha + beta >= 0.999:
-            beta = max(0.10, 0.94 - alpha)
-        omega = max(1e-10, (1.0 - alpha - beta) * float(np.var(returns)))
-        result = float(omega), float(alpha), float(beta)
+        alpha, gamma, beta = cfg.garch_alpha, cfg.garch_gamma, cfg.garch_beta
+        if alpha + 0.5 * gamma + beta >= 0.999:
+            beta = max(0.10, 0.94 - alpha - 0.5 * gamma)
+        omega = max(1e-10, (1.0 - alpha - 0.5 * gamma - beta) * float(np.var(returns)))
+        result = float(omega), float(alpha), float(gamma), float(beta)
 
     if cache_key is not None:
         _garch_cache_put(cache_key, result)
@@ -694,23 +1003,63 @@ def _compute_cvd_state(
 def _compute_regime_state(
     rets: np.ndarray,
     p: _MSParams = _PARAMS,
-) -> tuple[str, float, float, float, float]:
+) -> tuple[str, float, float, float, float, float]:
     """
-    Returns (regime_label, dfa_alpha, drift_mult, gravity_mult, sigma_mult).
+    Returns (regime_label, dfa_alpha, dfa_se, drift_mult, gravity_mult, sigma_mult).
 
     Uses DFA on the log-return series (stationary) rather than price levels.
-    Thresholds: α > 0.55 -> trending, α < 0.45 -> mean-reverting.
+    Thresholds: α > 0.55 -> trending, α < 0.45 -> mean-reverting, BUT only
+    when α is also significant under a PERMUTATION test: the observed α must
+    fall outside the [2.5%, 97.5%] range of α computed on `hurst_n_shuffle`
+    random shuffles of the same window.
+
+    Why not the OLS slope SE?  Within one realisation the F(n) values are
+    nearly collinear, so the residual-based SE is tiny (~0.03) while the
+    true cross-realisation SD of α at N=128 is ~0.09 - an SE gate fires on
+    noise ~35% of the time.  Shuffling destroys serial correlation but keeps
+    the marginal distribution, so the null α's share DFA's finite-sample
+    bias and scatter - the test is self-calibrating.
+
+    The null simulation only runs when α is past a level threshold, so the
+    common neutral case costs one DFA call as before (~25 ms worst case).
     """
-    if rets.size >= p.hurst_window:
-        H, _ = dfa(rets[-p.hurst_window :])
+    # Accept anything >= hurst_min_n (=64, the minimum for a valid DFA slope);
+    # use at most the last hurst_window points.  The old code required exactly
+    # >= 60 points and then fed 60 to dfa(), which only yields 2 box sizes
+    # (4, 8) -> dfa() always returned its 0.5 fallback and the regime was
+    # permanently "neutral".
+    if rets.size >= p.hurst_min_n:
+        window = rets[-p.hurst_window :]
+        H, se = dfa(window)
         H = float(np.clip(H, 0.0, 1.0))
+        se = float(se)
     else:
-        H = 0.5
-    if p.hurst_trend < H:
-        return "trending", H, p.reg_trend_drift, p.reg_trend_gravity, p.reg_trend_sigma
-    if p.hurst_mean_rev > H:
-        return "mean-reverting", H, p.reg_mr_drift, p.reg_mr_gravity, p.reg_mr_sigma
-    return "neutral", H, p.reg_neut_drift, p.reg_neut_gravity, p.reg_neut_sigma
+        return "neutral", 0.5, 0.0, p.reg_neut_drift, p.reg_neut_gravity, p.reg_neut_sigma
+
+    # Short-circuit: inside the neutral band no significance test is needed.
+    if p.hurst_mean_rev <= H <= p.hurst_trend:
+        return "neutral", H, se, p.reg_neut_drift, p.reg_neut_gravity, p.reg_neut_sigma
+
+    # Permutation null: α on shuffled copies of the same window.
+    rng = np.random.default_rng()
+    shuffled = window.copy()
+    K = p.hurst_n_shuffle
+    null = np.empty(K)
+    for i in range(K):
+        rng.shuffle(shuffled)
+        null[i] = dfa(shuffled)[0]
+
+    # Exact Monte Carlo p-values (Phipson & Smyth 2010, "+1" correction).
+    # Under exchangeability P(p_hi <= level) <= level exactly - no quantile
+    # interpolation, no anti-conservative bias from small K.
+    p_hi = (1.0 + float(np.sum(null >= H))) / (K + 1.0)
+    p_lo = (1.0 + float(np.sum(null <= H))) / (K + 1.0)
+
+    if p_hi <= p.hurst_p_value and p.hurst_trend < H:
+        return "trending", H, se, p.reg_trend_drift, p.reg_trend_gravity, p.reg_trend_sigma
+    if p_lo <= p.hurst_p_value and p.hurst_mean_rev > H:
+        return "mean-reverting", H, se, p.reg_mr_drift, p.reg_mr_gravity, p.reg_mr_sigma
+    return "neutral", H, se, p.reg_neut_drift, p.reg_neut_gravity, p.reg_neut_sigma
 
 
 @dataclass
@@ -720,11 +1069,12 @@ class _MSContext:
     (in `_build_ms_context`) and reused at every step.
     """
 
-    # Drift & GARCH
+    # Drift & GJR-GARCH
     base_drift: float
     final_drift: float
     omega: float
     alpha: float
+    gamma: float  # GJR leverage coefficient (0 = symmetric GARCH)
     beta: float
     sigma2_init: float
     eps_init: float
@@ -732,6 +1082,7 @@ class _MSContext:
     # Regime
     regime: str
     hurst: float
+    hurst_se: float  # OLS standard error of the DFA slope
     drift_mult: float
     gravity_mult: float
     sigma_mult: float
@@ -847,6 +1198,7 @@ class _MSContext:
         return {
             "regime": self.regime,
             "dfa_alpha": float(self.hurst),  # primary (DFA exponent)
+            "dfa_se": float(self.hurst_se),  # OLS SE of the DFA slope
             "hurst": float(self.hurst),  # backwards-compatible alias
             "drift_bias": float(self.cvd_bias),
             "key_levels": {
@@ -856,7 +1208,7 @@ class _MSContext:
                 "HVNs": self.hvns.tolist(),
                 "LVNs": self.lvns.tolist(),
             },
-            "garch": {"omega": self.omega, "alpha": self.alpha, "beta": self.beta},
+            "garch": {"omega": self.omega, "alpha": self.alpha, "gamma": self.gamma, "beta": self.beta},
         }
 
 
@@ -886,13 +1238,16 @@ def _build_ms_context(
 
     if rets.size >= 30:
         window = rets[-p.garch_window :]
-        omega, alpha, beta = _calibrate_garch_mle(window)
+        omega, alpha, gamma, beta = _calibrate_garch_mle(window)
         sigma2_init = max(float(np.var(window)), 1e-10)
         eps_init = float(rets[-1] - rets.mean())
     else:
         alpha, beta = _calibrate_garch(recent_returns, cfg.garch_alpha, cfg.garch_beta)
+        gamma = cfg.garch_gamma
+        if alpha + 0.5 * gamma + beta >= 1.0:
+            gamma = max(0.0, 2.0 * (0.98 - alpha - beta))
         sigma2_init = max(base_sigma**2, 1e-10)
-        omega = (1.0 - alpha - beta) * sigma2_init
+        omega = (1.0 - alpha - 0.5 * gamma - beta) * sigma2_init
         eps_init = 0.0
 
     vol_sigma_mult, volume_validates = _compute_volume_state(
@@ -908,18 +1263,20 @@ def _build_ms_context(
         p,
     )
 
-    regime, hurst, drift_mult, gravity_mult, sigma_mult = _compute_regime_state(rets, p)
+    regime, hurst, hurst_se, drift_mult, gravity_mult, sigma_mult = _compute_regime_state(rets, p)
 
     return _MSContext(
         base_drift=base_drift,
         final_drift=base_drift + cvd_bias * drift_mult,
         omega=omega,
         alpha=alpha,
+        gamma=gamma,
         beta=beta,
         sigma2_init=sigma2_init,
         eps_init=eps_init,
         regime=regime,
         hurst=hurst,
+        hurst_se=hurst_se,
         drift_mult=drift_mult,
         gravity_mult=gravity_mult,
         sigma_mult=sigma_mult,
@@ -960,8 +1317,10 @@ def _simulate_microstructure(
     eps_prev = np.full(n_sim, ctx.eps_init)
 
     for step in range(n_steps):
-        # GARCH variance update (vectorised across paths)
-        sigma2 = ctx.omega + ctx.alpha * eps_prev**2 + ctx.beta * sigma2
+        # GJR-GARCH variance update (vectorised across paths); the γ term
+        # fires only on paths whose previous shock was negative (leverage)
+        arch_coef = ctx.alpha + ctx.gamma * (eps_prev < 0)
+        sigma2 = ctx.omega + arch_coef * eps_prev**2 + ctx.beta * sigma2
         sigma = np.sqrt(np.maximum(sigma2, 1e-12))
         sigma_eff = sigma * ctx.volume_sigma_mult * ctx.sigma_mult
 
@@ -1000,8 +1359,10 @@ def run(
     volume_history: Sequence[float] | None = None,
     cvd_history: Sequence[float] | None = None,
     volume_profile: Any = None,
+    band_alpha: float = 0.20,
 ) -> MCResult:
     rng = np.random.default_rng()
+    band_alpha = float(min(max(band_alpha, 0.02), 0.45))
     drift = float(signal.drift_bias)
     n_sim = int(max(50, n_simulations))
     n_step = int(max(1, n_candles))
@@ -1024,7 +1385,7 @@ def run(
         )
         paths = _simulate_microstructure(rng, n_sim, n_step, float(current_price), ctx)
         paths = np.where(np.isfinite(paths) & (paths > 0), paths, current_price)
-        return _build_mc_result(rng, paths, current_price, model, n_sim, ctx=ctx)
+        return _build_mc_result(rng, paths, current_price, model, n_sim, ctx=ctx, band_alpha=band_alpha)
 
     # Itô / Jensen bias correction:
     #   All returns here are LOG-returns fed into exp() path building.
@@ -1050,8 +1411,16 @@ def run(
             returns = (drift - 0.5 * sigma**2) + sigma * _innov_gaussian(rng, n_sim, n_step)
         else:
             returns = _simulate_bootstrap(rng, n_sim, n_step, recent_returns, drift, sigma)
+    elif model == "fhs":
+        if recent_returns is None or len(recent_returns) < 30:
+            model = "gaussian"
+            returns = (drift - 0.5 * sigma**2) + sigma * _innov_gaussian(rng, n_sim, n_step)
+        else:
+            returns = _simulate_fhs(rng, n_sim, n_step, drift, sigma, recent_returns)
     elif model == "jump":
-        returns = _simulate_jump(rng, n_sim, n_step, drift, sigma)
+        # Self-exciting (Hawkes) intensity when enough history to fit it;
+        # silently falls back to constant-λ Merton otherwise.
+        returns = _simulate_jump(rng, n_sim, n_step, drift, sigma, hawkes=_fit_hawkes_cached(recent_returns))
     elif model == "ensemble":
         returns = _simulate_ensemble(rng, n_sim, n_step, sigma, drift, recent_returns, kurtosis_excess)
     else:
@@ -1061,7 +1430,7 @@ def run(
     # Build price paths from log-returns using exp().
     # Clipping log-returns caps extreme moves without the 1+r > 0 constraint
     # that arithmetic path building requires.  Fat-tail models get wider cap.
-    if model in ("jump", "student_t", "ensemble"):
+    if model in ("jump", "student_t", "ensemble", "fhs"):
         cap = max(clip_val, 0.5)  # let tails breathe
     else:
         cap = clip_val
@@ -1075,7 +1444,7 @@ def run(
     )
     paths = np.where(np.isfinite(paths) & (paths > 0), paths, current_price)
 
-    return _build_mc_result(rng, paths, current_price, model, n_sim)
+    return _build_mc_result(rng, paths, current_price, model, n_sim, band_alpha=band_alpha)
 
 
 # Result builder (shared)
@@ -1088,6 +1457,7 @@ def _build_mc_result(
     model: str,
     n_sim: int,
     ctx: _MSContext | None = None,
+    band_alpha: float = 0.20,
 ) -> MCResult:
     """
     Aggregate a (n_sim, n_steps+1) price-path matrix into MCResult.
@@ -1101,7 +1471,6 @@ def _build_mc_result(
     # standard deviation of returns as a horizon-aware σ proxy and call
     # anything inside 0.25·σ "flat". Falls back to 30 bps when paths are
     # degenerate (e.g. all the same price).
-    max(1, paths.shape[1] - 1)
     rets_final = final / current_price - 1.0
     horizon_std = float(np.std(rets_final))
     band_frac = max(0.0025, 0.25 * horizon_std)  # >= 25 bps floor
@@ -1110,8 +1479,13 @@ def _build_mc_result(
     prob_down = float(np.mean(final < current_price - band))
     prob_flat = max(0.0, 1.0 - prob_up - prob_down)
 
-    # Final-price percentiles & summary stats - single batched call
-    p10, p25, med, p75, p90 = (float(v) for v in np.percentile(final, [10, 25, 50, 75, 90]))
+    # Final-price percentiles & summary stats - single batched call.
+    # Outer band levels come from the (conformally calibrated) band_alpha:
+    # nominal 0.20 -> P10/P90; if past bands under-covered, alpha shrinks
+    # and the band widens (e.g. P5/P95) until empirical coverage = 80%.
+    lo_q = 100.0 * band_alpha / 2.0
+    hi_q = 100.0 - lo_q
+    p10, p25, med, p75, p90 = (float(v) for v in np.percentile(final, [lo_q, 25, 50, 75, hi_q]))
     mean = float(np.mean(final))
     expected_return = (mean / current_price - 1.0) * 100 if current_price else 0.0
 
@@ -1156,10 +1530,10 @@ def _build_mc_result(
         else:
             pd_r = round(pd_r + rounding_err, 1)
 
-    # Per-step bands - single batched percentile pass
+    # Per-step bands - single batched percentile pass (same calibrated levels)
     band_p10, band_p25, median_path_arr, band_p75, band_p90 = np.percentile(
         paths,
-        [10, 25, 50, 75, 90],
+        [lo_q, 25, 50, 75, hi_q],
         axis=0,
     )
     # np.round operates on the whole array in one C call; .tolist() is fast.
@@ -1196,8 +1570,10 @@ def _build_mc_result(
         prob_up_se=round(prob_up_se, 3),
         prob_down_se=round(prob_down_se, 3),
         cvar_5_se=round(cvar_5_se, 3),
+        band_alpha=round(band_alpha, 4),
         ms_regime=ms["regime"] if ms else None,
         ms_dfa_alpha=ms["dfa_alpha"] if ms else None,
+        ms_dfa_se=ms["dfa_se"] if ms else None,
         ms_hurst=ms["hurst"] if ms else None,
         ms_drift_bias=ms["drift_bias"] if ms else None,
         ms_key_levels=ms["key_levels"] if ms else None,

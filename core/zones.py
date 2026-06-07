@@ -14,34 +14,6 @@ from config import cfg
 logger = logging.getLogger(__name__)
 
 
-def _pivot_wing() -> int:
-    return int(cfg.zone_pivot_window)
-
-
-def _cluster_atr() -> float:
-    return float(cfg.zone_cluster_atr)
-
-
-def _touch_atr() -> float:
-    return float(cfg.zone_touch_atr)
-
-
-def _break_atr() -> float:
-    return float(cfg.zone_break_atr)
-
-
-def _max_demand() -> int:
-    return int(cfg.zone_max_demand)
-
-
-def _max_supply() -> int:
-    return int(cfg.zone_max_supply)
-
-
-def _zone_half_atr() -> float:
-    return float(cfg.zone_width_atr)
-
-
 # Scoring constants. They sum to 1.0 by design so a perfect zone scores 1.0.
 _W_TOUCHES = 0.35
 _W_RECENCY = 0.25
@@ -51,7 +23,7 @@ _W_DEPTH = 0.20
 # Saturation point for the touch component.
 _MAX_TOUCH_COUNT = 4
 
-# Minimum strength a zone must have to be considered "nearest" on the dashboard.
+# Minimum strength for a zone to count as "nearest".
 # Filters out near-noise zones that would otherwise win on proximity alone.
 _MIN_NEAREST_STRENGTH = 0.30
 
@@ -151,8 +123,8 @@ def _cluster(
         return []
 
     sorted_p = sorted(pivots, key=lambda x: x[1])
-    band = atr * _cluster_atr()
-    half_w = atr * _zone_half_atr()
+    band = atr * cfg.zone_cluster_atr
+    half_w = atr * cfg.zone_width_atr
 
     zones: list[Zone] = []
     seed_price: float = sorted_p[0][1]
@@ -218,7 +190,7 @@ def _score_zones(
     if not zones or n_bars <= 1:
         return
 
-    touch_band = atr * _touch_atr()
+    touch_band = atr * cfg.zone_touch_atr
 
     for z in zones:
         touching = (lows <= z.level + touch_band) & (highs >= z.level - touch_band)
@@ -262,7 +234,7 @@ def _remove_broken(
     if not zones:
         return zones
 
-    thresh = atr * _break_atr()
+    thresh = atr * cfg.zone_break_atr
     surviving: list[Zone] = []
     for z in zones:
         after_start = z.bar_idx + 1
@@ -290,7 +262,7 @@ def _select_nearest(
     """
     Pick the closest zone on the requested side of price that meets a
     minimum strength floor. If no zone clears the floor, fall back to the
-    closest zone of any strength - the dashboard still wants something to
+    closest zone of any strength - callers still want something to
     show, but the floor stops weak noise zones from winning.
     """
     if not zones:
@@ -345,7 +317,7 @@ def detect_zones(df: pd.DataFrame) -> ZoneResult:
         if atr <= 0 or not np.isfinite(atr):
             return _EMPTY
 
-        pivot_highs, pivot_lows = _find_pivots(highs, lows, wing=_pivot_wing())
+        pivot_highs, pivot_lows = _find_pivots(highs, lows, wing=cfg.zone_pivot_window)
 
         demand_zones = _cluster(pivot_lows, atr, "demand")
         supply_zones = _cluster(pivot_highs, atr, "supply")
@@ -358,10 +330,10 @@ def detect_zones(df: pd.DataFrame) -> ZoneResult:
 
         demand_zones.sort(key=lambda z: z.strength, reverse=True)
         supply_zones.sort(key=lambda z: z.strength, reverse=True)
-        demand_zones = demand_zones[: _max_demand()]
-        supply_zones = supply_zones[: _max_supply()]
+        demand_zones = demand_zones[: cfg.zone_max_demand]
+        supply_zones = supply_zones[: cfg.zone_max_supply]
 
-        touch_band = atr * _touch_atr()
+        touch_band = atr * cfg.zone_touch_atr
         nearest_demand = _select_nearest(demand_zones, price, side="below", touch_band=touch_band)
         nearest_supply = _select_nearest(supply_zones, price, side="above", touch_band=touch_band)
 

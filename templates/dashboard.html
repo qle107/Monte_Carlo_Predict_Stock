@@ -78,7 +78,7 @@
           style="margin-left:auto;background:none;border:1px solid rgba(139,148,158,.3);
                  border-radius:4px;color:var(--muted);font-size:10px;padding:2px 8px;
                  cursor:pointer;white-space:nowrap;flex-shrink:0;">
-    Dismiss ✕
+    Dismiss 
   </button>
 </div>
 
@@ -89,18 +89,17 @@
   <span id="signal-mixed-indicator" style="display:none;font-size:10px;padding:2px 7px;
         background:rgba(210,153,34,.18);border:1px solid rgba(210,153,34,.5);
         border-radius:4px;color:var(--amber);margin-left:4px;"
-        title="Technical signal and crowd sentiment disagree.">⚡ Signals Mixed</span>
+        title="Technical signal and crowd sentiment disagree.">Signals Mixed</span>
   <span id="updated">-</span>
   <!-- Quick ticker + timeframe -->
   <div id="quick-ticker-wrap">
-    <div id="quick-ticker-label">Ticker</div>
     <div id="quick-config">
       <input id="quick-ticker" type="text"
         placeholder="AAPL"
         maxlength="10"
         oninput="this.value=this.value.toUpperCase()"
         onkeydown="if(event.key==='Enter'){applyQuickTicker();this.blur();}"
-        title="Type ticker and press Enter - or press ▶"
+        title="Type ticker and press Enter - or click Go"
       />
       <select id="quick-interval"
         onchange="applyQuickTicker()"
@@ -115,7 +114,7 @@
         <option value="4h">4h</option>
         <option value="1d">1d</option>
       </select>
-      <button id="quick-go-btn" onclick="applyQuickTicker()" title="Load ticker">▶</button>
+      <button id="quick-go-btn" onclick="applyQuickTicker()" title="Load ticker">Go</button>
     </div>
   </div>
   <div id="hdr-right">
@@ -128,15 +127,15 @@
     <div class="mc-alerts-bell-wrap">
       <button class="hdr-btn" id="mc-alerts-bell-btn"
               onclick="mcAlerts.togglePanel()"
-              title="Price Alerts - set a notification when a stock crosses a target price">🔔</button>
+              title="Price Alerts - set a notification when a stock crosses a target price"></button>
       <span id="mc-alerts-bell-badge"></span>
     </div>
-    <button class="hdr-btn" id="portfolio-btn" onclick="togglePortfolio()" style="border-color:rgba(88,166,255,.4);color:#58a6ff;">📊 Portfolio</button>
+    <button class="hdr-btn" id="portfolio-btn" onclick="togglePortfolio()" style="border-color:rgba(88,166,255,.4);color:#58a6ff;">Portfolio</button>
   </div>
 </header>
 
 <div id="mc-side-overlay" onclick="_closeSideSheet()"></div>
-<button id="mc-side-fab" aria-label="Open analysis panel" onclick="_openSideSheet()">☰</button>
+<button id="mc-side-fab" aria-label="Open analysis panel" onclick="_openSideSheet()"></button>
 
 <!-- Portfolio Drawer -->
 <div id="portfolio-drawer" style="
@@ -150,14 +149,14 @@
 
   <!-- DRAWER HEADER -->
   <div id="pt-header">
-    <div class="logo"><div class="logo-icon">📊</div> Portfolio Tracker</div>
+    <div class="logo">Portfolio Tracker</div>
     <div id="pt-header-actions">
       <div class="pt-live-badge"><div class="pt-live-dot"></div> Live</div>
-      <button class="pt-btn pt-btn-secondary pt-btn-sm" onclick="ptExport()">⬇ Export</button>
+      <button class="pt-btn pt-btn-secondary pt-btn-sm" onclick="ptExport()">Export</button>
       <label class="pt-btn pt-btn-secondary pt-btn-sm" style="cursor:pointer">
-        ⬆ Import <input type="file" accept=".json" onchange="ptImport(event)" style="display:none">
+        Import <input type="file" accept=".json" onchange="ptImport(event)" style="display:none">
       </label>
-      <button id="pt-close" onclick="togglePortfolio()">✕ Close</button>
+      <button id="pt-close" onclick="togglePortfolio()"> Close</button>
     </div>
   </div>
 
@@ -172,7 +171,7 @@
         <button class="pt-btn pt-btn-primary pt-btn-sm" onclick="ptCreatePortfolio()">+</button>
       </div>
       <div class="pt-sidebar-footer">
-        <button onclick="ptToggleApi()">⚙ API Keys (Alpaca)</button>
+        <button onclick="ptToggleApi()">API Keys (Alpaca)</button>
       </div>
     </div>
 
@@ -180,7 +179,7 @@
     <div id="pt-main">
       <!-- API PANEL -->
       <div class="pt-section" id="pt-api-panel">
-        <div class="pt-section-title">⚙️ Alpaca API Keys <span style="font-size:11px;color:var(--text2);font-weight:400">(optional - falls back to Yahoo Finance)</span></div>
+        <div class="pt-section-title">Alpaca API Keys <span style="font-size:11px;color:var(--text2);font-weight:400">(optional - falls back to Yahoo Finance)</span></div>
         <div class="pt-form">
           <div class="pt-fg"><label>API Key ID</label><input type="text" id="pt-key-id" placeholder="PKXXXXXX..." style="min-width:200px"/></div>
           <div class="pt-fg"><label>Secret Key</label><input type="password" id="pt-secret" placeholder="••••••••" style="min-width:200px"/></div>
@@ -200,7 +199,7 @@
 
       <!-- ADD FORM -->
       <div class="pt-section">
-        <div class="pt-section-title">➕ Add Position</div>
+        <div class="pt-section-title"> Add Position</div>
         <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
           <div class="pt-fg">
             <label>Ticker</label>
@@ -222,7 +221,7 @@
             <label>Amount Invested $</label>
             <input type="number" id="pt-in-shares" placeholder="e.g. 1000" step="any" min="0.01" style="width:130px"/>
           </div>
-          <button class="pt-btn pt-btn-secondary" onclick="ptFetchPrice()" id="pt-fetch-btn">🔄 Fetch</button>
+          <button class="pt-btn pt-btn-secondary" onclick="ptFetchPrice()" id="pt-fetch-btn"> Fetch</button>
           <button class="pt-btn pt-btn-primary" onclick="ptAddPosition()">Add Position</button>
         </div>
       </div>
@@ -230,28 +229,28 @@
       <!-- TABLE -->
       <div class="pt-table-wrap">
         <div class="pt-table-hdr">
-          <span style="font-size:14px;font-weight:700">📋 Holdings</span>
+          <span style="font-size:14px;font-weight:700"> Holdings</span>
           <div style="display:flex;gap:8px;align-items:center">
             <div class="pt-alert-ctrl">
               Alert ±<input type="number" id="pt-threshold" value="5" min="0.1" max="100" step="0.5"
                 onchange="ptSaveState();ptRenderTable()" />%
             </div>
-            <button class="pt-btn pt-btn-secondary pt-btn-sm" onclick="ptRefreshAll()">🔄 Refresh</button>
+            <button class="pt-btn pt-btn-secondary pt-btn-sm" onclick="ptRefreshAll()"> Refresh</button>
           </div>
         </div>
         <div id="pt-table-wrap">
-          <div class="pt-empty">📂 No positions yet. Add your first stock above.</div>
+          <div class="pt-empty"> No positions yet. Add your first stock above.</div>
         </div>
       </div>
 
       <!-- BOTTOM -->
       <div class="pt-bottom-grid">
         <div class="pt-chart-card">
-          <div class="pt-section-title">🥧 Allocation</div>
+          <div class="pt-section-title"> Allocation</div>
           <div class="pt-chart-wrap"><canvas id="pt-pie"></canvas></div>
         </div>
         <div class="pt-chart-card">
-          <div class="pt-section-title">🏆 Top Movers</div>
+          <div class="pt-section-title"> Top Movers</div>
           <div id="pt-movers" style="display:flex;flex-direction:column;gap:8px;padding-top:4px">
             <div style="color:var(--text2);font-size:12px">No holdings yet</div>
           </div>
@@ -323,9 +322,10 @@
         <option value="student_t">Student-t (heavy tails)</option>
         <option value="garch">GARCH (vol clustering)</option>
         <option value="bootstrap">Bootstrap (real returns)</option>
-        <option value="jump">Jump-diffusion (gaps)</option>
-        <option value="ensemble">Ensemble (GARCH+Boot+Jump) ★</option>
-        <option value="microstructure" selected>Microstructure (VP + CVD + Hurst) ★★</option>
+        <option value="jump">Jump-diffusion (Hawkes gaps)</option>
+        <option value="fhs">FHS (GARCH + real shocks)</option>
+        <option value="ensemble">Ensemble (GARCH+FHS+Jump) </option>
+        <option value="microstructure" selected>Microstructure (VP + CVD + Hurst) </option>
       </select>
       <span class="hint">Innovation distribution</span>
     </div>
@@ -365,7 +365,6 @@
 <!-- Metrics strip -->
 <div class="grid-top">
   <div class="metric"><div class="lbl">Price</div>          <div class="val" id="m-price">-</div></div>
-  <div class="metric"><div class="lbl">Ticker TF</div>      <div class="val" id="m-ticker">-</div></div>
   <div class="metric"><div class="lbl">Drift bias</div>     <div class="val" id="m-drift">-</div></div>
   <div class="metric"><div class="lbl">Median target</div>  <div class="val" id="m-target">-</div></div>
   <div class="metric"><div class="lbl">Confidence</div>     <div class="val" id="m-conf">-</div></div>
@@ -373,7 +372,7 @@
 </div>
 
 <div id="macro-strip" title="Macroeconomic indicators - scroll horizontally for more">
-  <div class="macro-strip-label">📊 Macro</div>
+  <div class="macro-strip-label">Macro</div>
   <!-- Chips injected by renderMacroStrip() in JS -->
   <div id="macro-chips" style="display:flex;gap:0;flex:1;"></div>
   <button class="macro-refresh-btn" id="macro-refresh-btn"
@@ -399,23 +398,23 @@
   <!-- 5 pillars -->
   <div style="display:flex;gap:6px;flex:1;flex-wrap:wrap;">
     <div class="sig-pillar" id="sig-pillar-trend">
-      <div class="sig-pillar-label">📈 Trend</div>
+      <div class="sig-pillar-label">Trend</div>
       <div class="sig-pillar-val" id="sig-trend-val">-</div>
     </div>
     <div class="sig-pillar" id="sig-pillar-momentum">
-      <div class="sig-pillar-label">⚡ Momentum</div>
+      <div class="sig-pillar-label">Momentum</div>
       <div class="sig-pillar-val" id="sig-mom-val">-</div>
     </div>
     <div class="sig-pillar" id="sig-pillar-options">
-      <div class="sig-pillar-label">🎯 Options</div>
+      <div class="sig-pillar-label">Options</div>
       <div class="sig-pillar-val" id="sig-opts-val">-</div>
     </div>
     <div class="sig-pillar" id="sig-pillar-sentiment">
-      <div class="sig-pillar-label">💬 Sentiment</div>
+      <div class="sig-pillar-label">Sentiment</div>
       <div class="sig-pillar-val" id="sig-sent-val">-</div>
     </div>
     <div class="sig-pillar" id="sig-pillar-macro">
-      <div class="sig-pillar-label">🏦 Macro</div>
+      <div class="sig-pillar-label"> Macro</div>
       <div class="sig-pillar-val" id="sig-macro-val">-</div>
     </div>
   </div>
@@ -449,7 +448,7 @@
             title="Measure: click two points to measure price change and candle count"
             style="margin-left:8px;background:var(--surface2);border:1px solid var(--border);color:var(--muted);
                    border-radius:4px;padding:2px 8px;font-size:10px;cursor:pointer;line-height:1.4;">
-            📐 Measure
+             Measure
           </button>
           <span id="measure-readout" style="font-size:10px;color:var(--amber);margin-left:6px;font-weight:600;display:none;"></span>
         </span>
@@ -463,34 +462,44 @@
       <!-- Tab switcher -->
       <div class="scanner-tabs">
         <button class="scanner-tab active" id="tab-breakout" onclick="switchScannerTab('breakout')">
-          📡 Breakout Scanner
+           Breakout Scanner
           <span class="tab-badge" id="tab-breakout-badge">-</span>
         </button>
         <button class="scanner-tab" id="tab-zone" onclick="switchScannerTab('zone')">
-          🎯 Zone + EMA Strategy
+          Zone + EMA Strategy
           <span class="tab-badge" id="tab-zone-badge">-</span>
         </button>
         <button class="scanner-tab" id="tab-sentiment" onclick="switchScannerTab('sentiment')">
-          🌐 Social Sentiment
+           Social Sentiment
           <span class="tab-badge" id="tab-sentiment-badge" style="background:rgba(210,153,34,.15);color:var(--amber);">NEW</span>
         </button>
         <button class="scanner-tab" id="tab-options" onclick="switchScannerTab('options')">
-          📈 Options
+          Options
           <span class="tab-badge" id="tab-options-badge" style="background:rgba(63,185,80,.15);color:var(--green);">CHAIN</span>
         </button>
         <button class="scanner-tab" id="tab-market-structure" onclick="switchScannerTab('market-structure')">
-          🔬 Market Structure
+           Market Structure
           <span class="tab-badge" id="tab-ms-badge" style="background:rgba(188,140,255,.15);color:var(--purple);">QUANT</span>
         </button>
         <!-- News & Macro tab -->
         <button class="scanner-tab" id="tab-news" onclick="switchScannerTab('news')">
-          📰 News &amp; Macro
+           News &amp; Macro
           <span class="tab-badge" id="tab-news-badge" style="background:rgba(210,153,34,.15);color:var(--amber);">LIVE</span>
         </button>
         <!-- Unusual Options tab -->
         <button class="scanner-tab" id="tab-unusual-opts" onclick="switchScannerTab('unusual-opts')">
-          🔥 Unusual Options
+          Unusual Options
           <span class="tab-badge" id="tab-unusual-opts-badge" style="background:rgba(248,81,73,.15);color:#f85149;">FLOW</span>
+        </button>
+        <!-- Probability-of-profit scanner tab -->
+        <button class="scanner-tab" id="tab-pop" onclick="switchScannerTab('pop')">
+           POP &amp; EV Scanner
+          <span class="tab-badge" id="tab-pop-badge" style="background:rgba(88,166,255,.15);color:var(--blue);">MODEL</span>
+        </button>
+        <!-- AI Analyst tab -->
+        <button class="scanner-tab" id="tab-ai" onclick="switchScannerTab('ai')">
+          ✨ AI Analyst
+          <span class="tab-badge" id="tab-ai-badge" style="background:rgba(188,140,255,.15);color:var(--purple);">CLAUDE</span>
         </button>
       </div>
 
@@ -509,19 +518,19 @@
         <div style="margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
           <select id="scan-watchlist" class="scan-ctrl">
             <option value="sp500_large">S&amp;P 500 Large Cap</option>
-            <option value="tech">💻 Tech</option>
-            <option value="etfs">📊 Major ETFs</option>
-            <option value="biotech">🧬 Biotech</option>
-            <option value="momentum">🚀 Momentum</option>
-            <option value="space">🛸 Space</option>
-            <option value="robotics">🤖 Robotics &amp; AI</option>
-            <option value="energy">⚡ Energy</option>
-            <option value="defense">🛡 Defense</option>
+            <option value="tech"> Tech</option>
+            <option value="etfs">Major ETFs</option>
+            <option value="biotech"> Biotech</option>
+            <option value="momentum">Momentum</option>
+            <option value="space"> Space</option>
+            <option value="robotics">Robotics &amp; AI</option>
+            <option value="energy">Energy</option>
+            <option value="defense"> Defense</option>
             <option value="crypto">₿ Crypto</option>
-            <option value="ev">🚗 EV</option>
-            <option value="financials">🏦 Financials</option>
-            <option value="cannabis">🌿 Cannabis</option>
-            <option value="custom">✏ Custom tickers...</option>
+            <option value="ev"> EV</option>
+            <option value="financials"> Financials</option>
+            <option value="cannabis"> Cannabis</option>
+            <option value="custom"> Custom tickers...</option>
           </select>
 
           <input id="scan-custom" type="text" placeholder="AAPL, NVDA, TSLA..." class="scan-ctrl"
@@ -538,7 +547,7 @@
 
           <button onclick="runScanner()" id="scan-btn" class="scan-run-btn">
             <span class="spinner" id="scan-spin"></span>
-            <span id="scan-label">▶ Run Scanner</span>
+            <span id="scan-label">Run Scanner</span>
           </button>
         </div>
       </div>
@@ -549,7 +558,7 @@
 
       <!-- Empty / Error states -->
       <div id="scan-empty-state">
-        <div class="big-icon">📡</div>
+        <div class="big-icon"></div>
         <p>Choose a watchlist and click <strong>Run Scanner</strong> to find breakouts and breakdowns.</p>
         <p style="margin-top:6px; font-size:11px;">Works on weekends too - uses historical daily data.</p>
       </div>
@@ -603,6 +612,7 @@
                 <th onclick="setScanSort('price_vs_52w')">vs 52w Hi</th>
                 <th onclick="setScanSort('ema200_dist')">vs EMA200</th>
                 <th onclick="setScanSort('hurst')">Hurst</th>
+                <th onclick="setScanSort('em_1w_sd')" title="1-week expected move (±1σ, realized vol). Hover cell for 1σ/2σ price ranges.">1w ±σ</th>
                 <!-- Trade Setup columns (ATR-estimated - click Load for full MC) -->
                 <th style="border-left:2px solid rgba(88,166,255,.2);" onclick="setScanSort('ts_side')" title="Trade direction. TP targets are ATR-estimated. Click Load ↗ for full MC analysis.">Side</th>
                 <th onclick="setScanSort('ts_entry')">Entry</th>
@@ -635,19 +645,19 @@
           <div style="margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
             <select id="zone-watchlist" class="scan-ctrl">
               <option value="sp500_large">S&amp;P 500 Large Cap</option>
-              <option value="tech">💻 Tech</option>
-              <option value="etfs">📊 Major ETFs</option>
-              <option value="biotech">🧬 Biotech</option>
-              <option value="momentum">🚀 Momentum</option>
-              <option value="space">🛸 Space</option>
-              <option value="robotics">🤖 Robotics &amp; AI</option>
-              <option value="energy">⚡ Energy</option>
-              <option value="defense">🛡 Defense</option>
+              <option value="tech"> Tech</option>
+              <option value="etfs">Major ETFs</option>
+              <option value="biotech"> Biotech</option>
+              <option value="momentum">Momentum</option>
+              <option value="space"> Space</option>
+              <option value="robotics">Robotics &amp; AI</option>
+              <option value="energy">Energy</option>
+              <option value="defense"> Defense</option>
               <option value="crypto">₿ Crypto</option>
-              <option value="ev">🚗 EV</option>
-              <option value="financials">🏦 Financials</option>
-              <option value="cannabis">🌿 Cannabis</option>
-              <option value="custom">✏ Custom tickers...</option>
+              <option value="ev"> EV</option>
+              <option value="financials"> Financials</option>
+              <option value="cannabis"> Cannabis</option>
+              <option value="custom"> Custom tickers...</option>
             </select>
             <input id="zone-custom" type="text" placeholder="AAPL, NVDA, TSLA..." class="scan-ctrl" style="display:none; width:200px;">
             <select id="zone-interval" class="scan-ctrl">
@@ -664,7 +674,7 @@
                      cursor:pointer; display:flex; align-items:center; gap:8px;
                      box-shadow:0 2px 8px rgba(188,140,255,.25); transition:opacity .15s;">
               <span class="spinner" id="zone-spin"></span>
-              <span id="zone-scan-label">🎯 Run Zone Scan</span>
+              <span id="zone-scan-label">Run Zone Scan</span>
             </button>
           </div>
         </div>
@@ -677,7 +687,7 @@
 
         <!-- Empty state -->
         <div id="zone-empty-state" style="display:block; text-align:center; padding:48px 20px; color:var(--muted);">
-          <div style="font-size:36px; margin-bottom:10px;">🎯</div>
+          
           <p style="font-size:13px;">Choose a watchlist and click <strong>Run Zone Scan</strong> to find demand/supply zone setups.</p>
           <p style="margin-top:6px; font-size:11px; color:var(--muted);">Needs 120+ bars for EMA200 - use Daily or 4H for best results.</p>
         </div>
@@ -764,7 +774,7 @@
                      cursor:pointer;display:flex;align-items:center;gap:8px;
                      box-shadow:0 2px 8px rgba(210,153,34,.3);transition:opacity .15s,transform .1s;">
               <span class="spinner" id="sent-spin"></span>
-              <span id="sent-run-label">🌐 Fetch Sentiment</span>
+              <span id="sent-run-label"> Fetch Sentiment</span>
             </button>
           </div>
         </div>
@@ -776,7 +786,7 @@
 
         <!-- Empty state -->
         <div id="sent-empty-state" style="text-align:center;padding:52px 24px;color:var(--muted);">
-          <div style="font-size:40px;margin-bottom:12px;">🌐</div>
+          
           <p style="font-size:13px;margin-bottom:8px;">Enter a ticker above and click <strong style="color:var(--text);">Fetch Sentiment</strong>.</p>
           <p style="font-size:11px;line-height:1.7;">
             Scrapes live posts from <strong>r/wallstreetbets</strong>, <strong>r/options</strong>, <strong>r/stocks</strong>, and <strong>r/investing</strong>.<br>
@@ -815,8 +825,8 @@
               <!-- X header (shown when X data available) -->
               <div id="sp-x-mode-x" style="display:block;">
                 <div class="sent-card-hdr">
-                  <span>📊 StockTwits
-                    <span class="src-tag" title="StockTwits public stream - no API key required, Endpoint: /api/sentiment">⚙ StockTwits API</span>
+                  <span>StockTwits
+                    <span class="src-tag" title="StockTwits public stream - no API key required, Endpoint: /api/sentiment">StockTwits API</span>
                   </span>
                   <span id="sp-x-score" style="font-weight:700;font-size:14px;"></span>
                 </div>
@@ -844,8 +854,8 @@
 
             <div class="sent-card" style="align-self:start;" id="insider-activity-card">
               <div class="sent-card-hdr">
-                <span>🏛️ Insider Activity
-                  <span class="src-tag" title="SEC EDGAR Form 4 filings (free, no key), Endpoint: /api/insider-activity">⚙ SEC EDGAR</span>
+                <span>Insider Activity
+                  <span class="src-tag" title="SEC EDGAR Form 4 filings (free, no key), Endpoint: /api/insider-activity">SEC EDGAR</span>
                 </span>
                 <span id="sp-insider-status" style="font-size:10px;color:var(--muted);">Loading...</span>
               </div>
@@ -891,7 +901,7 @@
           <!-- Sentiment Type breakdown -->
           <div class="sent-posts-wrap" id="sent-type-section" style="display:none;margin-bottom:14px;">
             <div style="font-size:13px;font-weight:700;margin-bottom:14px;">
-              🗣️ What Are People Talking About?
+              What Are People Talking About?
             </div>
             <div id="sp-type-bars" style="display:flex;flex-direction:column;gap:8px;"></div>
           </div>
@@ -899,7 +909,7 @@
           <!-- Top X posts -->
           <div class="sent-posts-wrap" id="sent-posts-section" style="display:none;">
             <div style="font-size:13px;font-weight:700;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;">
-              <span>🐦 Top X Posts</span>
+              <span> Top X Posts</span>
               <span id="sp-posts-meta" style="font-size:11px;color:var(--muted);font-weight:400;"></span>
             </div>
             <div class="scan-table-wrap">
@@ -910,10 +920,10 @@
                     <th>Source</th>
                     <th>Type</th>
                     <th>Sentiment</th>
-                    <th>❤️ Likes</th>
-                    <th>🔁 RT</th>
-                    <th style="color:var(--green)">📞</th>
-                    <th style="color:var(--red)">🔻</th>
+                    <th>Likes</th>
+                    <th> RT</th>
+                    <th style="color:var(--green)">Call</th>
+                    <th style="color:var(--red)">Put</th>
                     <th>Price mentions</th>
                   </tr>
                 </thead>
@@ -930,7 +940,7 @@
           <div style="display:flex;align-items:center;justify-content:space-between;
                       margin-bottom:12px;flex-wrap:wrap;gap:8px;">
             <div style="display:flex;align-items:center;gap:8px;">
-              <div style="font-size:15px;font-weight:700;">🔴 Live News Feed</div>
+              <div style="font-size:15px;font-weight:700;"> Live News Feed</div>
               <!-- Connection status -->
               <div style="display:flex;align-items:center;gap:5px;">
                 <div id="live-news-dot"
@@ -944,7 +954,7 @@
                     style="padding:5px 12px;background:rgba(139,148,158,.12);
                            border:1px solid rgba(139,148,158,.3);border-radius:6px;
                            color:var(--muted);font-size:11px;font-weight:600;cursor:pointer;">
-              ⏸ Pause
+              Pause
             </button>
           </div>
 
@@ -973,12 +983,12 @@
             <button class="lnf-filter-btn" data-filter="positive"
                     style="padding:4px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;
                            background:transparent;border:1px solid rgba(139,148,158,.3);color:var(--muted);">
-              🟢 Positive
+               Positive
             </button>
             <button class="lnf-filter-btn" data-filter="negative"
                     style="padding:4px 10px;border-radius:12px;font-size:11px;font-weight:600;cursor:pointer;
                            background:transparent;border:1px solid rgba(139,148,158,.3);color:var(--muted);">
-              🔴 Negative
+               Negative
             </button>
           </div>
 
@@ -998,7 +1008,7 @@
           <!-- Header row with refresh button -->
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
             <div>
-              <div style="font-size:15px;font-weight:700;color:var(--text);">🌍 Global Market Pulse</div>
+              <div style="font-size:15px;font-weight:700;color:var(--text);"> Global Market Pulse</div>
               <div style="font-size:11px;color:var(--muted);margin-top:2px;">
                 Overall market mood, Reddit hot posts, StockTwits, News headlines, Inverse Cramer market view
               </div>
@@ -1009,7 +1019,7 @@
                            border:1px solid rgba(188,140,255,.3);border-radius:8px;
                            color:var(--purple);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">
               <span id="global-spin" style="display:none;">⏳</span>
-              <span id="global-run-label">🌍 Fetch Market Pulse</span>
+              <span id="global-run-label"> Fetch Market Pulse</span>
             </button>
           </div>
 
@@ -1023,7 +1033,7 @@
 
           <!-- Empty / error states -->
           <div id="global-empty-state" style="text-align:center;padding:28px 16px;color:var(--muted);">
-            <div style="font-size:28px;margin-bottom:8px;">🌐</div>
+            <div style="font-size:28px;margin-bottom:8px;"></div>
             <div style="font-size:13px;">Click <strong>Fetch Market Pulse</strong> to load overall market sentiment</div>
           </div>
           <div id="global-error-state" style="display:none;text-align:center;padding:24px;color:var(--red);"></div>
@@ -1050,7 +1060,7 @@
 
               <!-- Market Stats -->
               <div class="sent-card">
-                <div class="sent-card-hdr"><span>📊 Market Stats</span></div>
+                <div class="sent-card-hdr"><span>Market Stats</span></div>
                 <div class="sent-kpi4" style="margin-top:8px;">
                   <div class="sent-kpi">
                     <div class="sent-kpi-v" id="gp-post-count">-</div>
@@ -1062,11 +1072,11 @@
                   </div>
                   <div class="sent-kpi">
                     <div class="sent-kpi-v" id="gp-call-m" style="color:var(--green)">-</div>
-                    <div class="sent-kpi-l">📞 mentions</div>
+                    <div class="sent-kpi-l">Call mentions</div>
                   </div>
                   <div class="sent-kpi">
                     <div class="sent-kpi-v" id="gp-put-m" style="color:var(--red)">-</div>
-                    <div class="sent-kpi-l">🔻 mentions</div>
+                    <div class="sent-kpi-l">Put mentions</div>
                   </div>
                 </div>
                 <!-- Bull/bear split bar -->
@@ -1082,21 +1092,21 @@
 
               <!-- Hot Market Themes -->
               <div class="sent-card">
-                <div class="sent-card-hdr"><span>🔥 Hot Themes</span></div>
+                <div class="sent-card-hdr"><span>Hot Themes</span></div>
                 <div id="gp-themes" style="display:flex;flex-direction:column;gap:6px;margin-top:8px;"></div>
               </div>
 
               <!-- Inverse Cramer Market View -->
               <div class="sent-card">
                 <div class="sent-card-hdr">
-                  <span>🎙️ Cramer's Picks</span>
+                  <span>Cramer's Picks</span>
                   <span id="gp-cramer-conf" style="font-size:10px;color:var(--muted);"></span>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
                   <div style="text-align:center;padding:8px 6px;background:var(--surface2);border-radius:6px;">
                     <div id="gp-cramer-inverse"
                          style="font-size:18px;font-weight:800;letter-spacing:1px;">-</div>
-                    <div style="font-size:9px;color:var(--muted);margin-top:1px;">⚡ Inverse signal</div>
+                    <div style="font-size:9px;color:var(--muted);margin-top:1px;">Inverse signal</div>
                   </div>
                   <div style="text-align:center;padding:8px 6px;background:var(--surface2);border-radius:6px;">
                     <div id="gp-cramer-raw" style="font-size:13px;font-weight:700;color:var(--muted);">-</div>
@@ -1122,14 +1132,14 @@
 
               <!-- Trending tickers -->
               <div class="sent-posts-wrap" style="padding:14px;">
-                <div style="font-size:12px;font-weight:700;margin-bottom:10px;">🔥 Trending Tickers</div>
+                <div style="font-size:12px;font-weight:700;margin-bottom:10px;">Trending Tickers</div>
                 <div id="gp-trending" style="display:flex;flex-direction:column;gap:5px;"></div>
               </div>
 
               <!-- Top posts -->
               <div class="sent-posts-wrap" style="padding:0;">
                 <div style="font-size:12px;font-weight:700;padding:14px 14px 8px;">
-                  📋 Hot Market Posts
+                   Hot Market Posts
                   <span id="gp-posts-meta" style="font-size:10px;color:var(--muted);font-weight:400;margin-left:8px;"></span>
                 </div>
                 <div class="scan-table-wrap" style="max-height:260px;overflow-y:auto;">
@@ -1143,7 +1153,7 @@
                         <th style="font-size:10px;color:var(--muted);text-transform:uppercase;
                                    padding:0 8px 6px;border-bottom:1px solid var(--border);">Mood</th>
                         <th style="font-size:10px;color:var(--muted);text-transform:uppercase;
-                                   padding:0 8px 6px;border-bottom:1px solid var(--border);">⬆</th>
+                                   padding:0 8px 6px;border-bottom:1px solid var(--border);">Up</th>
                       </tr>
                     </thead>
                     <tbody id="gp-posts-tbody"></tbody>
@@ -1182,7 +1192,7 @@
               style="background:rgba(188,140,255,.12);border:1px solid var(--purple);color:var(--purple);
                      padding:6px 16px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px;">
               <span class="spinner" id="ms-spin"></span>
-              <span id="ms-label">🔬 Analyse</span>
+              <span id="ms-label"> Analyse</span>
             </button>
           </div>
         </div>
@@ -1276,8 +1286,8 @@
         <div style="margin-bottom: 20px;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
             <div>
-              <div style="font-size:13px;font-weight:700;">📊 Macroeconomic Indicators
-                <span class="src-tag" title="FRED API (Federal Reserve Economic Data) + Yahoo Finance fallback, Endpoint: /api/macro">⚙ FRED / yfinance</span>
+              <div style="font-size:13px;font-weight:700;">Macroeconomic Indicators
+                <span class="src-tag" title="FRED API (Federal Reserve Economic Data) + Yahoo Finance fallback, Endpoint: /api/macro">FRED / yfinance</span>
               </div>
               <div style="font-size:11px;color:var(--muted);margin-top:2px;">
                 Economic signals that drive market valuations, rate expectations, and sector rotation.
@@ -1302,7 +1312,7 @@
           <div id="macro-fred-hint" style="display:none;font-size:11px;color:var(--amber);
                background:rgba(210,153,34,.08);border:1px solid rgba(210,153,34,.2);
                border-radius:6px;padding:8px 12px;margin-top:8px;line-height:1.6;">
-            💡 <strong>Tip:</strong> Set the <code>FRED_API_KEY</code> environment variable for full
+            <strong>Tip:</strong> Set the <code>FRED_API_KEY</code> environment variable for full
             coverage (CPI/PPI/PCE/GDP/ISM PMI). Get a free key at
             <a href="https://fred.stlouisfed.org/docs/api/api_key.html" target="_blank"
                style="color:var(--amber);">fred.stlouisfed.org</a>.
@@ -1314,8 +1324,8 @@
         <div>
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
             <div>
-              <div style="font-size:13px;font-weight:700;">📰 News Feed
-                <span class="src-tag" title="Yahoo Finance RSS + yfinance news, Endpoint: /api/news">⚙ Yahoo Finance RSS</span>
+              <div style="font-size:13px;font-weight:700;"> News Feed
+                <span class="src-tag" title="Yahoo Finance RSS + yfinance news, Endpoint: /api/news">Yahoo Finance RSS</span>
               </div>
               <div style="font-size:11px;color:var(--muted);margin-top:2px;">
                 Recent headlines relevant to <span id="news-ticker-label" style="color:var(--text);font-weight:600;">-</span>
@@ -1338,17 +1348,17 @@
             <button class="news-filter-btn active" id="nf-all"
                     onclick="setNewsFilter('All')">All</button>
             <button class="news-filter-btn" id="nf-company"
-                    onclick="setNewsFilter('Company')">🏢 Company</button>
+                    onclick="setNewsFilter('Company')"> Company</button>
             <button class="news-filter-btn" id="nf-macro"
-                    onclick="setNewsFilter('Macro')">🌐 Macro</button>
+                    onclick="setNewsFilter('Macro')"> Macro</button>
             <button class="news-filter-btn" id="nf-sector"
-                    onclick="setNewsFilter('Sector')">🏭 Sector</button>
+                    onclick="setNewsFilter('Sector')"> Sector</button>
             <button class="news-filter-btn" id="nf-general"
-                    onclick="setNewsFilter('General')">📋 General</button>
+                    onclick="setNewsFilter('General')"> General</button>
             <button class="news-filter-btn" id="nf-positive"
-                    onclick="setNewsFilter('Positive')" style="color:var(--green);">🟢 Positive</button>
+                    onclick="setNewsFilter('Positive')" style="color:var(--green);"> Positive</button>
             <button class="news-filter-btn" id="nf-negative"
-                    onclick="setNewsFilter('Negative')" style="color:var(--red);">🔴 Negative</button>
+                    onclick="setNewsFilter('Negative')" style="color:var(--red);"> Negative</button>
           </div>
 
           <!-- Scrollable news list -->
@@ -1374,7 +1384,7 @@
             </div>
             <div class="scan-sub" style="margin-top:3px;">
               Scans major US stocks &amp; ETFs for unusual contract volume, IV spikes, OTM sweeps, and large premium bets.
-              <strong style="color:var(--amber);">🔥 Hot</strong> auto-finds stocks with striking volume first, then checks their options.
+              <strong style="color:var(--amber);">Hot</strong> auto-finds stocks with striking volume first, then checks their options.
             </div>
           </div>
           <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -1382,19 +1392,19 @@
             <!-- Universe selector -->
             <select id="uo-watchlist" class="scan-ctrl" title="Ticker universe to scan">
               <option value="">All Stocks (~500)</option>
-              <option value="hot">🔥 Hot - Volume Spike</option>
-              <option value="tech">💻 Tech</option>
-              <option value="etfs">📊 Major ETFs</option>
-              <option value="biotech">🧬 Biotech</option>
-              <option value="momentum">🚀 Momentum</option>
-              <option value="space">🛸 Space</option>
-              <option value="robotics">🤖 Robotics &amp; AI</option>
-              <option value="energy">⚡ Energy</option>
-              <option value="defense">🛡 Defense</option>
+              <option value="hot">Hot - Volume Spike</option>
+              <option value="tech"> Tech</option>
+              <option value="etfs">Major ETFs</option>
+              <option value="biotech"> Biotech</option>
+              <option value="momentum">Momentum</option>
+              <option value="space"> Space</option>
+              <option value="robotics">Robotics &amp; AI</option>
+              <option value="energy">Energy</option>
+              <option value="defense"> Defense</option>
               <option value="crypto">₿ Crypto</option>
-              <option value="ev">🚗 EV</option>
-              <option value="financials">🏦 Financials</option>
-              <option value="cannabis">🌿 Cannabis</option>
+              <option value="ev"> EV</option>
+              <option value="financials"> Financials</option>
+              <option value="cannabis"> Cannabis</option>
             </select>
 
             <!-- DTE -->
@@ -1428,7 +1438,11 @@
 
             <button onclick="uoRunScan()" id="uo-run-btn" class="scan-run-btn" style="background:rgba(248,81,73,.12);border-color:rgba(248,81,73,.4);color:#f85149;">
               <span class="spinner" id="uo-spin"></span>
-              <span id="uo-run-label">▶ Run Scan</span>
+              <span id="uo-run-label">Run Scan</span>
+            </button>
+            <button onclick="stopUoScan()" id="uo-stop-btn" class="scan-run-btn"
+              style="display:none;background:rgba(248,81,73,.22);border-color:rgba(248,81,73,.55);color:#f85149;">
+              Stop
             </button>
           </div>
         </div>
@@ -1444,12 +1458,12 @@
 
         <!-- Empty state -->
         <div id="uo-empty-state" style="text-align:center;padding:40px 20px;color:var(--muted);">
-          <div style="font-size:36px;margin-bottom:12px;">🔥</div>
+          
           <div style="font-size:14px;font-weight:600;margin-bottom:6px;">Unusual Options Scanner</div>
           <p style="font-size:12px;max-width:420px;margin:0 auto;line-height:1.6;">
             Detects contracts with abnormally high volume vs open interest, IV spikes,
             deep-OTM sweeps, and large notional premium across the entire US options market.
-            <br><br>Click <strong>▶ Run Scan</strong> to start. A full market scan takes 3-8 minutes.
+            <br><br>Click <strong>Run Scan</strong> to start. A full market scan takes 3-8 minutes.
           </p>
         </div>
 
@@ -1472,9 +1486,9 @@
             <!-- Sentiment filter -->
             <div style="display:flex;gap:4px;margin-left:8px;">
               <button class="scan-sort-btn active" id="uo-flt-all"  onclick="uoFilter('all')">All</button>
-              <button class="scan-sort-btn"        id="uo-flt-bull" onclick="uoFilter('bullish')"  style="color:var(--green);">🟢 Bullish</button>
-              <button class="scan-sort-btn"        id="uo-flt-bear" onclick="uoFilter('bearish')"  style="color:#f85149;">🔴 Bearish</button>
-              <button class="scan-sort-btn"        id="uo-flt-mixed" onclick="uoFilter('mixed')"   style="color:var(--amber);">🟡 Mixed</button>
+              <button class="scan-sort-btn"        id="uo-flt-bull" onclick="uoFilter('bullish')"  style="color:var(--green);"> Bullish</button>
+              <button class="scan-sort-btn"        id="uo-flt-bear" onclick="uoFilter('bearish')"  style="color:#f85149;"> Bearish</button>
+              <button class="scan-sort-btn"        id="uo-flt-mixed" onclick="uoFilter('mixed')"   style="color:var(--amber);">Mixed</button>
             </div>
 
             <!-- Search -->
@@ -1543,6 +1557,328 @@
 
       </div><!-- /unusual-opts-panel -->
 
+      <!-- ============ Probability-of-Profit / Expected-Return scanner ============ -->
+      <div id="pop-scan-panel" style="display:none; padding:16px 20px 24px;">
+
+        <div class="scan-toolbar">
+          <div>
+            <div class="scan-title">
+              <span class="scan-title-dot" style="background:var(--blue);"></span>
+              Probability of Profit &amp; Expected Return
+              <span id="pop-ticker-badge" style="margin-left:8px;font-size:12px;color:var(--blue);font-weight:700;">-</span>
+            </div>
+            <div class="scan-sub" style="margin-top:3px;">
+              Score calls, puts, and verticals for a selected expiry.
+            </div>
+          </div>
+        </div>
+
+        <!-- Controls -->
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin:10px 0 6px;">
+          <label style="display:flex;flex-direction:column;font-size:10px;color:var(--muted);gap:3px;">
+            EXPIRY
+            <select id="pop-expiry" style="min-width:130px;padding:5px 8px;background:var(--bg2,#161b22);
+                    color:var(--text);border:1px solid rgba(139,148,158,.3);border-radius:5px;font-size:12px;">
+              <option value="">loading</option>
+            </select>
+          </label>
+
+          <!-- Mode toggle -->
+          <div style="display:flex;flex-direction:column;font-size:10px;color:var(--muted);gap:3px;">
+            MODE
+            <div id="pop-mode-toggle" style="display:flex;border:1px solid rgba(139,148,158,.3);border-radius:5px;overflow:hidden;">
+              <button type="button" data-pop-mode="my_view" class="pop-mode-btn"
+                style="padding:5px 10px;font-size:11px;border:none;cursor:pointer;background:rgba(88,166,255,.18);color:var(--blue);font-weight:700;">My view</button>
+              <button type="button" data-pop-mode="market" class="pop-mode-btn"
+                style="padding:5px 10px;font-size:11px;border:none;cursor:pointer;background:transparent;color:var(--muted);">Market</button>
+            </div>
+          </div>
+
+          <label style="display:flex;flex-direction:column;font-size:10px;color:var(--muted);gap:3px;">
+            TARGET $ <span style="color:var(--muted);opacity:.7;">(my view)</span>
+            <input id="pop-target" type="number" step="0.01" placeholder="e.g. 215"
+              style="width:90px;padding:5px 8px;background:var(--bg2,#161b22);color:var(--text);
+                     border:1px solid rgba(139,148,158,.3);border-radius:5px;font-size:12px;">
+          </label>
+          <label style="display:flex;flex-direction:column;font-size:10px;color:var(--muted);gap:3px;">
+            or DRIFT %/yr
+            <input id="pop-drift" type="number" step="0.5" placeholder="opt."
+              style="width:74px;padding:5px 8px;background:var(--bg2,#161b22);color:var(--text);
+                     border:1px solid rgba(139,148,158,.3);border-radius:5px;font-size:12px;">
+          </label>
+          <label style="display:flex;flex-direction:column;font-size:10px;color:var(--muted);gap:3px;">
+            VOL % <span style="color:var(--muted);opacity:.7;">(override)</span>
+            <input id="pop-vol" type="number" step="1" placeholder="RV fcst"
+              style="width:78px;padding:5px 8px;background:var(--bg2,#161b22);color:var(--text);
+                     border:1px solid rgba(139,148,158,.3);border-radius:5px;font-size:12px;">
+          </label>
+          <label style="display:flex;flex-direction:column;font-size:10px;color:var(--muted);gap:3px;">
+            RISK-FREE %
+            <input id="pop-rf" type="number" step="0.1" value="4.3"
+              style="width:66px;padding:5px 8px;background:var(--bg2,#161b22);color:var(--text);
+                     border:1px solid rgba(139,148,158,.3);border-radius:5px;font-size:12px;">
+          </label>
+          <label style="display:flex;flex-direction:column;font-size:10px;color:var(--muted);gap:3px;">
+            COMMISSION $
+            <input id="pop-comm" type="number" step="0.05" value="0.65"
+              style="width:66px;padding:5px 8px;background:var(--bg2,#161b22);color:var(--text);
+                     border:1px solid rgba(139,148,158,.3);border-radius:5px;font-size:12px;">
+          </label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--green);margin-bottom:4px;font-weight:600;"
+                 title="Score single long calls and puts only">
+            <input id="pop-singles-only" type="checkbox" checked onchange="popToggleSingles()" style="accent-color:var(--green);"> calls &amp; puts only
+          </label>
+          <label id="pop-bear-label" style="display:none;align-items:center;gap:5px;font-size:11px;color:var(--muted);margin-bottom:4px;"
+                 title="Include bearish spreads">
+            <input id="pop-show-bear" type="checkbox" style="accent-color:var(--blue);"> incl. bearish spreads
+          </label>
+
+          <button id="pop-run-btn" onclick="runPopScan()"
+            style="padding:7px 14px;background:var(--blue);color:#0d1117;border:none;border-radius:6px;
+                   font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;">
+            <span class="spinner" id="pop-spin" style="display:none;"></span>
+            <span id="pop-run-label">Run scan</span>
+          </button>
+          <button id="pop-research-btn" onclick="runResearchScan()"
+            title="Estimate a research-based price drift (momentum + reversal + volume + sentiment), then find the best option and expiry under that view."
+            style="padding:7px 14px;background:var(--purple);color:#0d1117;border:none;border-radius:6px;
+                   font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;">
+            <span class="spinner" id="pop-research-spin" style="display:none;"></span>
+            <span id="pop-research-label">Research forecast</span>
+          </button>
+        </div>
+
+        <!-- Research forecast summary (shown only after a Research scan) -->
+        <div id="pop-forecast" style="display:none;background:rgba(188,140,255,.07);
+             border:1px solid rgba(188,140,255,.3);border-radius:8px;padding:10px 14px;margin:8px 0;font-size:12px;line-height:1.6;"></div>
+
+        <!-- Assumptions strip -->
+        <div id="pop-assumptions" style="display:none;font-size:11px;color:var(--muted);
+             background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);
+             border-radius:6px;padding:7px 11px;margin:6px 0;line-height:1.6;"></div>
+
+        <!-- Filter chips -->
+        <div id="pop-filters" style="display:none;flex-wrap:wrap;gap:6px;margin:8px 0 4px;align-items:center;">
+          <button class="pop-filter active" data-pop-filter="best"
+            style="font-size:11px;padding:3px 11px;border-radius:12px;border:1px solid rgba(63,185,80,.4);
+                   background:rgba(63,185,80,.15);color:var(--green);cursor:pointer;font-weight:600;">Top 5</button>
+          <button class="pop-filter" data-pop-filter="all"
+            style="font-size:11px;padding:3px 10px;border-radius:12px;border:1px solid rgba(139,148,158,.3);
+                   background:transparent;color:var(--muted);cursor:pointer;">All</button>
+          <button class="pop-filter" data-pop-filter="top_return"
+            style="font-size:11px;padding:3px 10px;border-radius:12px;border:1px solid rgba(139,148,158,.3);
+                   background:transparent;color:var(--muted);cursor:pointer;">By return</button>
+          <button class="pop-filter" data-pop-filter="top_pop"
+            style="font-size:11px;padding:3px 10px;border-radius:12px;border:1px solid rgba(139,148,158,.3);
+                   background:transparent;color:var(--muted);cursor:pointer;">By POP</button>
+        </div>
+
+        <!-- States -->
+        <div id="pop-loading" style="display:none;text-align:center;padding:30px;color:var(--muted);font-size:13px;">
+          Loading...
+        </div>
+        <div id="pop-error" style="display:none;padding:14px;color:#f85149;font-size:12px;
+             background:rgba(248,81,73,.08);border:1px solid rgba(248,81,73,.3);border-radius:6px;margin:6px 0;"></div>
+        <div id="pop-empty" style="display:block;text-align:center;padding:30px;color:var(--muted);font-size:13px;">
+          Select an expiry and run scan.
+        </div>
+
+        <!-- Results -->
+        <div id="pop-results" style="display:none;">
+          <div style="overflow-x:auto;overflow-y:auto;max-height:440px;border:1px solid rgba(255,255,255,.07);border-radius:8px;">
+            <table id="pop-table" style="width:100%;border-collapse:collapse;font-size:12px;">
+              <thead>
+                <tr style="color:var(--muted);font-size:10px;text-transform:uppercase;">
+                  <th data-pop-sort="label"    style="text-align:left;padding:7px 8px;cursor:pointer;position:sticky;top:0;background:#0d1117;border-bottom:1px solid rgba(255,255,255,.14);z-index:2;">Structure</th>
+                  <th data-pop-sort="strikes"  style="text-align:left;padding:7px 8px;cursor:pointer;position:sticky;top:0;background:#0d1117;border-bottom:1px solid rgba(255,255,255,.14);z-index:2;">Strikes</th>
+                  <th data-pop-sort="dte"      title="Expiration date and days to expiry." style="text-align:left;padding:7px 8px;cursor:pointer;position:sticky;top:0;background:#0d1117;border-bottom:1px solid rgba(255,255,255,.14);z-index:2;">Expiry</th>
+                  <th data-pop-sort="net_premium" style="text-align:right;padding:7px 8px;cursor:pointer;position:sticky;top:0;background:#0d1117;border-bottom:1px solid rgba(255,255,255,.14);z-index:2;">Price</th>
+                  <th data-pop-sort="breakeven" style="text-align:right;padding:7px 8px;cursor:pointer;position:sticky;top:0;background:#0d1117;border-bottom:1px solid rgba(255,255,255,.14);z-index:2;">Breakeven</th>
+                  <th data-pop-sort="pop_pct"  style="text-align:right;padding:7px 8px;cursor:pointer;position:sticky;top:0;background:#0d1117;border-bottom:1px solid rgba(255,255,255,.14);z-index:2;">POP</th>
+                  <th data-pop-sort="prob_itm_pct" style="text-align:right;padding:7px 8px;cursor:pointer;position:sticky;top:0;background:#0d1117;border-bottom:1px solid rgba(255,255,255,.14);z-index:2;">Prob ITM</th>
+                  <th data-pop-sort="exp_return_pct" style="text-align:right;padding:7px 8px;cursor:pointer;position:sticky;top:0;background:#0d1117;border-bottom:1px solid rgba(255,255,255,.14);z-index:2;">Exp Ret %</th>
+                  <th data-pop-sort="exp_pnl"  style="text-align:right;padding:7px 8px;cursor:pointer;position:sticky;top:0;background:#0d1117;border-bottom:1px solid rgba(255,255,255,.14);z-index:2;">Exp P&amp;L $</th>
+                  <th data-pop-sort="max_loss" style="text-align:right;padding:7px 8px;cursor:pointer;position:sticky;top:0;background:#0d1117;border-bottom:1px solid rgba(255,255,255,.14);z-index:2;">Max Loss</th>
+                  <th data-pop-sort="rr"       style="text-align:right;padding:7px 8px;cursor:pointer;position:sticky;top:0;background:#0d1117;border-bottom:1px solid rgba(255,255,255,.14);z-index:2;">R/R</th>
+                  <th style="text-align:right;padding:7px 8px;position:sticky;top:0;background:#0d1117;border-bottom:1px solid rgba(255,255,255,.14);z-index:2;">Mkt EV%</th>
+                </tr>
+              </thead>
+              <tbody id="pop-tbody"></tbody>
+            </table>
+          </div>
+          <div id="pop-count" style="font-size:11px;color:var(--muted);margin-top:6px;"></div>
+
+          <!-- Payoff chart for the selected row -->
+          <div id="pop-payoff-wrap" style="display:none;margin-top:16px;background:rgba(255,255,255,.02);
+               border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:12px 14px;">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px;">
+              <div style="font-size:12px;font-weight:700;color:var(--text);" id="pop-payoff-title">Payoff at expiry</div>
+              <div style="font-size:11px;color:var(--muted);" id="pop-payoff-sub"></div>
+            </div>
+            <div style="position:relative;height:240px;margin-top:8px;">
+              <canvas id="pop-payoff-chart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div><!-- /pop-scan-panel -->
+
+      <div id="ai-analyst-panel" style="display:none; padding:16px 20px 24px;">
+
+        <!-- Toolbar -->
+        <div class="scan-toolbar">
+          <div>
+            <div class="scan-title">
+              <span class="scan-title-dot" style="background:var(--purple);"></span>
+              AI Analyst
+              <span class="src-tag" title="Anthropic Messages API, Endpoint: /api/ai/analyze">Claude</span>
+            </div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px;max-width:640px;">
+              <strong>Step 1:</strong> Generate a prompt packed with everything on this dashboard (MC signal, indicators,
+              regime, zones, expected move, GEX, unusual flow, news, sentiment, macro) and copy it.
+              <strong>Step 2:</strong> Paste it into the Claude app (your Max plan covers it).
+              <strong>Step 3:</strong> Paste Claude's reply back here to render probabilities &amp; plays.
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <span style="font-size:11px;padding:3px 9px;border-radius:10px;background:var(--surface2);
+                  border:1px solid var(--border);">Ticker: <strong id="ai-ticker-badge">-</strong></span>
+            <button class="sent-refresh-btn" id="ai-prompt-btn" onclick="generateAiPrompt()"
+                    style="border-color:var(--purple);color:var(--purple);">
+              <span class="spinner" id="ai-spin" style="display:none;"></span>
+              <span id="ai-prompt-label">📋 Generate Prompt</span>
+            </button>
+            <button class="sent-refresh-btn" id="ai-run-btn" onclick="runAiAnalysis()" style="display:none;">
+              <span class="spinner" id="ai-api-spin" style="display:none;"></span>
+              <span id="ai-run-label">✨ Run via API</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Status / empty state -->
+        <div id="ai-empty-state" style="color:var(--muted);font-size:12px;padding:28px 12px;text-align:center;">
+          Click <strong style="color:var(--purple);">Generate Prompt</strong> - the server gathers all data for the
+          current ticker (takes ~10-40s), then you copy the prompt into Claude.
+        </div>
+        <div id="ai-status" style="display:none;font-size:12px;color:var(--muted);padding:18px 12px;text-align:center;"></div>
+        <div id="ai-error-state" style="display:none;font-size:12px;color:var(--red);
+             background:rgba(248,81,73,.06);border:1px solid rgba(248,81,73,.25);
+             border-radius:6px;padding:10px 12px;margin:10px 0;"></div>
+
+        <!-- Step 1-2: generated prompt -->
+        <div id="ai-prompt-section" style="display:none;background:rgba(255,255,255,.02);
+             border:1px solid rgba(188,140,255,.25);border-radius:8px;padding:14px 16px;margin-bottom:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+            <div>
+              <div style="font-size:13px;font-weight:700;">📋 Your Prompt <span id="ai-prompt-meta" style="font-size:10px;color:var(--muted);font-weight:400;"></span></div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px;">
+                Copy this and paste it into a new Claude chat (claude.ai or the desktop app). Use the best model available on your plan.
+              </div>
+            </div>
+            <button class="sent-refresh-btn" id="ai-copy-btn" onclick="copyAiPrompt()"
+                    style="border-color:var(--green);color:var(--green);">⧉ Copy Prompt</button>
+          </div>
+          <textarea id="ai-prompt-text" readonly spellcheck="false"
+                    style="width:100%;height:140px;margin-top:10px;resize:vertical;background:var(--surface2);
+                           color:var(--muted);border:1px solid var(--border);border-radius:6px;
+                           font-family:monospace;font-size:10px;line-height:1.5;padding:8px;"></textarea>
+        </div>
+
+        <!-- Step 3: paste Claude's reply -->
+        <div id="ai-paste-section" style="display:none;background:rgba(255,255,255,.02);
+             border:1px solid rgba(63,185,80,.25);border-radius:8px;padding:14px 16px;margin-bottom:14px;">
+          <div style="font-size:13px;font-weight:700;">📥 Paste Claude's Reply</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px;">
+            Paste the full response (the JSON code block is enough) and click Render.
+          </div>
+          <textarea id="ai-response-text" spellcheck="false" placeholder="Paste Claude's response here..."
+                    style="width:100%;height:120px;margin-top:10px;resize:vertical;background:var(--surface2);
+                           color:var(--text);border:1px solid var(--border);border-radius:6px;
+                           font-family:monospace;font-size:10px;line-height:1.5;padding:8px;"></textarea>
+          <div style="margin-top:8px;">
+            <button class="sent-refresh-btn" onclick="renderPastedAnalysis()"
+                    style="border-color:var(--green);color:var(--green);">▶ Render Analysis</button>
+          </div>
+        </div>
+
+        <!-- Results -->
+        <div id="ai-results" style="display:none;">
+
+          <!-- Incomplete-paste warning -->
+          <div id="ai-truncation-warning" style="display:none;font-size:11px;color:var(--amber);
+               background:rgba(210,153,34,.08);border:1px solid rgba(210,153,34,.25);
+               border-radius:6px;padding:8px 12px;margin-bottom:12px;line-height:1.6;"></div>
+
+          <!-- Probabilities -->
+          <div style="background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.07);
+               border-radius:8px;padding:14px 16px;margin-bottom:14px;">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;">
+              <div style="font-size:13px;font-weight:700;">Next-Week Probabilities <span style="font-size:10px;color:var(--muted);font-weight:400;">(next ~5 trading days)</span></div>
+              <div style="font-size:11px;color:var(--muted);">Model confidence: <strong id="ai-confidence" style="color:var(--text);">-</strong></div>
+            </div>
+            <div id="ai-prob-bars" style="margin-top:10px;"></div>
+            <div id="ai-prob-rationale" style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.6;"></div>
+          </div>
+
+          <!-- Summary -->
+          <div style="background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.07);
+               border-radius:8px;padding:14px 16px;margin-bottom:14px;">
+            <div style="font-size:13px;font-weight:700;margin-bottom:6px;">Market Synthesis</div>
+            <div id="ai-summary" style="font-size:12px;line-height:1.7;color:var(--text);"></div>
+          </div>
+
+          <!-- Crowd + key levels -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+            <div style="background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:14px 16px;">
+              <div style="font-size:13px;font-weight:700;margin-bottom:8px;">👀 What the Crowd Is Watching</div>
+              <ul id="ai-crowd" style="margin:0;padding-left:18px;font-size:12px;line-height:1.8;color:var(--text);"></ul>
+            </div>
+            <div style="background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:14px 16px;">
+              <div style="font-size:13px;font-weight:700;margin-bottom:8px;">📐 Key Levels</div>
+              <div id="ai-levels" style="font-size:12px;line-height:2;"></div>
+            </div>
+          </div>
+
+          <!-- Top contract picks -->
+          <div id="ai-picks-wrap" style="display:none;background:rgba(63,185,80,.05);border:1px solid rgba(63,185,80,.3);
+               border-radius:8px;padding:14px 16px;margin-bottom:14px;">
+            <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--green);">🛒 Top Contract Picks (open now)</div>
+            <div id="ai-picks" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;"></div>
+          </div>
+
+          <!-- Suggested plays -->
+          <div style="margin-bottom:14px;">
+            <div style="font-size:13px;font-weight:700;margin-bottom:8px;">🎯 Suggested Plays for Next Week</div>
+            <div id="ai-plays" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;"></div>
+          </div>
+
+          <!-- Next week position -->
+          <div style="background:rgba(188,140,255,.06);border:1px solid rgba(188,140,255,.3);
+               border-radius:8px;padding:14px 16px;margin-bottom:14px;">
+            <div style="font-size:13px;font-weight:700;margin-bottom:6px;color:var(--purple);">📌 The Position I'd Hold Into Next Week</div>
+            <div id="ai-position" style="font-size:12px;line-height:1.7;"></div>
+          </div>
+
+          <!-- Risks -->
+          <div style="background:rgba(248,81,73,.04);border:1px solid rgba(248,81,73,.2);
+               border-radius:8px;padding:14px 16px;margin-bottom:10px;">
+            <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--red);">⚠ Risks &amp; Catalysts</div>
+            <ul id="ai-risks" style="margin:0;padding-left:18px;font-size:12px;line-height:1.8;"></ul>
+          </div>
+
+          <!-- Raw fallback (when JSON parsing failed) -->
+          <pre id="ai-raw" style="display:none;white-space:pre-wrap;font-size:11px;line-height:1.6;
+               background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.07);
+               border-radius:8px;padding:12px;"></pre>
+
+          <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:10px;color:var(--muted);margin-top:8px;">
+            <span id="ai-sources"></span>
+            <span id="ai-generated-at"></span>
+          </div>
+          <div id="ai-disclaimer" style="font-size:10px;color:var(--muted);margin-top:4px;font-style:italic;"></div>
+        </div>
+
+      </div><!-- /ai-analyst-panel -->
+
       <div id="options-panel" style="display:none;">
 
         <div class="scan-toolbar">
@@ -1568,14 +1904,19 @@
                      cursor:pointer;display:flex;align-items:center;gap:8px;
                      box-shadow:0 2px 8px rgba(63,185,80,.25);transition:opacity .15s,transform .1s;">
               <span class="spinner" id="opts-spin"></span>
-              <span id="opts-run-label">📈 Fetch Options</span>
+              <span id="opts-run-label">Fetch Options</span>
+            </button>
+            <button onclick="stopOptionsPanel()" id="opts-stop-btn"
+              style="display:none;background:rgba(248,81,73,.15);color:#f85149;border:1px solid rgba(248,81,73,.45);
+                     border-radius:7px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;">
+              Stop
             </button>
           </div>
         </div>
 
         <!-- Empty state -->
         <div id="opts-empty-state" style="text-align:center;padding:52px 24px;color:var(--muted);">
-          <div style="font-size:40px;margin-bottom:12px;">📈</div>
+          
           <p style="font-size:13px;margin-bottom:8px;">Enter a ticker above and click <strong style="color:var(--text);">Fetch Options</strong>.</p>
           <p style="font-size:11px;line-height:1.7;">
             Fetches real <strong>call/put volume &amp; open interest</strong> for the nearest 3 expirations.<br>
@@ -1593,10 +1934,9 @@
                style="margin-bottom:12px;padding:9px 12px;
                       background:rgba(210,153,34,.08);border:1px solid rgba(210,153,34,.25);
                       border-radius:6px;font-size:11px;color:var(--amber);line-height:1.5;">
-            ⓘ <strong>Flow direction unavailable from this source.</strong>
-            yfinance reports total contracts traded, not buy- vs sell-initiated trades.
-            High volume on a strike can mean buyers <em>or</em> sellers - colour-coding
-            below indicates contract <em>type</em> (call vs put), not directionality.
+            <strong>Flow direction unavailable.</strong>
+            yfinance reports total volume, not buy vs sell side.
+            Colour below shows call vs put, not trade direction.
           </div>
 
           <!-- Row 1: Call/Put summary + GEX & Max Pain (2-col) -->
@@ -1605,8 +1945,8 @@
             <!-- Options Flow summary -->
             <div class="sent-card">
               <div class="sent-card-hdr">
-                <span>📊 Options Flow
-                  <span class="src-tag" title="Options chain via yfinance (free, ~15 min delayed), Endpoint: /api/sentiment">⚙ yfinance options</span>
+                <span>Options Flow
+                  <span class="src-tag" title="Options chain via yfinance (free, ~15 min delayed), Endpoint: /api/sentiment">yfinance options</span>
                 </span>
                 <span id="sp-bias-badge" class="sent-badge"></span>
               </div>
@@ -1661,7 +2001,7 @@
           <!-- Row 2: Large Options Activity -->
           <div class="sent-posts-wrap" style="margin-bottom:14px;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-              <span style="font-size:13px;font-weight:700;">🔥 Large Options Activity</span>
+              <span style="font-size:13px;font-weight:700;">Large Options Activity</span>
               <span id="sp-opts-activity-badge" class="sent-badge" style="background:rgba(210,153,34,.12);color:var(--amber);"></span>
             </div>
             <div id="sp-opts-activity-list" style="display:flex;flex-direction:column;gap:4px;"></div>
@@ -1670,7 +2010,7 @@
           <!-- Row 3: Hot Strikes & Price Levels -->
           <div class="sent-posts-wrap" id="sent-prices-section" style="margin-bottom:14px;">
             <div style="font-size:13px;font-weight:700;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;">
-              <span>🎯 Hot Strikes &amp; Price Levels</span>
+              <span>Hot Strikes &amp; Price Levels</span>
               <span style="font-size:11px;color:var(--muted);font-weight:400;">Derived from market volume &amp; flow</span>
             </div>
             <!-- Two columns: market-derived ranking | real options flow -->
@@ -1722,13 +2062,13 @@
             </div><!-- /2col -->
           </div><!-- /sent-prices-section -->
 
-               Backend computes the unusual_activity[] field in /api/sentiment;
+          <!-- Backend computes the unusual_activity[] field in /api/sentiment;
                see core/sentiment.py:_scan_unusual_activity. -->
           <div class="sent-posts-wrap" id="opts-unusual-section" style="margin-bottom:14px;">
             <div style="display:flex;align-items:center;justify-content:space-between;
                         margin-bottom:10px;flex-wrap:wrap;gap:8px;">
               <div>
-                <div style="font-size:13px;font-weight:700;">🚨 Unusual Activity</div>
+                <div style="font-size:13px;font-weight:700;"> Unusual Activity</div>
                 <div style="font-size:11px;color:var(--muted);margin-top:2px;">
                   Contracts with <code>volume &gt; OI × 1.5</code> <strong>AND</strong>
                   <code>volume &gt; 500</code>. Sorted by Vol/OI ratio.
@@ -1798,6 +2138,13 @@
         <div class="range-item"><div style="color:var(--muted);font-size:11px;">Median</div><div class="rv" id="pmed">-</div></div>
         <div class="range-item"><div style="color:var(--muted);font-size:11px;">P90</div><div class="rv up" id="p90">-</div></div>
       </div>
+      <!-- Adaptive conformal band calibration (core/conformal.py) -->
+      <div id="band-cal-row" style="display:none; margin-top:8px; padding-top:7px;
+           border-top:1px solid rgba(255,255,255,.07); font-size:11px;
+           color:var(--muted); justify-content:space-between; cursor:help;">
+        <span>Band reliability</span>
+        <span id="band-cal-val">-</span>
+      </div>
     </div>
 
     <!-- Signal panel -->
@@ -1806,7 +2153,7 @@
         <span style="font-size:10px;font-weight:400;color:var(--muted);font-style:italic;">
           (informational only, not financial advice)
         </span>
-        <span class="src-tag" title="Monte Carlo simulation on yfinance OHLCV, Endpoint: WebSocket /ws">⚙ MC / yfinance</span>
+        <span class="src-tag" title="Monte Carlo simulation on yfinance OHLCV, Endpoint: WebSocket /ws">MC / yfinance</span>
       </div>
       <div class="ind-row">
         <span class="ind-name">RSI (14)</span>
@@ -2010,7 +2357,7 @@
 
       <!-- Demand zones (Support) -->
       <div style="font-size:10px; font-weight:700; color:var(--green); text-transform:uppercase;
-                  letter-spacing:.5px; margin-bottom:6px;">📗 Support (Demand)</div>
+                  letter-spacing:.5px; margin-bottom:6px;"> Support (Demand)</div>
       <div id="sr-demand-list">
         <div style="color:var(--muted); font-size:11px; font-style:italic;">-</div>
       </div>
@@ -2019,7 +2366,7 @@
 
       <!-- Supply zones (Resistance) -->
       <div style="font-size:10px; font-weight:700; color:var(--red); text-transform:uppercase;
-                  letter-spacing:.5px; margin-bottom:6px;">📕 Resistance (Supply)</div>
+                  letter-spacing:.5px; margin-bottom:6px;"> Resistance (Supply)</div>
       <div id="sr-supply-list">
         <div style="color:var(--muted); font-size:11px; font-style:italic;">-</div>
       </div>
@@ -2055,11 +2402,57 @@
 
       <!-- Collapsible Fibonacci level grid -->
       <button class="pt-fib-toggle" onclick="toggleFibGrid()">
-        <span>📐 Fibonacci levels</span>
+        <span> Fibonacci levels</span>
         <span id="pt-fib-arrow">v</span>
       </button>
       <div class="pt-fib-grid" id="pt-fib-grid">
         <!-- populated by updatePriceTargets() -->
+      </div>
+    </div>
+
+    <!-- Expected move (realized vol) -->
+    <div class="card" id="em-card" style="display:none">
+      <div class="card-title">
+        <span>Expected Move
+          <span style="font-size:10px;font-weight:400;color:var(--muted);">(realized vol)</span>
+        </span>
+        <span class="pill" id="em-vol-pill" title="Annualized realized volatility from trailing daily log returns">-</span>
+      </div>
+
+      <!-- 1 Week -->
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
+        <span style="font-size:11px;font-weight:700;color:var(--text);">1 Week</span>
+        <span style="font-size:11px;font-weight:700;" id="em-1w-sd">-</span>
+      </div>
+      <div class="em-band" id="em-1w-band"
+           style="position:relative;height:14px;border-radius:4px;margin-bottom:4px;
+                  background:linear-gradient(90deg, rgba(248,81,73,.25) 0%, rgba(248,81,73,.10) 25%,
+                              rgba(63,185,80,.18) 50%, rgba(248,81,73,.10) 75%, rgba(248,81,73,.25) 100%);">
+        <span style="position:absolute;left:25%;top:0;bottom:0;width:1px;background:rgba(139,148,158,.5);"></span>
+        <span style="position:absolute;left:75%;top:0;bottom:0;width:1px;background:rgba(139,148,158,.5);"></span>
+        <span style="position:absolute;left:50%;top:-2px;bottom:-2px;width:2px;background:var(--blue);border-radius:1px;"
+              title="Spot price"></span>
+      </div>
+      <div class="kv"><span title="~68% chance of closing inside this range">1σ range (68%)</span>
+        <span id="em-1w-s1" style="font-weight:600;">-</span></div>
+      <div class="kv"><span title="~95% chance of closing inside this range">2σ range (95%)</span>
+        <span id="em-1w-s2">-</span></div>
+      <div class="kv" style="font-size:10px;"><span style="color:var(--muted);">P(&gt; +1σ) / P(&lt; −1σ)</span>
+        <span style="color:var(--muted);">15.9% / 15.9%</span></div>
+
+      <div style="height:1px;background:var(--border);margin:8px 0"></div>
+
+      <!-- 1 Day -->
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
+        <span style="font-size:11px;font-weight:700;color:var(--text);">1 Day</span>
+        <span style="font-size:11px;font-weight:700;" id="em-1d-sd">-</span>
+      </div>
+      <div class="kv"><span>1σ range (68%)</span><span id="em-1d-s1" style="font-weight:600;">-</span></div>
+      <div class="kv"><span>2σ range (95%)</span><span id="em-1d-s2">-</span></div>
+
+      <div style="font-size:10px;color:var(--muted);margin-top:8px;" id="em-note">
+        <span id="em-window">-</span>d window · Yang-Zhang + EWMA vol · Student-t tails (df <span id="em-df">-</span>).
+        IV (if elevated) implies larger moves.
       </div>
     </div>
 
@@ -2097,7 +2490,7 @@
     <!-- Microstructure diagnostics (only visible when mc_model = microstructure) -->
     <div class="card" id="ms-card" style="display:none">
       <div class="card-title">
-        <span>★★ Microstructure model</span>
+        <span> Microstructure model</span>
         <span id="ms-regime-pill" style="font-size:10px;padding:2px 8px;border-radius:4px;
               background:rgba(106,167,255,.1);border:1px solid rgba(106,167,255,.25);
               color:var(--blue);">-</span>
@@ -2121,7 +2514,7 @@
     <div class="card">
       <div class="card-title">
         <span>Walk-forward backtest
-          <span class="src-tag" title="Historical OHLCV bars via yfinance, Endpoint: /api/backtest">⚙ yfinance OHLCV</span>
+          <span class="src-tag" title="Historical OHLCV bars via yfinance, Endpoint: /api/backtest">yfinance OHLCV</span>
         </span>
         <button class="btn-bt" id="bt-run" onclick="runBacktest()">Run</button>
       </div>
@@ -2136,7 +2529,7 @@
 
     <div class="card" id="sentiment-card">
       <div class="card-title">
-        <span>🌐 Sentiment</span>
+        <span> Sentiment</span>
         <button onclick="switchScannerTab('sentiment'); document.getElementById('scanner-section').scrollIntoView({behavior:'smooth'});"
           style="font-size:10px;padding:2px 8px;background:rgba(210,153,34,.1);
                  border:1px solid rgba(210,153,34,.25);color:var(--amber);
@@ -2188,9 +2581,12 @@
 
 <!-- index.js runs first; tab modules monkey-patch the inline render fns once
      DOMContentLoaded fires (i.e. after the inline <script> blocks below run). -->
+<script src="/static/js/nav.js"></script>
 <script src="/static/js/index.js"></script>
 <script src="/static/js/scanner.js"></script>
 <script src="/static/js/tabs/options.js"></script>
+<script src="/static/js/tabs/pop_scanner.js"></script>
+<script src="/static/js/tabs/ai_analyst.js"></script>
 <script src="/static/js/tabs/market-structure.js"></script>
 <script src="/static/js/tabs/sentiment.js"></script>
 <script src="/static/js/right-panel.js"></script>
@@ -2329,7 +2725,7 @@ const _SOURCE_DEFS = {
 
 function _mkSrcTag(def, updatedAt) {
   const upd = updatedAt ? `<span class="src-tag-updated" title="Last fetched">${updatedAt}</span>` : '';
-  return `<span class="src-tag" title="${def.tip}, Endpoint: ${def.endpoint}">⚙ ${def.label}</span>${upd}`;
+  return `<span class="src-tag" title="${def.tip}, Endpoint: ${def.endpoint}">${def.label}</span>${upd}`;
 }
 
 function _initSourceTags() {
@@ -2355,7 +2751,7 @@ function _initSourceTags() {
 
   // News & Macro tab - news feed header
   document.querySelectorAll('div').forEach(el => {
-    if (el.children.length === 0 && el.textContent.trim() === '📰 News Feed' && !el.querySelector('.src-tag')) {
+    if (el.children.length === 0 && el.textContent.trim() === ' News Feed' && !el.querySelector('.src-tag')) {
       el.insertAdjacentHTML('beforeend', _mkSrcTag(_SOURCE_DEFS['src-news']));
     }
   });
@@ -2407,8 +2803,9 @@ function _scoreColor(s) {
 }
 function _scoreStr(s) { return (s >= 0 ? '+' : '') + s.toFixed(3); }
 
-async function runSentiment(forceRefresh) {
-  if (_sentLoading) return;
+async function runSentiment(forceRefresh, opts) {
+  opts = opts || {};
+  if (_sentLoading && !opts.force) return;
 
   const ticker = (currentConfig.ticker || 'SPY').toUpperCase().trim();
   if (!ticker) { alert('Set a ticker in the header first.'); return; }
@@ -2427,16 +2824,19 @@ async function runSentiment(forceRefresh) {
   const errorEl  = document.getElementById('sent-error-state');
   const resultsEl= document.getElementById('sent-results');
 
-  if (runBtn)   runBtn.disabled = true;
-  if (spinEl)   spinEl.style.display = 'inline-block';
-  if (labelEl)  labelEl.textContent = 'Fetching...';
-  if (progWrap) progWrap.style.display = 'block';
-  if (emptyEl)  emptyEl.style.display = 'none';
-  if (errorEl)  errorEl.style.display = 'none';
-  if (resultsEl)resultsEl.style.display = 'none';
+  if (!opts.silent) {
+    if (runBtn)   runBtn.disabled = true;
+    if (spinEl)   spinEl.style.display = 'inline-block';
+    if (labelEl)  labelEl.textContent = 'Fetching...';
+    if (progWrap) progWrap.style.display = 'block';
+    if (emptyEl)  emptyEl.style.display = 'none';
+    if (errorEl)  errorEl.style.display = 'none';
+    if (resultsEl)resultsEl.style.display = 'none';
+  }
 
   try {
-    const res  = await fetch(`/api/sentiment?ticker=${encodeURIComponent(ticker)}${doForce}`);
+    const fetchOpts = opts.signal ? { signal: opts.signal } : {};
+    const res  = await fetch(`/api/sentiment?ticker=${encodeURIComponent(ticker)}${doForce}`, fetchOpts);
     if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
     const data = await res.json();
     const prevTicker = _lastSentTicker;
@@ -2453,7 +2853,8 @@ async function runSentiment(forceRefresh) {
       } catch (e) { console.warn('[sentiment] initSentimentFeed error', e); }
     }
   } catch (e) {
-    if (errorEl) {
+    if (e.name === 'AbortError') throw e;
+    if (!opts.silent && errorEl) {
       errorEl.style.display = 'block';
       errorEl.innerHTML = `<div style="font-size:28px;margin-bottom:10px;">Warning:</div>
         <strong>Error fetching sentiment</strong><br>
@@ -2462,12 +2863,16 @@ async function runSentiment(forceRefresh) {
     log(`Sentiment error for ${ticker}: ${e.message}`);
   } finally {
     _sentLoading = false;
-    if (runBtn)   runBtn.disabled = false;
-    if (spinEl)   spinEl.style.display = 'none';
-    if (labelEl)  labelEl.textContent = '🌐 Fetch Sentiment';
-    if (progWrap) progWrap.style.display = 'none';
+    if (!opts.silent) {
+      if (runBtn)   runBtn.disabled = false;
+      if (spinEl)   spinEl.style.display = 'none';
+      if (labelEl)  labelEl.textContent = ' Fetch Sentiment';
+      if (progWrap) progWrap.style.display = 'none';
+    }
   }
-  try { _fetchInsiderActivity(ticker); } catch(_) {}
+  if (!opts.signal || !opts.signal.aborted) {
+    try { _fetchInsiderActivity(ticker); } catch(_) {}
+  }
 }
 
 // SOURCE: SEC EDGAR EFTS, efts.sec.gov, Official, Free, No key required
@@ -2602,9 +3007,9 @@ function _renderSentimentPanel(data) {
 
     // Bias badge
     const biasMap = {
-      call_heavy: { text: '🟢 Call-heavy',  color: 'var(--green)', bg: 'rgba(63,185,80,.12)' },
-      put_heavy:  { text: '🔴 Put-heavy',   color: 'var(--red)',   bg: 'rgba(248,81,73,.12)' },
-      neutral:    { text: '⚪ Neutral flow', color: 'var(--muted)', bg: 'var(--surface2)' },
+      call_heavy: { text: ' Call-heavy',  color: 'var(--green)', bg: 'rgba(63,185,80,.12)' },
+      put_heavy:  { text: ' Put-heavy',   color: 'var(--red)',   bg: 'rgba(248,81,73,.12)' },
+      neutral:    { text: ' Neutral flow', color: 'var(--muted)', bg: 'var(--surface2)' },
       unknown:    { text: '- N/A',           color: 'var(--muted)', bg: 'var(--surface2)' },
     };
     const bias = biasMap[opts.flow_bias] || biasMap.unknown;
@@ -2624,8 +3029,8 @@ function _renderSentimentPanel(data) {
         return `<div class="sent-chain-row">
           <span>${c.expiry}</span>
           <span>
-            <span style="color:#3fb950;">📞${_fmtVol(c.call_vol)}</span>&nbsp;
-            <span style="color:#f85149;">🔻${_fmtVol(c.put_vol)}</span>&nbsp;
+            <span style="color:#3fb950;">Call${_fmtVol(c.call_vol)}</span>&nbsp;
+            <span style="color:#f85149;">Put${_fmtVol(c.put_vol)}</span>&nbsp;
             <span style="color:${pcrCol};">PCR ${pcrVal != null ? pcrVal.toFixed(2) : '-'}</span>
           </span>
         </div>`;
@@ -2663,8 +3068,8 @@ function _renderSentimentPanel(data) {
       const xPuts  = xData.put_mentions  ?? 0;
       const xBiasEl = document.getElementById('sp-x-bias');
       if (xBiasEl) {
-        if (xCalls > xPuts * 1.5)      { xBiasEl.textContent = 'Calls 📞'; xBiasEl.style.color = 'var(--green)'; }
-        else if (xPuts > xCalls * 1.5) { xBiasEl.textContent = 'Puts 🔻';  xBiasEl.style.color = 'var(--red)'; }
+        if (xCalls > xPuts * 1.5)      { xBiasEl.textContent = 'Calls'; xBiasEl.style.color = 'var(--green)'; }
+        else if (xPuts > xCalls * 1.5) { xBiasEl.textContent = 'Puts Put';  xBiasEl.style.color = 'var(--red)'; }
         else                            { xBiasEl.textContent = 'Mixed';    xBiasEl.style.color = 'var(--muted)'; }
       }
 
@@ -2707,8 +3112,8 @@ function _renderSentimentPanel(data) {
 
     list.innerHTML = combined.map(s => {
       const tcol   = s.type === 'call' ? '#3fb950' : '#f85149';
-      const icon   = s.type === 'call' ? '📞' : '🔻';
-      const itm    = s.in_money ? ' ✅' : '';
+      const icon   = s.type === 'call' ? 'Call' : 'Put';
+      const itm    = s.in_money ? '  ITM' : '';
       const lp     = s.last_price != null ? `$${s.last_price.toFixed(2)}` : '-';
       const chg    = s.pct_change != null ? s.pct_change : null;
       const chgStr = chg != null ? (chg >= 0 ? `+${chg.toFixed(1)}` : `${chg.toFixed(1)}`) + '%' : '';
@@ -2718,9 +3123,12 @@ function _renderSentimentPanel(data) {
       const flowStr  = flowVal != null ? _fmtDollar(flowVal) : '';
       const flowCol  = flowVal != null && flowVal >= 1e6 ? '#d29922' : 'var(--muted)';
       const typeLabel = s.type === 'call' ? 'Call' : 'Put';
-      return `<div style="border-bottom:1px solid rgba(255,255,255,.04);padding:5px 0;">
+      const ctkr = (data.ticker || currentConfig.ticker || '').toUpperCase();
+      return `<div style="border-bottom:1px solid rgba(255,255,255,.04);padding:5px 0;cursor:pointer;"
+                   title="Open contract tracker in a new tab" data-contract="1"
+                   data-ticker="${ctkr}" data-expiry="${s.expiry}" data-strike="${s.strike}" data-type="${s.type}">
         <div style="display:flex;align-items:center;gap:6px;font-size:11px;">
-          <span style="color:${tcol};font-size:12px;font-weight:700;white-space:nowrap;">${icon} ${typeLabel}</span>
+          <span style="color:${tcol};font-size:12px;font-weight:700;white-space:nowrap;">${typeLabel}</span>
           <span style="font-weight:700;color:var(--text);">$${s.strike}${itm}</span>
           <span style="color:var(--muted);font-size:10px;">${s.expiry}</span>
           <span style="flex:1;"></span>
@@ -2738,23 +3146,23 @@ function _renderSentimentPanel(data) {
 
   {
     const inverseColors = {
-      BUY:  { color: 'var(--green)', text: '🟢 BUY' },
-      SELL: { color: 'var(--red)',   text: '🔴 SELL' },
-      WAIT: { color: 'var(--muted)', text: '🟡 WAIT' },
+      BUY:  { color: 'var(--green)', text: ' BUY' },
+      SELL: { color: 'var(--red)',   text: ' SELL' },
+      WAIT: { color: 'var(--muted)', text: 'WAIT' },
     };
     const stanceMap = {
-      bullish: { color: '#3fb950', text: '🔼 Bullish', inv: '🔴 SELL' },
-      bearish: { color: '#f85149', text: '🔽 Bearish', inv: '🟢 BUY'  },
-      neutral: { color: '#8b949e', text: '↔ Neutral',  inv: '🟡 WAIT' },
-      unknown: { color: '#8b949e', text: '? No data',  inv: '🟡 WAIT' },
+      bullish: { color: '#3fb950', text: ' Bullish', inv: ' SELL' },
+      bearish: { color: '#f85149', text: ' Bearish', inv: ' BUY'  },
+      neutral: { color: '#8b949e', text: '↔ Neutral',  inv: 'WAIT' },
+      unknown: { color: '#8b949e', text: '? No data',  inv: 'WAIT' },
     };
     const overallMap = {
-      bullish: { color: 'var(--green)', text: '🔼 Bullish on this' },
-      bearish: { color: 'var(--red)',   text: '🔽 Bearish on this' },
+      bullish: { color: 'var(--green)', text: ' Bullish on this' },
+      bearish: { color: 'var(--red)',   text: ' Bearish on this' },
       mixed:   { color: 'var(--amber)', text: '↔ Mixed signals'   },
       unknown: { color: 'var(--muted)', text: '? No clear signal' },
     };
-    const confBadge = { high: '🔥 High', medium: '⚡ Medium', low: '❄ Low' };
+    const confBadge = { high: 'High', medium: 'Medium', low: 'Low' };
 
     // Check recent articles first - suppress signals if nothing in past month
     const _oneMonthAgo = new Date(Date.now() - 30 * 86400000);
@@ -2824,8 +3232,8 @@ function _renderSentimentPanel(data) {
       if (picks.length > 0) {
         picksEl.innerHTML = picks.map(p => {
           const pc  = stanceMap[p.stance] || stanceMap.unknown;
-          const inv_badge = p.stance === 'bullish' ? '->🔴SELL' :
-                            p.stance === 'bearish' ? '->🟢BUY'  : '';
+          const inv_badge = p.stance === 'bullish' ? '->SELL' :
+                            p.stance === 'bearish' ? '->BUY'  : '';
           return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;
                               border-bottom:1px solid rgba(255,255,255,.04);">
             <span style="font-weight:700;font-size:11px;color:var(--text);
@@ -2847,7 +3255,7 @@ function _renderSentimentPanel(data) {
       const biasColor = { bullish:'#3fb950', bearish:'#f85149', neutral:'#8b949e' };
       hlEl.innerHTML = arts.length ? arts.map(a => {
         const bc      = biasColor[a.cramer_bias] || '#8b949e';
-        const bi      = a.cramer_bias === 'bullish' ? '🔼' : a.cramer_bias === 'bearish' ? '🔽' : '-';
+        const bi      = a.cramer_bias === 'bullish' ? '' : a.cramer_bias === 'bearish' ? '' : '-';
         const dateStr = a.date ? `<span style="color:var(--muted);font-size:9px;white-space:nowrap;">${a.date}</span>` : '';
         return `<div style="display:flex;gap:5px;align-items:flex-start;">
           <span style="color:${bc};flex-shrink:0;">${bi}</span>
@@ -2871,10 +3279,10 @@ function _renderSentimentPanel(data) {
 
   const aggTypes   = (agg.type_breakdown) || {};
   const typeLabels = {
-    options: { icon: '📞', label: 'Options talk',   color: '#58a6ff' },
-    stock:   { icon: '📈', label: 'Stock / equity', color: '#3fb950' },
-    mixed:   { icon: '🔀', label: 'Mixed',          color: '#d29922' },
-    general: { icon: '💬', label: 'General discussion', color: '#8b949e' },
+    options: { label: 'Options talk',   color: '#58a6ff' },
+    stock:   { label: 'Stock / equity', color: '#3fb950' },
+    mixed:   { label: 'Mixed',          color: '#d29922' },
+    general: { label: 'General discussion', color: '#8b949e' },
   };
   const typeSec = document.getElementById('sent-type-section');
   const typeBarsEl = document.getElementById('sp-type-bars');
@@ -2882,9 +3290,9 @@ function _renderSentimentPanel(data) {
     typeSec.style.display = 'block';
     const sorted = Object.entries(aggTypes).sort((a, b) => b[1] - a[1]);
     typeBarsEl.innerHTML = sorted.map(([k, pct]) => {
-      const tl = typeLabels[k] || { icon: '💬', label: k, color: '#8b949e' };
+      const tl = typeLabels[k] || { label: k, color: '#8b949e' };
       return `<div style="display:flex;align-items:center;gap:10px;">
-        <span style="width:130px;font-size:11px;color:var(--text);">${tl.icon} ${tl.label}</span>
+        <span style="width:130px;font-size:11px;color:var(--text);">${tl.label}</span>
         <div style="flex:1;height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;">
           <div style="height:100%;width:${pct}%;background:${tl.color};border-radius:4px;transition:width .6s;"></div>
         </div>
@@ -2898,9 +3306,9 @@ function _renderSentimentPanel(data) {
   if (xTypeBarsEl && Object.keys(xTypes).length) {
     const xSorted = Object.entries(xTypes).sort((a, b) => b[1] - a[1]);
     xTypeBarsEl.innerHTML = xSorted.map(([k, pct]) => {
-      const tl = typeLabels[k] || { icon: '💬', label: k, color: '#8b949e' };
+      const tl = typeLabels[k] || { label: k, color: '#8b949e' };
       return `<div style="display:flex;align-items:center;gap:6px;">
-        <span style="width:100px;font-size:10px;color:var(--muted);">${tl.icon} ${tl.label}</span>
+        <span style="width:100px;font-size:10px;color:var(--muted);">${tl.label}</span>
         <div style="flex:1;height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;">
           <div style="height:100%;width:${pct}%;background:${tl.color};border-radius:3px;"></div>
         </div>
@@ -2958,15 +3366,18 @@ function _renderSentimentPanel(data) {
 
       socialTbody.innerHTML = ranked.map(s => {
         const tcol = s.type === 'call' ? '#3fb950' : '#f85149';
-        const te   = s.type === 'call' ? '📞 Call'  : '🔻 Put';
-        const itm  = s.in_money ? ' ✅' : '';
+        const te   = s.type === 'call' ? 'Call'  : 'Put';
+        const itm  = s.in_money ? '  ITM' : '';
         const sent = chgSentiment(s.pct_change);
         // Score bar background: green for calls, red for puts, intensity by score
         const barOpacity = (s._score / 100 * 0.35 + 0.05).toFixed(2);
         const barBg = s.type === 'call'
           ? `rgba(63,185,80,${barOpacity})`
           : `rgba(248,81,73,${barOpacity})`;
-        return `<tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+        const ctkr = (data.ticker || currentConfig.ticker || '').toUpperCase();
+        return `<tr style="border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer;"
+                    title="Open contract tracker in a new tab" data-contract="1"
+                    data-ticker="${ctkr}" data-expiry="${s.expiry}" data-strike="${s.strike}" data-type="${s.type}">
           <td style="font-weight:700;font-size:13px;padding:6px 6px;">$${s.strike}${itm}</td>
           <td style="color:${tcol};padding:6px;">${te}</td>
           <td style="text-align:right;padding:6px;">
@@ -2992,8 +3403,8 @@ function _renderSentimentPanel(data) {
     if (combined.length > 0) {
       hotTbody.innerHTML = combined.map(s => {
         const tcol   = s.type === 'call' ? '#3fb950' : '#f85149';
-        const te     = s.type === 'call' ? '📞 Call' : '🔻 Put';
-        const itm    = s.in_money ? ' ✅' : '';
+        const te     = s.type === 'call' ? 'Call' : 'Put';
+        const itm    = s.in_money ? '  ITM' : '';
         const lp     = s.last_price != null ? '$' + s.last_price.toFixed(2) : '-';
         const chg    = s.pct_change != null ? s.pct_change : null;
         const chgStr = chg != null ? (chg >= 0 ? '+' : '') + chg.toFixed(1) + '%' : '-';
@@ -3005,7 +3416,9 @@ function _renderSentimentPanel(data) {
         const flowVal  = s.last_price != null && s.volume != null ? s.last_price * 100 * s.volume : null;
         const flowStr  = flowVal != null ? _fmtDollar(flowVal) : '-';
         const flowCol  = flowVal == null ? '#8b949e' : flowVal >= 1e6 ? '#d29922' : 'var(--muted)';
-        return `<tr>
+        const ctkr = (data.ticker || currentConfig.ticker || '').toUpperCase();
+        return `<tr style="cursor:pointer;" title="Open contract tracker in a new tab" data-contract="1"
+                    data-ticker="${ctkr}" data-expiry="${s.expiry}" data-strike="${s.strike}" data-type="${s.type}">
           <td style="font-weight:700;font-size:13px;padding:5px 6px;">$${s.strike}${itm}</td>
           <td style="color:${tcol};padding:5px 6px;">${te}</td>
           <td style="color:var(--muted);padding:5px 6px;font-size:11px;">${s.expiry}</td>
@@ -3035,10 +3448,10 @@ function _renderSentimentPanel(data) {
     if (postsMeta) postsMeta.textContent = `${topPosts.length} of ${xData.post_count} tweets, sorted by engagement`;
 
     const typeBadge = {
-      options: `<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(88,166,255,.12);color:#58a6ff;white-space:nowrap;">📞 Options</span>`,
-      stock:   `<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(63,185,80,.12);color:#3fb950;white-space:nowrap;">📈 Stock</span>`,
-      mixed:   `<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(210,153,34,.12);color:#d29922;white-space:nowrap;">🔀 Mixed</span>`,
-      general: `<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(139,148,158,.12);color:#8b949e;white-space:nowrap;">💬 General</span>`,
+      options: `<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(88,166,255,.12);color:#58a6ff;white-space:nowrap;">Options</span>`,
+      stock:   `<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(63,185,80,.12);color:#3fb950;white-space:nowrap;">Stock</span>`,
+      mixed:   `<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(210,153,34,.12);color:#d29922;white-space:nowrap;">Mixed</span>`,
+      general: `<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(139,148,158,.12);color:#8b949e;white-space:nowrap;">General</span>`,
     };
 
     tbody.innerHTML = topPosts.map(p => {
@@ -3052,7 +3465,7 @@ function _renderSentimentPanel(data) {
       const prices = (p.price_mentions || []).slice(0, 4);
       const pChips = prices.map(pm => {
         const pc = pm.type === 'call' ? '#3fb950' : pm.type === 'put' ? '#f85149' : '#58a6ff';
-        const pi = pm.type === 'call' ? '📞' : pm.type === 'put' ? '🔻' : '$';
+        const pi = pm.type === 'call' ? 'Call' : pm.type === 'put' ? 'Put' : '$';
         return `<span style="font-size:10px;padding:1px 5px;border-radius:6px;
                  background:rgba(255,255,255,.06);color:${pc};white-space:nowrap;border:1px solid rgba(255,255,255,.08);">
           ${pi}${pm.price % 1 === 0 ? pm.price.toFixed(0) : pm.price.toFixed(2)}
@@ -3069,7 +3482,7 @@ function _renderSentimentPanel(data) {
         <td style="white-space:nowrap;color:var(--muted);font-size:11px;padding:7px 6px;">${src}</td>
         <td style="padding:7px 6px;">${badge}</td>
         <td style="color:${sCol};white-space:nowrap;padding:7px 6px;">${sArrow} ${(p.score * 100).toFixed(0)}%</td>
-        <td style="color:var(--muted);padding:7px 6px;">❤️ ${p.likes ?? 0}</td>
+        <td style="color:var(--muted);padding:7px 6px;">${p.likes ?? 0}</td>
         <td style="color:var(--muted);padding:7px 6px;">${p.retweets ?? 0}</td>
         <td style="color:#3fb950;font-weight:600;padding:7px 6px;">${p.call_mentions ?? 0}</td>
         <td style="color:#f85149;font-weight:600;padding:7px 6px;">${p.put_mentions ?? 0}</td>
@@ -3303,12 +3716,12 @@ async function runNewsPanel() {
         }
 
         if (tickerArticles.length > 0) {
-          listEl.insertAdjacentHTML('beforeend', _sectionHeader('🎯', `${ticker} News`, tickerArticles.length));
+          listEl.insertAdjacentHTML('beforeend', _sectionHeader('', `${ticker} News`, tickerArticles.length));
           tickerArticles.forEach(art => listEl.insertAdjacentHTML('beforeend', _renderArticleCard(art, ticker)));
         }
 
         if (otherArticles.length > 0) {
-          listEl.insertAdjacentHTML('beforeend', _sectionHeader('🌍', 'Market & General News', otherArticles.length));
+          listEl.insertAdjacentHTML('beforeend', _sectionHeader('', 'Market & General News', otherArticles.length));
           otherArticles.forEach(art => listEl.insertAdjacentHTML('beforeend', _renderArticleCard(art, ticker)));
         }
       }
@@ -3368,7 +3781,7 @@ async function runGlobalSentiment(forceRefresh) {
     _globalLoading = false;
     if (runBtn)   runBtn.disabled = false;
     if (spinEl)   spinEl.style.display = 'none';
-    if (labelEl)  labelEl.textContent = '🌍 Fetch Market Pulse';
+    if (labelEl)  labelEl.textContent = ' Fetch Market Pulse';
     if (progWrap) progWrap.style.display = 'none';
   }
 }
@@ -3442,20 +3855,20 @@ function _renderGlobalSentiment(data) {
   // Cramer market-wide card
   const cm = data.cramer_market || {};
   const invColors = {
-    BUY:  { color:'var(--green)', text:'🟢 BUY' },
-    SELL: { color:'var(--red)',   text:'🔴 SELL' },
-    WAIT: { color:'var(--muted)', text:'🟡 WAIT' },
+    BUY:  { color:'var(--green)', text:' BUY' },
+    SELL: { color:'var(--red)',   text:' SELL' },
+    WAIT: { color:'var(--muted)', text:'WAIT' },
   };
   const cramersRaw = {
-    buy: { color:'var(--green)',text:'🔼 Bullish on market' },
-    sell:{ color:'var(--red)',  text:'🔽 Bearish on market' },
+    buy: { color:'var(--green)',text:' Bullish on market' },
+    sell:{ color:'var(--red)',  text:' Bearish on market' },
     mixed:{ color:'var(--amber)',text:'↔ Mixed signals' },
     unknown:{ color:'var(--muted)',text:'? No clear signal' },
   };
   const invSig = cm.inverse_signal || 'WAIT';
   const ic = invColors[invSig] || invColors.WAIT;
   const rc = cramersRaw[cm.cramer_signal] || cramersRaw.unknown;
-  const confBadge = { high:'🔥 High', medium:'⚡ Medium', low:'❄ Low' };
+  const confBadge = { high:'High', medium:'Medium', low:'Low' };
 
   const invEl = document.getElementById('gp-cramer-inverse');
   if (invEl) { invEl.textContent = ic.text; invEl.style.color = ic.color; }
@@ -3470,8 +3883,8 @@ function _renderGlobalSentiment(data) {
   if (gpPicksEl) {
     const gPicks = (cm.picks || []).filter(p => p.stance !== 'unknown');
     const stanceMap2 = {
-      bullish: { color:'#3fb950', text:'🔼 Bullish', invBadge:'->🔴SELL' },
-      bearish: { color:'#f85149', text:'🔽 Bearish', invBadge:'->🟢BUY'  },
+      bullish: { color:'#3fb950', text:' Bullish', invBadge:'->SELL' },
+      bearish: { color:'#f85149', text:' Bearish', invBadge:'->BUY'  },
       neutral: { color:'#8b949e', text:'↔ Neutral',  invBadge:''         },
     };
     gpPicksEl.innerHTML = gPicks.length > 0 ? gPicks.map(p => {
@@ -3497,7 +3910,7 @@ function _renderGlobalSentiment(data) {
     const biasC = { bullish:'#3fb950', bearish:'#f85149', neutral:'#8b949e' };
     hlEl.innerHTML = arts.length ? arts.map(a => {
       const bc      = biasC[a.cramer_bias] || '#8b949e';
-      const bi      = a.cramer_bias === 'bullish' ? '🔼' : a.cramer_bias === 'bearish' ? '🔽' : '-';
+      const bi      = a.cramer_bias === 'bullish' ? '' : a.cramer_bias === 'bearish' ? '' : '-';
       const dateStr = a.date ? ` <span style="color:var(--muted);font-size:9px;">${a.date}</span>` : '';
       return `<div style="display:flex;gap:5px;align-items:flex-start;">
         <span style="color:${bc};flex-shrink:0;">${bi}</span>
@@ -3545,7 +3958,6 @@ function _renderGlobalSentiment(data) {
   }).slice(0, 15);
   if (postsMetaEl) postsMetaEl.textContent = `${topPosts.length} of ${data.post_count || 0} posts`;
   if (postsTbodyEl) {
-    const typeEmoji = { options:'📞', stock:'📈', mixed:'🔀', general:'💬' };
     postsTbodyEl.innerHTML = topPosts.map(p => {
       const sc = p.score > 0.1 ? '#3fb950' : p.score < -0.1 ? '#f85149' : '#8b949e';
       const sa = p.score > 0.1 ? '^' : p.score < -0.1 ? 'v' : '-';
@@ -3558,7 +3970,7 @@ function _renderGlobalSentiment(data) {
         </td>
         <td style="white-space:nowrap;color:var(--muted);font-size:10px;padding:6px 8px;">${p.subreddit||''}</td>
         <td style="color:${sc};white-space:nowrap;padding:6px 8px;">${sa} ${((p.score||0)*100).toFixed(0)}%</td>
-        <td style="color:var(--muted);padding:6px 8px;">${p.upvotes > 0 ? '⬆ '+p.upvotes : '-'}</td>
+        <td style="color:var(--muted);padding:6px 8px;">${p.upvotes > 0 ? '+'+p.upvotes : '-'}</td>
       </tr>`;
     }).join('');
   }
@@ -3668,10 +4080,19 @@ function _syncAllTickerInputs(ticker) {
     if (el && el.value.toUpperCase().trim() !== t) el.value = t;
   });
   // Read-only ticker badges in feature panels
-  ['sent-ticker-badge', 'ms-ticker-badge', 'opts-ticker-badge'].forEach(id => {
+  ['sent-ticker-badge', 'ms-ticker-badge', 'opts-ticker-badge', 'ai-ticker-badge', 'pop-ticker-badge'].forEach(id => {
     const el = document.getElementById(id);
     if (el && el.textContent.trim() !== t) el.textContent = t;
   });
+  // Notify tab modules if their panel is currently open (reloads expiries / status)
+  const popPanel = document.getElementById('pop-scan-panel');
+  if (popPanel && popPanel.style.display !== 'none' && typeof window.popScannerOnOpen === 'function') {
+    try { window.popScannerOnOpen(t); } catch (e) { console.warn(e); }
+  }
+  const aiPanel = document.getElementById('ai-analyst-panel');
+  if (aiPanel && aiPanel.style.display !== 'none' && typeof window.aiAnalystOnOpen === 'function') {
+    try { window.aiAnalystOnOpen(t); } catch (e) { console.warn(e); }
+  }
 }
 
 /**
@@ -3918,9 +4339,7 @@ function _handlePartialUpdate(d) {
   }
   if (d.ticker && d.interval) {
     const h = el('header-title');
-    if (h) h.textContent = `MC Trader  - ${d.ticker}`;
-    const mt = el('m-ticker');
-    if (mt) mt.textContent = `${d.ticker} ${d.interval}`;
+    if (h) h.textContent = `MC Trader · ${d.ticker}`;
   }
 
   // Signal badge -> "Analyzing..."
@@ -3973,8 +4392,9 @@ function _updateMicrostructureCard(d) {
 
   // Hurst - colour-coded
   const H = mc.ms_hurst;
+  const Hse = mc.ms_dfa_se;
   const hEl = $('ms-hurst');
-  hEl.textContent = (H!=null) ? H.toFixed(3) : '-';
+  hEl.textContent = (H!=null) ? H.toFixed(3) + (Hse!=null && Hse>0 ? ' ±'+Hse.toFixed(3) : '') : '-';
   hEl.style.color = (H==null)        ? 'var(--muted)'
                   : (H > 0.55)       ? 'var(--green)'
                   : (H < 0.45)       ? 'var(--amber)'
@@ -4041,7 +4461,7 @@ function _updateUI(d) {
   // Regime banner - the "is this trending or consolidating?" answer
   updateRegimeBanner(d.regime, cfg_d.n_forward);
 
-  document.getElementById('header-title').textContent=`MC Trader  ${d.ticker}  $${fmt(cur)}`;
+  document.getElementById('header-title').textContent=`MC Trader · ${d.ticker}`;
   document.getElementById('status-dot').className='dot live';
   document.getElementById('updated').textContent='Updated '+new Date(d.updated_at).toLocaleTimeString();
   // Sync quick-config inputs (only when user isn't actively typing)
@@ -4077,7 +4497,6 @@ function _updateUI(d) {
   }
 
   document.getElementById('m-price').textContent ='$'+fmt(cur);
-  document.getElementById('m-ticker').textContent=`${d.ticker}  ${d.interval || '15m'}`;
 
   const drift=sig.drift_bias*100;
   const dEl=document.getElementById('m-drift');
@@ -4102,6 +4521,41 @@ function _updateUI(d) {
   document.getElementById('p10').textContent ='$'+fmt(mc.p10_price);
   document.getElementById('pmed').textContent='$'+fmt(mc.median_price);
   document.getElementById('p90').textContent ='$'+fmt(mc.p90_price);
+
+  // Band reliability (adaptive conformal calibration)
+  // "Did the price really stay inside the shaded band as often as promised?"
+  const bcRow = document.getElementById('band-cal-row');
+  if (bcRow) {
+    const bc = d.band_calibration;
+    const bAlpha = mc.band_alpha;
+    const bcVal = document.getElementById('band-cal-val');
+    if (bc && bc.empirical_coverage != null) {
+      const cov = Math.round(bc.empirical_coverage * 100);
+      const tgt = Math.round((bc.target_coverage || 0.8) * 100);
+      bcVal.textContent = cov + '% hits / ' + tgt + '% goal'
+                        + (bAlpha != null ? '  · α=' + bAlpha.toFixed(2) : '');
+      bcVal.style.color = Math.abs(cov - tgt) <= 5 ? 'var(--green)'
+                        : Math.abs(cov - tgt) <= 12 ? 'var(--amber)' : 'var(--red)';
+      bcRow.style.display = 'flex';
+      bcRow.title =
+        'The shaded P10-P90 band is a promise: "the price should land inside here '
+        + tgt + '% of the time."\n\n'
+        + 'Hits: out of ' + bc.n_settled + ' past forecasts that have come due, the price '
+        + 'actually stayed inside the band ' + cov + '% of the time.\n\n'
+        + 'If hits < goal, the band was too narrow (overconfident) - the app automatically '
+        + 'draws it WIDER on the next forecast. If hits > goal, it draws it TIGHTER.\n\n'
+        + 'α is the width knob: 0.20 = normal P10-P90. Smaller α = wider band '
+        + '(e.g. 0.16 → P8-P92). It self-adjusts until the promise is kept.';
+    } else if (bc && bc.n_settled != null) {
+      bcVal.textContent = 'learning… ' + bc.n_settled + '/10 forecasts scored';
+      bcVal.style.color = 'var(--muted)';
+      bcRow.style.display = 'flex';
+      bcRow.title = 'Each forecast is checked against the real price once its horizon passes. '
+                  + 'After 10 are scored, the band width starts self-adjusting.';
+    } else {
+      bcRow.style.display = 'none';
+    }
+  }
 
   // Indicators
   const $ = id => document.getElementById(id);
@@ -4178,6 +4632,9 @@ function _updateUI(d) {
   $('cfg-nsim').textContent=(cfg_d.n_sim || '-') + ' paths';
   $('cfg-nfwd').textContent=(cfg_d.n_forward || '-') + ' candles';
   $('cfg-poll').textContent=(cfg_d.poll_seconds || '-') + 's';
+
+  // Expected move (realized vol) - rendered here, not part of right-panel module
+  try { updateExpectedMove(d.expected_move); } catch(e) { console.warn('[em] crash:', e); }
 
   // (confidence colour, trade-setup gate, S/R, price targets, microstructure).
   // Fall back to the inline helpers when the module hasn't loaded yet.
@@ -4300,8 +4757,8 @@ function updateTradeSetup(ts, confPct) {
     el.textContent = pctVal;
     el.style.color = ts.sl_recommended === 'pct' ? 'var(--fg)' : 'var(--muted)';
   });
-  set('ts-sl-atr-label', el => el.textContent = `ATR (×${ts.atr_mult?.toFixed(1) ?? '?'})${ts.sl_recommended === 'atr' ? ' ★' : ''}`);
-  set('ts-sl-pct-label', el => el.textContent = `Fixed ${ts.sl_pct_used ?? '?'}%${ts.sl_recommended === 'pct' ? ' ★' : ''}`);
+  set('ts-sl-atr-label', el => el.textContent = `ATR (×${ts.atr_mult?.toFixed(1) ?? '?'})${ts.sl_recommended === 'atr' ? ' ' : ''}`);
+  set('ts-sl-pct-label', el => el.textContent = `Fixed ${ts.sl_pct_used ?? '?'}%${ts.sl_recommended === 'pct' ? ' ' : ''}`);
 
   // R:R pills
   const setRRPill = (pillId, numId, val, isRec) => {
@@ -4418,7 +4875,7 @@ function updatePriceTargets(ts, currentPrice) {
     set('pt-high-pct',   el => el.textContent = fp(mh.pct_from_price));
     set('pt-high-conf',  el => {
       const score = mh.score || 0;
-      const stars = score >= 3.5 ? '★★★ ' : score >= 2.0 ? '★★ ' : score >= 1.0 ? '★ ' : '';
+      const stars = score >= 3.5 ? ' ' : score >= 2.0 ? ' ' : score >= 1.0 ? ' ' : '';
       el.textContent = stars + (mh.confluence || mh.method || '');
     });
   }
@@ -4428,7 +4885,7 @@ function updatePriceTargets(ts, currentPrice) {
     set('pt-dn-pct',   el => el.textContent = fp(mdn.pct_from_price));
     set('pt-dn-conf',  el => {
       const score = mdn.score || 0;
-      const stars = score >= 3.5 ? '★★★ ' : score >= 2.0 ? '★★ ' : score >= 1.0 ? '★ ' : '';
+      const stars = score >= 3.5 ? ' ' : score >= 2.0 ? ' ' : score >= 1.0 ? ' ' : '';
       el.textContent = stars + (mdn.confluence || mdn.method || '');
     });
   }
@@ -4446,17 +4903,17 @@ function updatePriceTargets(ts, currentPrice) {
     const levels = [
       { label: 'Ext 261.8%', price: fib.e_2618, ratio: '261.8%', ext: true },
       { label: 'Ext 200%',   price: fib.e_2000, ratio: '200%',   ext: true },
-      { label: 'Ext 161.8%', price: fib.e_1618, ratio: '161.8% ✦', ext: true },
+      { label: 'Ext 161.8%', price: fib.e_1618, ratio: '161.8% ', ext: true },
       { label: 'Ext 127.2%', price: fib.e_1272, ratio: '127.2%', ext: true },
       { label: 'Swing High', price: fib.swing_high, ratio: '100%', anchor: true },
       { label: 'Ret 23.6%',  price: fib.r_236,  ratio: '23.6%'  },
       { label: 'Ret 38.2%',  price: fib.r_382,  ratio: '38.2%'  },
       { label: 'Ret 50.0%',  price: fib.r_500,  ratio: '50.0%'  },
-      { label: 'Ret 61.8%',  price: fib.r_618,  ratio: '61.8% ✦' },
+      { label: 'Ret 61.8%',  price: fib.r_618,  ratio: '61.8% ' },
       { label: 'Ret 78.6%',  price: fib.r_786,  ratio: '78.6%'  },
       { label: 'Swing Low',  price: fib.swing_low, ratio: '0%', anchor: true },
       { label: 'Ext −127.2%',price: fib.d_1272, ratio: '−127.2%', ext: true },
-      { label: 'Ext −161.8%',price: fib.d_1618, ratio: '−161.8% ✦', ext: true },
+      { label: 'Ext −161.8%',price: fib.d_1618, ratio: '−161.8% ', ext: true },
       { label: 'Ext −261.8%',price: fib.d_2618, ratio: '−261.8%', ext: true },
     ];
 
@@ -4473,7 +4930,7 @@ function updatePriceTargets(ts, currentPrice) {
       const cls  = atPrice ? 'pt-fib-row at-price'
                  : lv.price > price ? 'pt-fib-row above'
                  : 'pt-fib-row below';
-      const bold = (lv.anchor || lv.ratio?.includes('✦')) ? 'font-weight:700;' : '';
+      const bold = (lv.anchor || lv.ratio?.includes('')) ? 'font-weight:700;' : '';
       const priceStr = '$' + Number(lv.price).toFixed(2);
       html += `
         <div class="${cls}" style="${bold}">
@@ -4497,6 +4954,49 @@ function toggleFibGrid() {
   grid.style.display  = open ? 'none'  : 'block';
   if (arrow) arrow.textContent = open ? 'v' : '^';
 }
+
+// Expected Move card (realized-vol 1σ/2σ ranges from the backend expected_move block)
+function updateExpectedMove(em) {
+  const card = document.getElementById('em-card');
+  if (!card) return;
+  if (!em || !em.horizons) { card.style.display = 'none'; return; }
+  card.style.display = '';
+
+  const $ = id => document.getElementById(id);
+  const set = (id, txt) => { const el = $(id); if (el) el.textContent = txt; };
+  const f$ = v => v != null ? '$' + Number(v).toFixed(2) : '-';
+  const range = s => s ? `${f$(s.low)} – ${f$(s.high)}` : '-';
+
+  set('em-vol-pill', (em.annual_vol_pct != null ? em.annual_vol_pct.toFixed(1) : '-') + '% ann');
+  const pill = $('em-vol-pill');
+  if (pill) {
+    const v = em.annual_vol_pct || 0;
+    pill.style.color = v > 60 ? 'var(--red)' : v > 35 ? 'var(--amber)' : 'var(--green)';
+  }
+
+  const w = em.horizons['1w'];
+  if (w) {
+    set('em-1w-sd', '±' + w.sd_pct.toFixed(2) + '%');
+    set('em-1w-s1', range(w.sigma1));
+    set('em-1w-s2', range(w.sigma2));
+  }
+  const d1 = em.horizons['1d'];
+  if (d1) {
+    set('em-1d-sd', '±' + d1.sd_pct.toFixed(2) + '%');
+    set('em-1d-s1', range(d1.sigma1));
+    set('em-1d-s2', range(d1.sigma2));
+  }
+  set('em-window', em.window_days != null ? String(em.window_days) : '-');
+  set('em-df', em.df_t != null ? (em.df_t >= 29 ? '~∞' : em.df_t.toFixed(0)) : '-');
+
+  // Tooltip on the band: full breakdown
+  const band = $('em-1w-band');
+  if (band && w) {
+    band.title = `Spot ${f$(em.spot)}\n1σ (68%): ${range(w.sigma1)}\n2σ (95%): ${range(w.sigma2)}\n`
+               + `P(> +1σ) = 15.9%   P(> +2σ) = 2.3%`;
+  }
+}
+window.updateExpectedMove = updateExpectedMove;
 
 function updateSRCard(zones, ind, price) {
   const $ = id => document.getElementById(id);
@@ -4529,8 +5029,8 @@ function updateSRCard(zones, ind, price) {
   set('sr-ema200-dist', el => { el.textContent = e200.dist; el.style.color = e200.up ? 'var(--green)' : 'var(--red)'; });
 
   const ctxMap = {
-    at_demand: ['📗 At Support',     'rgba(63,185,80,.15)',   'var(--green)'],
-    at_supply: ['📕 At Resistance',  'rgba(248,81,73,.15)',   'var(--red)'],
+    at_demand: [' At Support',     'rgba(63,185,80,.15)',   'var(--green)'],
+    at_supply: [' At Resistance',  'rgba(248,81,73,.15)',   'var(--red)'],
     between:   ['↔ Between Zones',   'rgba(88,166,255,.1)',   'var(--blue)'],
     unknown:   ['-',                 'rgba(139,148,158,.1)',  'var(--muted)'],
   };
@@ -4550,7 +5050,7 @@ function updateSRCard(zones, ind, price) {
     const bgAlpha   = kind === 'demand' ? 'rgba(63,185,80,' : 'rgba(248,81,73,';
     const strPct    = Math.round((z.strength ?? 0) * 100);
     const kindLabel = kind === 'demand' ? 'Support' : 'Resistance';
-    const label     = isStrong ? `Strong ${kindLabel} ★` : `${kindLabel} ${idx}`;
+    const label     = isStrong ? `Strong ${kindLabel} ` : `${kindLabel} ${idx}`;
     const freshTag  = z.fresh
       ? `<span style="font-size:9px;padding:1px 4px;border-radius:3px;
            background:${bgAlpha}.12);color:${baseColor};margin-left:4px;font-weight:700;">FRESH</span>` : '';
@@ -5085,14 +5585,14 @@ function toggleMeasureTool() {
     btn.style.background   = 'rgba(210,153,34,.15)';
     btn.style.borderColor  = 'var(--amber)';
     btn.style.color        = 'var(--amber)';
-    btn.textContent        = '📐 Click start...';
+    btn.textContent        = ' Click start...';
     if (readout) { readout.textContent = 'Click a candle to set start point'; readout.style.display = 'inline'; }
     _attachMeasureListener();
   } else {
     btn.style.background  = 'var(--surface2)';
     btn.style.borderColor = 'var(--border)';
     btn.style.color       = 'var(--muted)';
-    btn.textContent       = '📐 Measure';
+    btn.textContent       = ' Measure';
     if (readout) readout.style.display = 'none';
     _clearMeasureOverlay();
     _detachMeasureListener();
@@ -5111,7 +5611,7 @@ function _attachMeasureListener() {
     if (!_measurePoint1) {
       _measurePoint1 = { time, price };
       const btn = document.getElementById('measure-btn');
-      if (btn) btn.textContent = '📐 Click end...';
+      if (btn) btn.textContent = ' Click end...';
       const r = document.getElementById('measure-readout');
       if (r) r.textContent = `Start: $${price.toFixed(2)}, Click end point`;
     } else {
@@ -5137,11 +5637,11 @@ function _attachMeasureListener() {
       const r     = document.getElementById('measure-readout');
       if (r) {
         r.style.display = 'inline';
-        r.innerHTML = `📐 ${sign}$${dp.toFixed(2)} (${sign}${pct.toFixed(2)}%), ${bars} bars`;
+        r.innerHTML = ` ${sign}$${dp.toFixed(2)} (${sign}${pct.toFixed(2)}%), ${bars} bars`;
         r.style.color = col;
       }
       const btn = document.getElementById('measure-btn');
-      if (btn) btn.textContent = '📐 Reset';
+      if (btn) btn.textContent = ' Reset';
 
       _measurePoint1 = null; // ready for next measurement
     }
@@ -5543,6 +6043,8 @@ function switchScannerTab(tab) {
     'market-structure': document.getElementById('market-structure-panel'),
     news:               document.getElementById('news-panel'),
     'unusual-opts':     document.getElementById('unusual-opts-panel'),
+    pop:                document.getElementById('pop-scan-panel'),
+    ai:                 document.getElementById('ai-analyst-panel'),
   };
   const tabs = {
     breakout:           document.getElementById('tab-breakout'),
@@ -5552,6 +6054,8 @@ function switchScannerTab(tab) {
     'market-structure': document.getElementById('tab-market-structure'),
     news:               document.getElementById('tab-news'),
     'unusual-opts':     document.getElementById('tab-unusual-opts'),
+    pop:                document.getElementById('tab-pop'),
+    ai:                 document.getElementById('tab-ai'),
   };
   const styles = {
     breakout:           { color: 'var(--blue)',   bg: 'rgba(88,166,255,.06)',  border: 'var(--blue)' },
@@ -5561,6 +6065,8 @@ function switchScannerTab(tab) {
     'market-structure': { color: 'var(--purple)', bg: 'rgba(188,140,255,.06)', border: 'var(--purple)' },
     news:               { color: 'var(--amber)',  bg: 'rgba(210,153,34,.06)',  border: 'var(--amber)' },
     'unusual-opts':     { color: '#f85149',       bg: 'rgba(248,81,73,.06)',   border: '#f85149' },
+    pop:                { color: 'var(--blue)',   bg: 'rgba(88,166,255,.06)',  border: 'var(--blue)' },
+    ai:                 { color: 'var(--purple)', bg: 'rgba(188,140,255,.06)', border: 'var(--purple)' },
   };
 
   Object.keys(panels).forEach(key => {
@@ -5606,21 +6112,55 @@ function switchScannerTab(tab) {
       fetchNewsData(false);
     }
   }
+  // When the POP scanner opens, sync the global ticker and load expiries.
+  if (tab === 'pop') {
+    const currentVal = (currentConfig.ticker || '').toUpperCase().trim();
+    if (typeof window.popScannerOnOpen === 'function') {
+      try { window.popScannerOnOpen(currentVal); } catch (e) { console.warn(e); }
+    }
+  }
+  // When the AI Analyst opens, sync the ticker badge and check configuration.
+  if (tab === 'ai' && typeof window.aiAnalystOnOpen === 'function') {
+    try { window.aiAnalystOnOpen((currentConfig.ticker || '').toUpperCase().trim()); } catch (e) { console.warn(e); }
+  }
 }
 
 let _optsLoading = false;
+let _optsAbortController = null;
+
+function _setOptsFetchingUI(active) {
+  const btn   = document.getElementById('opts-run-btn');
+  const stop  = document.getElementById('opts-stop-btn');
+  const spin  = document.getElementById('opts-spin');
+  const lbl   = document.getElementById('opts-run-label');
+  if (btn)  btn.disabled = active;
+  if (stop) stop.style.display = active ? 'inline-flex' : 'none';
+  if (spin) spin.style.display = active ? 'inline-block' : 'none';
+  if (lbl)  lbl.textContent = active ? 'Fetching...' : 'Fetch Options';
+}
+
+function stopOptionsPanel() {
+  if (_optsAbortController) {
+    _optsAbortController.abort();
+    _optsAbortController = null;
+  }
+  _optsLoading = false;
+  _setOptsFetchingUI(false);
+  const errEl = document.getElementById('opts-error-state');
+  if (errEl) {
+    errEl.style.display = 'block';
+    errEl.textContent = 'Fetch stopped.';
+  }
+}
 
 async function runOptionsPanel() {
   if (_optsLoading) return;
   _optsLoading = true;
-  const btn   = document.getElementById('opts-run-btn');
-  const spin  = document.getElementById('opts-spin');
-  const lbl   = document.getElementById('opts-run-label');
+  _optsAbortController = new AbortController();
+  const signal = _optsAbortController.signal;
   const empty = document.getElementById('opts-empty-state');
   const errEl = document.getElementById('opts-error-state');
-  if (btn)   btn.disabled = true;
-  if (spin)  spin.style.display = 'inline-block';
-  if (lbl)   lbl.textContent = 'Fetching...';
+  _setOptsFetchingUI(true);
   if (empty) empty.style.display = 'none';
   if (errEl) errEl.style.display = 'none';
   // Sync ticker badge
@@ -5629,16 +6169,20 @@ async function runOptionsPanel() {
   try {
     // Run both in parallel - sentiment populates sp-*, market-structure populates ms-options-*
     await Promise.all([
-      runSentiment(true),
-      runMarketStructure(),
+      runSentiment(true, { signal, silent: true, force: true }),
+      runMarketStructure({ signal, silent: true, force: true }),
     ]);
   } catch(e) {
-    if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Error: ' + e.message; }
+    if (e.name === 'AbortError') {
+      if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Fetch stopped.'; }
+    } else if (errEl) {
+      errEl.style.display = 'block';
+      errEl.textContent = 'Error: ' + e.message;
+    }
   } finally {
     _optsLoading = false;
-    if (btn)  btn.disabled = false;
-    if (spin) spin.style.display = 'none';
-    if (lbl)  lbl.textContent = '📈 Fetch Options';
+    _optsAbortController = null;
+    _setOptsFetchingUI(false);
   }
 }
 
@@ -5651,12 +6195,13 @@ let _msAnalysisInProgress = false;
 let _msAbortController = null;
 const _MS_TIMEOUT = 45000;  // 45 second max timeout
 
-async function runMarketStructure() {
+async function runMarketStructure(opts) {
+  opts = opts || {};
   const ticker = (currentConfig.ticker || '').trim().toUpperCase();
   if (!ticker) return;
 
   // Prevent simultaneous requests
-  if (_msAnalysisInProgress) {
+  if (_msAnalysisInProgress && !opts.force) {
     log('Market Structure analysis already in progress...', 'var(--amber)');
     return;
   }
@@ -5668,24 +6213,28 @@ async function runMarketStructure() {
   const results = document.getElementById('ms-results');
 
   _msAnalysisInProgress = true;
-  btn.disabled = true;
-  spin.style.display = 'inline-block';
-  lbl.textContent = 'Analysing...';
-  status.style.display = 'block';
-  status.textContent = `Fetching data for ${ticker}...`;
-  results.style.display = 'none';
+  if (!opts.silent) {
+    btn.disabled = true;
+    spin.style.display = 'inline-block';
+    lbl.textContent = 'Analysing...';
+    status.style.display = 'block';
+    status.textContent = `Fetching data for ${ticker}...`;
+    results.style.display = 'none';
+  }
 
   // Setup timeout and abort controller
-  _msAbortController = new AbortController();
-  const timeoutId = setTimeout(() => {
-    _msAbortController.abort();
-    status.textContent = 'Request timeout (>45s) - server may be overloaded';
-  }, _MS_TIMEOUT);
+  const ownController = !opts.signal;
+  _msAbortController = opts.signal ? null : new AbortController();
+  const signal = opts.signal || _msAbortController.signal;
+  const timeoutId = ownController ? setTimeout(() => {
+    if (_msAbortController) _msAbortController.abort();
+    if (status) status.textContent = 'Request timeout (>45s) - server may be overloaded';
+  }, _MS_TIMEOUT) : null;
 
   try {
     const res = await fetch(
       `/api/market-structure?ticker=${encodeURIComponent(ticker)}`,
-      { signal: _msAbortController.signal }
+      { signal }
     );
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
@@ -5693,31 +6242,34 @@ async function runMarketStructure() {
     _msData   = data;
     _msTicker = ticker;   // track what ticker this panel is showing
     _renderMarketStructure(data);
-    results.style.display = 'block';
-    status.textContent = `Updated ${new Date(data.updated_at).toLocaleTimeString()} - ${ticker} @ ${data.interval}`;
+    if (!opts.silent) {
+      results.style.display = 'block';
+      status.textContent = `Updated ${new Date(data.updated_at).toLocaleTimeString()} - ${ticker} @ ${data.interval}`;
+    }
     log(`Market Structure: ${ticker} - regime=${data.hmm?.current_state || '?'} | max_pain=$${data.options_flow?.max_pain?.toFixed(2) || '?'}`, 'var(--purple)');
 
   } catch(e) {
-    if (e.name === 'AbortError') {
-      status.textContent = 'Request cancelled (timeout)';
-    } else {
+    if (e.name === 'AbortError') throw e;
+    if (!opts.silent) {
       status.textContent = 'Error: ' + (e.message || 'Unknown error');
+      status.style.color = 'var(--red)';
     }
-    status.style.color = 'var(--red)';
     log('Market Structure failed: ' + (e.message || 'Unknown error'), 'var(--red)');
   } finally {
-    clearTimeout(timeoutId);
+    if (timeoutId) clearTimeout(timeoutId);
     _msAnalysisInProgress = false;
     _msAbortController = null;
-    btn.disabled = false;
-    spin.style.display = 'none';
-    lbl.textContent = '🔬 Analyse';
-    status.style.color = 'var(--muted)';
-    // Hide status message after a brief delay to show completion
-    setTimeout(() => {
-      status.style.display = 'none';
-      status.textContent = '';
-    }, 2000);
+    if (!opts.silent) {
+      btn.disabled = false;
+      spin.style.display = 'none';
+      lbl.textContent = ' Analyse';
+      status.style.color = 'var(--muted)';
+      // Hide status message after a brief delay to show completion
+      setTimeout(() => {
+        status.style.display = 'none';
+        status.textContent = '';
+      }, 2000);
+    }
   }
 }
 
@@ -5744,7 +6296,7 @@ function _renderHMM(hmm) {
 
   // Colors and icons per regime
   const colors = { trending:'var(--amber)', ranging:'var(--green)', volatile:'var(--red)', unknown:'var(--muted)' };
-  const icons  = { trending:'📈', ranging:'↔️', volatile:'⚡', unknown:'❓' };
+  const icons  = { trending:'', ranging:'', volatile:'', unknown:'' };
 
   // Human-friendly regime names and what they mean for the trader
   const friendlyNames = {
@@ -5761,10 +6313,10 @@ function _renderHMM(hmm) {
   };
   // Bar labels (short, for the probability bar row)
   const barLabels = {
-    trending: '📈 Trending',
-    ranging:  '↔️ Ranging',
-    volatile: '⚡ Volatile',
-    unknown:  '❓ Unclear',
+    trending: 'Trending',
+    ranging:  '↔ Ranging',
+    volatile: 'Volatile',
+    unknown:  'Unclear',
   };
 
   const state = hmm.current_state || 'unknown';
@@ -5803,7 +6355,7 @@ function _renderHawkes(hk) {
 
   // Plain-language labels: what does each state mean for the trader?
   const colors = { calm:'var(--green)', moderate:'var(--amber)', excited:'var(--red)', unknown:'var(--muted)' };
-  const icons  = { calm:'🟢', moderate:'🟡', excited:'🔴', unknown:'⚪' };
+  const icons  = { calm:'', moderate:'', excited:'', unknown:'' };
   const friendlyLabels = {
     calm:     'Quiet Market',
     moderate: 'Normal Activity',
@@ -5862,13 +6414,24 @@ function _renderOptionsFlow(of, spot) {
 
   levelsEl.innerHTML = levels.map((l, i) => {
     const val = i === 4
-      ? ((of.net_gex >= 0 ? '+' : '') + _fmtCompact(of.net_gex) + (of.gex_positive ? ' 🟢 Damping' : ' 🔴 Amplifying'))
+      ? ((of.net_gex >= 0 ? '+' : '') + _fmtCompact(of.net_gex) + (of.gex_positive ? '  Damping' : '  Amplifying'))
       : (l.value != null ? '$' + l.value.toFixed(2) : '-');
-    const arrow = l.value != null && spot ? (l.value > spot ? '^' : l.value < spot ? 'v' : '-') : '';
+    // Distance from spot as a signed % (skipped for Net GEX - not a price level)
+    let sub = '';
+    if (i !== 4 && l.value != null && spot) {
+      const pct = ((l.value - spot) / spot) * 100;
+      if (Math.abs(pct) < 0.05) {
+        sub = '<div style="font-size:10px;color:var(--muted);">at spot</div>';
+      } else {
+        const up  = pct > 0;
+        const col = up ? 'var(--green)' : 'var(--red)';
+        sub = `<div style="font-size:10px;color:${col};">${up ? '▲' : '▼'} ${up ? '+' : ''}${pct.toFixed(1)}% vs spot</div>`;
+      }
+    }
     return `<div style="background:var(--surface);border-radius:6px;padding:8px;border:1px solid var(--border);" title="${l.title}">
       <div style="font-size:10px;color:var(--muted);margin-bottom:4px;">${l.label}</div>
       <div style="font-size:13px;font-weight:700;color:${l.color};">${val}</div>
-      <div style="font-size:10px;color:var(--muted);">${arrow} vs spot</div>
+      ${sub}
     </div>`;
   }).join('');
 
@@ -6160,7 +6723,7 @@ async function runZoneScanner() {
       const errEl = document.getElementById('zone-error-state');
       errEl.style.display = 'block';
       errEl.textContent   = 'Warning: Enter at least one ticker in the custom field.';
-      btn.disabled = false; spin.style.display = 'none'; lbl.textContent = '🎯 Run Zone Scan';
+      btn.disabled = false; spin.style.display = 'none'; lbl.textContent = 'Run Zone Scan';
       return;
     }
     payload.tickers = tickers;
@@ -6192,7 +6755,7 @@ async function runZoneScanner() {
   } finally {
     btn.disabled = false;
     spin.style.display = 'none';
-    lbl.textContent = '🎯 Run Zone Scan';
+    lbl.textContent = 'Run Zone Scan';
   }
 }
 
@@ -6222,9 +6785,9 @@ function processZoneResult(data) {
 
 function _emaStackPill(stack) {
   const map = {
-    bull_stack:  ['ema-stack-pill ema-bull',   '🟢 Bull Stack'],
+    bull_stack:  ['ema-stack-pill ema-bull',   ' Bull Stack'],
     above_200:   ['ema-stack-pill ema-above200','↑ Above 200'],
-    bear_stack:  ['ema-stack-pill ema-bear',   '🔴 Bear Stack'],
+    bear_stack:  ['ema-stack-pill ema-bear',   ' Bear Stack'],
     below_200:   ['ema-stack-pill ema-below200','↓ Below 200'],
     mixed:       ['ema-stack-pill ema-mixed',  '~ Mixed'],
   };
@@ -6284,10 +6847,10 @@ function _emaCellHtml(emaVal, price, crossSignal, label) {
   let crossHtml = '';
   if (crossSignal === 'cross_up') {
     crossHtml = `<span style="color:var(--green);font-weight:700;font-size:11px;margin-left:4px;"
-      title="${label} crossed UP (Golden cross)">↑✦</span>`;
+      title="${label} crossed UP (Golden cross)">↑</span>`;
   } else if (crossSignal === 'cross_down') {
     crossHtml = `<span style="color:var(--red);font-weight:700;font-size:11px;margin-left:4px;"
-      title="${label} crossed DOWN (Death cross)">↓✦</span>`;
+      title="${label} crossed DOWN (Death cross)">↓</span>`;
   }
 
   return `<td style="border-left:2px solid rgba(88,166,255,.1);">
@@ -6308,7 +6871,7 @@ function _zoneCellHtml(zone, kind) {
          background:${bgColor}.15);color:${baseColor};margin-left:3px;">FRESH</span>` : '';
   const strongTag = isStrong
     ? `<span style="font-size:8px;padding:1px 4px;border-radius:3px;
-         background:${bgColor}.2);color:${baseColor};font-weight:700;margin-left:3px;">★</span>` : '';
+         background:${bgColor}.2);color:${baseColor};font-weight:700;margin-left:3px;"></span>` : '';
   const distStr = zone.dist_pct != null
     ? `<span style="font-size:9px;color:var(--muted);margin-left:2px;">(${zone.dist_pct.toFixed(1)}%)</span>`
     : '';
@@ -6548,8 +7111,8 @@ function ptRenderSidebar(){
       <input id="pt-pf-input-${p.id}" class="pt-pf-name-input" style="display:none" value="${esc(p.name)}"
         onkeydown="if(event.key==='Enter')ptSaveName('${p.id}');if(event.key==='Escape')ptCancelRename('${p.id}')"
         onblur="ptSaveName('${p.id}')" />
-      <span class="pt-pf-edit-btn" onclick="event.stopPropagation();ptStartRename('${p.id}')" title="Rename">✏️</span>
-      <span class="pt-pf-del" onclick="event.stopPropagation();ptDeletePortfolio('${p.id}')" title="Delete">✕</span>`;
+      <span class="pt-pf-edit-btn" onclick="event.stopPropagation();ptStartRename('${p.id}')" title="Rename">Edit</span>
+      <span class="pt-pf-del" onclick="event.stopPropagation();ptDeletePortfolio('${p.id}')" title="Delete"></span>`;
     list.appendChild(div);
   });
 }
@@ -6612,7 +7175,7 @@ async function ptFetchPrice(){
   if(PS.alpacaKeyId&&PS.alpacaSecret){ try{ price=await ptFetchAlpacaHist(ticker,dateVal,PS.alpacaKeyId,PS.alpacaSecret); if(price) src='Alpaca'; }catch(e){} }
   if(!price){ try{ price=await ptFetchYahooHist(ticker,dateVal); if(price) src='Yahoo Finance'; }catch(e){} }
   btn.disabled=false;
-  if(price){ document.getElementById('pt-in-price').value=price.toFixed(2); ptToast(`✓ $${price.toFixed(2)} on ${dateVal} via ${src}`,'success'); }
+  if(price){ document.getElementById('pt-in-price').value=price.toFixed(2); ptToast(` $${price.toFixed(2)} on ${dateVal} via ${src}`,'success'); }
   else { ptToast('Could not fetch price - enter manually','error'); }
 }
 window.ptFetchPrice=ptFetchPrice;
@@ -6705,7 +7268,7 @@ function ptRenderTable(){
   const wrap=document.getElementById('pt-table-wrap');
   const p=ptActive(); const pos=p?.positions||[];
   const thr=parseFloat(document.getElementById('pt-threshold').value)||5;
-  if(!pos.length){ wrap.innerHTML='<div class="pt-empty">📂 No positions yet. Add your first stock above.</div>'; document.getElementById('pt-movers').innerHTML='<div style="color:var(--text2);font-size:12px">No holdings yet</div>'; return; }
+  if(!pos.length){ wrap.innerHTML='<div class="pt-empty"> No positions yet. Add your first stock above.</div>'; document.getElementById('pt-movers').innerHTML='<div style="color:var(--text2);font-size:12px">No holdings yet</div>'; return; }
   const movers=[];
   let rows='';
   pos.forEach(pos=>{
@@ -6730,8 +7293,8 @@ function ptRenderTable(){
       <td class="${cls}">${sign}${pct.toFixed(2)}%</td>
       <td>${badge}</td>
       <td style="white-space:nowrap">
-        <button class="pt-row-edit" onclick="ptToggleEdit('${pos.id}')" title="Edit">✏️</button>
-        <button class="pt-row-del" onclick="ptRemovePosition('${pos.id}')" title="Remove">✕</button>
+        <button class="pt-row-edit" onclick="ptToggleEdit('${pos.id}')" title="Edit">Edit</button>
+        <button class="pt-row-del" onclick="ptRemovePosition('${pos.id}')" title="Remove"></button>
       </td>
     </tr>
     <tr id="pt-edit-${pos.id}" class="pt-edit-row" style="display:none">
@@ -6740,7 +7303,7 @@ function ptRenderTable(){
           <div class="pt-fg"><label>Date</label><input type="date" id="pt-ed-date-${pos.id}" value="${pos.date}" max="${new Date().toISOString().slice(0,10)}" /></div>
           <div class="pt-fg"><label>Entry Price $</label><input type="number" id="pt-ed-price-${pos.id}" value="${entry.toFixed(2)}" step="0.01" min="0" /></div>
           <div class="pt-fg"><label>Amount Invested $</label><input type="number" id="pt-ed-amt-${pos.id}" value="${amt.toFixed(2)}" step="any" min="0.01" /></div>
-          <button class="pt-btn pt-btn-primary pt-btn-sm" onclick="ptSaveEdit('${pos.id}')">✓ Save</button>
+          <button class="pt-btn pt-btn-primary pt-btn-sm" onclick="ptSaveEdit('${pos.id}')"> Save</button>
           <button class="pt-btn pt-btn-secondary pt-btn-sm" onclick="ptToggleEdit('${pos.id}')">Cancel</button>
         </div>
       </td>
@@ -6829,6 +7392,46 @@ document.addEventListener('DOMContentLoaded', function(){ ptRender(); });
   let _uoSectFilter = 'all';     // sector filter - 'all' or a sector string
   let _uoNewOnly    = false;     // New Only toggle state (scan-time param)
   let _uoRunning   = false;
+  let _uoAbortController = null;
+  let _uoProgressTimer = null;
+
+  function _setUoFetchingUI(active) {
+    const btn   = document.getElementById('uo-run-btn');
+    const stop  = document.getElementById('uo-stop-btn');
+    const spin  = document.getElementById('uo-spin');
+    const label = document.getElementById('uo-run-label');
+    if (btn)   btn.disabled = active;
+    if (stop)  stop.style.display = active ? 'inline-flex' : 'none';
+    if (spin)  spin.style.display = active ? 'inline-block' : 'none';
+    if (label) label.textContent = active ? 'Scanning...' : 'Run Scan';
+  }
+
+  function stopUoScan() {
+    if (_uoAbortController) {
+      _uoAbortController.abort();
+      _uoAbortController = null;
+    }
+    if (_uoProgressTimer) {
+      clearInterval(_uoProgressTimer);
+      _uoProgressTimer = null;
+    }
+    fetch('/api/options/unusual/cancel', { method: 'POST' }).catch(() => {});
+    _uoRunning = false;
+    _setUoFetchingUI(false);
+    const progWrap  = document.getElementById('uo-progress-wrap');
+    const statusTxt = document.getElementById('uo-status-text');
+    const errEl     = document.getElementById('uo-error-state');
+    if (progWrap) progWrap.style.display = 'none';
+    if (statusTxt) {
+      statusTxt.textContent = 'Scan stopped.';
+      statusTxt.style.display = 'block';
+    }
+    if (errEl) {
+      errEl.style.display = 'block';
+      errEl.textContent = 'Scan stopped. Server workers will skip remaining tickers.';
+    }
+  }
+  window.stopUoScan = stopUoScan;
 
   function _uoFmt(n) {
     if (n === null || n === undefined || isNaN(n)) return '-';
@@ -6839,11 +7442,11 @@ document.addEventListener('DOMContentLoaded', function(){ ptRender(); });
 
   function _uoFlag(flags) {
     const MAP = {
-      high_vol_oi:   { label: '⚡ Vol/OI',    color: '#58a6ff' },
-      iv_spike:      { label: '🔥 IV Spike',  color: '#f85149' },
-      otm_sweep:     { label: '🎯 OTM',       color: '#d29922' },
-      large_premium: { label: '💰 Big $',     color: '#bc8cff' },
-      cp_divergence: { label: '↔ CP Skew',   color: '#3fb950' },
+      high_vol_oi:   { label: 'Vol/OI',    color: '#58a6ff' },
+      iv_spike:      { label: 'IV Spike',  color: '#f85149' },
+      otm_sweep:     { label: 'OTM',       color: '#d29922' },
+      large_premium: { label: ' Big $',     color: '#bc8cff' },
+      cp_divergence: { label: 'CP Skew',   color: '#3fb950' },
     };
     return (flags || []).map(f => {
       const m = MAP[f] || { label: f, color: 'var(--muted)' };
@@ -7044,10 +7647,12 @@ document.addEventListener('DOMContentLoaded', function(){ ptRender(); });
       // Vol spike badge (Hot mode only)
       const volSpikeBadge = r.vol_spike
         ? `<div style="font-size:9px;color:var(--amber);font-weight:700;margin-top:2px;white-space:nowrap;"
-                title="Today's volume is ${r.vol_spike.vol_ratio}× the 20-day average">🌊 ${r.vol_spike.vol_ratio}× vol</div>`
+                title="Today's volume is ${r.vol_spike.vol_ratio}× the 20-day average"> ${r.vol_spike.vol_ratio}× vol</div>`
         : '';
 
-      return `<tr style="border-left:3px solid ${tier.border};">
+      return `<tr style="border-left:3px solid ${tier.border};cursor:pointer;"
+                  title="Open contract tracker in a new tab" data-contract="1"
+                  data-ticker="${r.ticker}" data-expiry="${r.expiry}" data-strike="${r.strike}" data-type="${r.option_type}">
         <td style="border-left:none;">
           <span style="cursor:pointer;color:#58a6ff;font-weight:800;font-size:13px;"
                 onclick="uoLoadTicker('${r.ticker}')"
@@ -7109,10 +7714,8 @@ document.addEventListener('DOMContentLoaded', function(){ ptRender(); });
   async function uoRunScan() {
     if (_uoRunning) return;
     _uoRunning = true;
+    _uoAbortController = new AbortController();
 
-    const btn       = document.getElementById('uo-run-btn');
-    const spin      = document.getElementById('uo-spin');
-    const label     = document.getElementById('uo-run-label');
     const progWrap  = document.getElementById('uo-progress-wrap');
     const progBar   = document.getElementById('uo-progress-bar');
     const statusTxt = document.getElementById('uo-status-text');
@@ -7121,9 +7724,7 @@ document.addEventListener('DOMContentLoaded', function(){ ptRender(); });
     const resEl     = document.getElementById('uo-results');
 
     // UI: loading state
-    if (btn)      btn.disabled = true;
-    if (spin)     spin.style.display = 'inline-block';
-    if (label)    label.textContent = 'Scanning...';
+    _setUoFetchingUI(true);
     if (progWrap) progWrap.style.display = 'block';
     if (progBar)  progBar.style.width = '5%';
     if (emptyEl)  emptyEl.style.display = 'none';
@@ -7159,19 +7760,20 @@ document.addEventListener('DOMContentLoaded', function(){ ptRender(); });
 
     // Fake progress animation while waiting
     let pct = 5;
-    const timer = setInterval(() => {
+    _uoProgressTimer = setInterval(() => {
       pct = Math.min(pct + (Math.random() * (isHot ? 2 : 3)), 88);
       if (progBar) progBar.style.width = pct + '%';
       if (statusTxt) {
         statusTxt.textContent = isHot
-          ? `🔥 Hot scan: scanning ~500 stocks for volume spikes, then checking options...`
+          ? `Hot scan: scanning ~500 stocks for volume spikes, then checking options...`
           : `Scanning ${watchlist || 'all_optionable (~500)'} - fetching options chains... (this takes a few minutes)`;
       }
     }, 1200);
 
     try {
-      const resp = await fetch(fetchUrl);
-      clearInterval(timer);
+      const resp = await fetch(fetchUrl, { signal: _uoAbortController.signal });
+      clearInterval(_uoProgressTimer);
+      _uoProgressTimer = null;
       if (!resp.ok) {
         const errBody = await resp.json().catch(() => ({ detail: resp.statusText }));
         throw new Error(errBody.detail || resp.statusText);
@@ -7235,14 +7837,14 @@ document.addEventListener('DOMContentLoaded', function(){ ptRender(); });
       const s = data.summary || {};
       const setTxt = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
       if (isHot) {
-        setTxt('uo-pill-total',   `🔥 ${s.total_hits || 0} unusual contracts`);
+        setTxt('uo-pill-total',   `${s.total_hits || 0} unusual contracts`);
         setTxt('uo-pill-bull',    `^ ${s.bullish_count || 0} bullish`);
         setTxt('uo-pill-bear',    `v ${s.bearish_count || 0} bearish`);
         setTxt('uo-pill-mixed',   `◆ ${s.mixed_count || 0} mixed`);
         setTxt('uo-pill-scanned',
-          `🌊 ${s.vol_spike_found || 0} vol spikes found from ${s.universe_scanned || 500} stocks, ${s.tickers_with_hits || 0} with unusual options`);
+          ` ${s.vol_spike_found || 0} vol spikes found from ${s.universe_scanned || 500} stocks, ${s.tickers_with_hits || 0} with unusual options`);
       } else {
-        setTxt('uo-pill-total',   `🔥 ${s.total_hits || 0} unusual contracts`);
+        setTxt('uo-pill-total',   `${s.total_hits || 0} unusual contracts`);
         setTxt('uo-pill-bull',    `^ ${s.bullish_count || 0} bullish`);
         setTxt('uo-pill-bear',    `v ${s.bearish_count || 0} bearish`);
         setTxt('uo-pill-mixed',   `◆ ${s.mixed_count || 0} mixed`);
@@ -7257,23 +7859,38 @@ document.addEventListener('DOMContentLoaded', function(){ ptRender(); });
       if (badge) { badge.textContent = (s.total_hits || 0) + ' hits'; }
 
       if (resEl) resEl.style.display = 'block';
-      if (!_uoData.length) {
+      if (s.cancelled && statusTxt) {
+        statusTxt.textContent = `Scan stopped early - ${s.total_hits || 0} contracts collected so far.`;
+        statusTxt.style.display = 'block';
+      } else if (!_uoData.length) {
         if (statusTxt) { statusTxt.textContent = 'No unusual activity found with current filters.'; statusTxt.style.display = 'block'; }
       }
 
     } catch (err) {
-      clearInterval(timer);
+      if (_uoProgressTimer) {
+        clearInterval(_uoProgressTimer);
+        _uoProgressTimer = null;
+      }
       if (progWrap) progWrap.style.display = 'none';
-      if (errEl) {
+      if (err.name === 'AbortError') {
+        fetch('/api/options/unusual/cancel', { method: 'POST' }).catch(() => {});
+        if (statusTxt) {
+          statusTxt.textContent = 'Scan stopped.';
+          statusTxt.style.display = 'block';
+        }
+        if (errEl) {
+          errEl.style.display = 'block';
+          errEl.textContent = 'Scan stopped. Server workers will skip remaining tickers.';
+        }
+      } else if (errEl) {
         errEl.style.display = 'block';
         errEl.textContent = 'Warning: Scan failed: ' + err.message;
       }
       console.error('[uoScan]', err);
     } finally {
       _uoRunning = false;
-      if (btn)   btn.disabled = false;
-      if (spin)  spin.style.display = 'none';
-      if (label) label.textContent = '▶ Run Scan';
+      _uoAbortController = null;
+      _setUoFetchingUI(false);
     }
   }
   window.uoRunScan = uoRunScan;
@@ -7302,7 +7919,7 @@ document.addEventListener('DOMContentLoaded', function(){ ptRender(); });
 
     panel.innerHTML = `
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-        <span style="font-size:13px;font-weight:700;">🌊 Volume Spikes Detected</span>
+        <span style="font-size:13px;font-weight:700;"> Volume Spikes Detected</span>
         <span style="font-size:11px;color:var(--muted);">${summary.vol_spike_found || spikes.length} stocks with unusual volume from ${summary.universe_scanned || 500} scanned</span>
       </div>
       <div style="overflow-x:auto;">

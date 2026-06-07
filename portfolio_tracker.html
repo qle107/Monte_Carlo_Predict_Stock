@@ -236,14 +236,14 @@
 
 <header>
   <div class="logo">
-    <div class="logo-icon">📈</div>
+    <div class="logo-icon"></div>
     Stock Portfolio Tracker
   </div>
   <div class="header-actions">
     <div class="live-badge"><div class="live-dot"></div> Live</div>
-    <button class="btn btn-secondary btn-sm" onclick="exportPortfolios()">⬇ Export JSON</button>
+    <button class="btn btn-secondary btn-sm" onclick="exportPortfolios()">Export JSON</button>
     <label class="btn btn-secondary btn-sm" style="cursor:pointer">
-      ⬆ Import JSON
+      Import JSON
       <input type="file" accept=".json" onchange="importPortfolios(event)" style="display:none">
     </label>
   </div>
@@ -259,7 +259,7 @@
       <button class="btn btn-primary btn-sm" onclick="createPortfolio()">+</button>
     </div>
     <div class="sidebar-footer">
-      <button class="btn btn-secondary btn-sm" onclick="toggleSettings()">⚙ API Settings</button>
+      <button class="btn btn-secondary btn-sm" onclick="toggleSettings()">API Settings</button>
     </div>
   </aside>
 
@@ -267,7 +267,7 @@
   <main>
     <!-- SETTINGS PANEL (hidden by default) -->
     <div class="settings-panel" id="settingsPanel" style="display:none">
-      <div class="section-title">⚙️ Alpaca API Keys <span style="font-size:12px;color:var(--text2);font-weight:400">(optional - falls back to Yahoo Finance)</span></div>
+      <div class="section-title">Alpaca API Keys <span style="font-size:12px;color:var(--text2);font-weight:400">(optional - falls back to Yahoo Finance)</span></div>
       <div class="settings-grid">
         <div class="form-group">
           <label>API Key ID</label>

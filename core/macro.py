@@ -551,7 +551,7 @@ def fetch_macro_indicators(force_refresh: bool = False) -> dict:
         "indicators": indicators,
         "fetched_at": datetime.now(timezone.utc).isoformat(),
         "fred_active": fred_key,
-        # Hint for dashboard: if FRED key is absent, some fields will be None
+        # If FRED key is absent, some fields will be None
         "data_note": (
             "Full coverage active (FRED API key detected)."
             if fred_key

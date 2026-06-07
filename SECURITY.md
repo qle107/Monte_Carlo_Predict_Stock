@@ -26,7 +26,7 @@ within **30 days** for high-severity issues.
 
 ## Scope
 
-This project is a self-hosted local dashboard. Key security considerations:
+This project is a self-hosted local API. Key security considerations:
 
 - **API keys**: Set `API_KEY` in `.env` to gate all mutation endpoints behind
   an `X-Api-Key` header. Without it, anyone who can reach port 8000 can call

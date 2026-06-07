@@ -15,7 +15,7 @@ from .volume_profile import compute_volume_profile
 
 
 def _df_to_candles(df: pd.DataFrame) -> list:
-    """Vectorised OHLCV serialisation."""
+    """Serialize OHLCV rows for JSON."""
     ts_list = [t.isoformat() for t in df.index]
     o = df["open"].round(4).tolist()
     h = df["high"].round(4).tolist()
@@ -33,6 +33,7 @@ def analyse(
     n_simulations: int = 10000,
     n_forward: int = 10,
     mc_model: str = "garch",
+    band_alpha: float = 0.20,
 ) -> dict:
     ind = compute_indicators(df)
     reg = detect_regime(df, adx=ind.adx, obv_slope=ind.obv_slope)
@@ -40,8 +41,7 @@ def analyse(
 
     current_price = float(df["close"].iloc[-1])
 
-    # Microstructure inputs - computed regardless of MC model;
-    # key levels are useful in the dashboard payload even for non-microstructure models.
+    # Microstructure inputs for MC (volume profile also returned in the payload).
     vp = compute_volume_profile(df)
     cvd_history = compute_cvd_from_ohlc(df["open"], df["close"], df["volume"])
     price_history = df["close"].to_numpy(dtype=float)
@@ -59,6 +59,7 @@ def analyse(
         volume_history=volume_history,
         cvd_history=cvd_history,
         volume_profile=vp,
+        band_alpha=band_alpha,
     )
 
     candles = _df_to_candles(df)
@@ -83,6 +84,7 @@ def analyse(
         "regime": asdict(reg),
         "signal": asdict(sig),
         "mc": mc_dict,
+        "volume_profile": vp.to_dict() if vp else None,
         "candles": candles,
         "warnings": warnings,
         "session": session,

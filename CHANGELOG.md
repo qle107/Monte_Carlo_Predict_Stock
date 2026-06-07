@@ -2,6 +2,92 @@
 
 ## 
 
+### Contract tracker click-through everywhere (legacy dashboard)
+
+Previously only the Unusual Activity table linked to `/contract`; every other
+options table on the legacy dashboard was dead on click. Now all contract rows
+open the premium tracker in a new tab:
+
+- **Unusual Options scanner** table rows (`templates/dashboard.html`); the
+  per-cell ticker/sector/Load actions still work - clicks on buttons or
+  inline-onclick elements are excluded from the row link.
+- **Hot Strikes & Price Levels** ("Real market - top strikes by volume").
+- **Crowd-interest** table (composite score over hot calls/puts).
+- **Top contracts** list in the sentiment panel.
+- `static/js/tabs/options.js`: the document-level click handler now matches
+  any `[data-contract]` element (`tr` or `div`) anywhere on the page, requires
+  ticker/expiry/strike data attributes, and ignores clicks on nested
+  interactive elements.
+
+### Flow page: Stop button + server-side scan cancel
+
+- **`/flow` (legacy)**: new red **Stop** button, visible while a scan is in
+  flight. It aborts the browser request (AbortController), pauses auto-refresh
+  (resets to manual), and POSTs the new cancel endpoint.
+- **`POST /api/options/unusual/cancel`**: sets a cooperative cancellation
+  event; queued scan workers skip their remaining tickers instead of hitting
+  yfinance (useful when rate-limited). The scan returns early with partial
+  hits and `summary.cancelled: true`.
+- Delisted tickers removed from universes: CIVI (merged into SM Energy
+  2026-01-30), ABB (NYSE ADRs delisted 2023, now OTC ABBNY), IRBT (Chapter 11,
+  Nasdaq delisting 2026-01-26) - dropped from `core/sectors.py` and the
+  hardcoded `core/scanner.py` WATCHLISTS.
+
+### Contract tracker (Bullflow-style premium / buy-sell volume)
+
+New feature: chart a single option contract's premium over time with a
+buy/sell volume split per bucket, like Bullflow's contract view.
+
+- **`core/contract_tracker.py`** (new): OCC symbol builder; backfill of
+  intraday premium bars for the contract symbol from Yahoo (5m/15m/30m/1h
+  buckets, up to 60d) with a tick-rule *estimated* buy/sell split; a live
+  poller that snapshots the chain row every 30s, computes traded-volume
+  deltas, classifies them ask-side (buy) / bid-side (sell) / mid against the
+  live quote, and persists ticks to SQLite (`contract_ticks` table) so the
+  classified tape survives restarts. Live-classified buckets override the
+  estimate in the combined view (`source: "live"`).
+- **New endpoints** (`api/routers/options.py`): `GET /api/options/expiries`,
+  `GET /api/options/chain`, `GET /api/options/contract` (history + snapshot),
+  `GET /api/options/contract/watched`, `POST /api/options/contract/watch`,
+  `POST /api/options/contract/unwatch`.
+- **Next.js `/contract` page**: ticker/expiry/call-put/strike picker (chain
+  loaded live, defaults to nearest-the-money), range + bucket selectors,
+  premium line over stacked green/red volume bars with hover tooltip,
+  Bid/Mid/Ask/Price/Vol/OI/IV/Premium/Spot header, "Track live" toggle,
+  60s auto-refresh. Nav link added.
+- **Legacy dashboard**: same tracker as a standalone page at
+  `http://localhost:8000/contract` (`static/contract.html`), linked from the
+  flow page.
+
+### Contract tracker: click-through + Bullflow tooltip
+
+- Clicking an options row now opens the contract tracker in a **new tab**,
+  preloaded with that contract: Next.js flow feed, legacy `/flow` page, and
+  the legacy dashboard's Unusual Activity table all link to
+  `/contract?ticker=&expiry=&strike=&type=` (both frontends parse the query
+  string, snap to the closest listed strike, and auto-load the chart).
+- Chart tooltip is now Bullflow-style per candle: **Time, Avg fill, Bid /
+  Mid / Ask volume, Candle Premium**. Backend bars carry `avg_fill` (bucket
+  VWAP from live ticks, OHLC4 for backfill) and `premium`
+  (classified volume x avg fill x 100). Legend shows range totals as
+  Bid / Mid / Ask.
+
+### Refactor: routers + module split (no behavior changes)
+
+- **`api/server.py`** (840 -> ~80 lines): now only app assembly (lifespan,
+  CORS, rate limiter, static mount). Routes moved to per-domain routers in
+  `api/routers/` (`pages`, `signal`, `store`, `portfolio`, `options`,
+  `scanner`, `news`); WebSockets to `api/websockets.py`; the shared limiter
+  and API-key guard to `api/deps.py` (`_require_api_key` -> `require_api_key`).
+  All route paths, parameters, and rate limits unchanged.
+- **`core/options_flow.py`** (1670 -> ~1050 lines): sector map moved to
+  `core/sectors.py` (now stored sector -> tickers and inverted at import;
+  `sector_for()` helper; `HIGH_VOLUME_ETFS` lives there too, re-exported for
+  compatibility). yfinance plumbing (connection semaphore, rate-limit retry
+  with exponential backoff, TTL cache, `safe_int`/`safe_float`) moved to
+  `core/yf_client.py` and is now reusable by other modules (the contract
+  tracker uses it).
+
 ### Ruff: zero lint errors
 
 Starting state after 
@@ -290,12 +376,12 @@ as `*_original` for the happy path; the new code wraps every section in
 a try/catch error boundary and routes the new `state` contract to a
 state-aware empty/error renderer.
 
-- **Insufficient data** -> "📊 Market Regime - Need more candles … HMM
+- **Insufficient data** -> "Market Regime - Need more candles … HMM
   requires at least 40 bars; 22 available. Switch to a longer timeframe."
-- **Error** -> "⚠ Market Regime - Error: Baum-Welch fit failed: ..."
-- **No zones** -> "🔍 Price Activity - No zones. Hawkes excitation needs
+- **Error** -> "Market Regime - Error: Baum-Welch fit failed: ..."
+- **No zones** -> "Price Activity - No zones. Hawkes excitation needs
   demand/supply zones to score reactions at."
-- Every error state includes a **↻ Retry** button that re-invokes
+- Every error state includes a **Retry** button that re-invokes
   `runMarketStructure()`.
 - Each section is its own try/catch - a crash in HMM rendering can't
   break Volume Profile.
@@ -315,13 +401,13 @@ state-aware empty/error renderer.
 ### How to verify
 
 1. `python main.py`, open `http://localhost:8000`.
-2. Click the 🔬 Market Structure tab -> click **Analyse**.
+2. Click the Market Structure tab -> click **Analyse**.
 3. On a normal ticker (AAPL daily): **Market Regime** should show one of
    Trending / Ranging / Volatile with a probability breakdown; **Price
    Activity** should show Quiet / Normal / High Activity; **Zone Reaction
    Probabilities** should populate from the detected demand/supply zones.
 4. Switch to a 1m or 2m interval with `lookback=30` (Settings) and re-run
-   - you should see "📊 Market Regime - Need more candles" with min-bars
+   - you should see "Market Regime - Need more candles" with min-bars
    hint and a Retry button.
 5. Switch ticker to one without options (e.g. a small-cap with no chain)
    and confirm the GEX section shows its existing "Options data
@@ -382,7 +468,7 @@ inside the Options tab. It has:
   columns default to ascending on first click, numeric columns to descending.
 - LEAPS rows (DTE > 60) get a purple `LEAPS` chip next to the DTE column so
   the eye picks them out even when "All" is selected.
-- The Sentiment column uses **type-based** labels (📞 Call / 🔻 Put) with
+- The Sentiment column uses **type-based** labels (Call / Put) with
   intensity from Vol/OI ratio (Heavy at >=3×, Extreme at >=5×). It deliberately
   does NOT say bullish / bearish - the disclaimer at the top of the tab
   explains why. ITM contracts get a trailing dot.
@@ -406,7 +492,7 @@ right after the three CSS extraction comments.
 ### How to verify
 
 1. `python main.py`, open `http://localhost:8000`.
-2. Click the 📈 Options tab -> click **Fetch Options**.
+2. Click the Options tab -> click **Fetch Options**.
 3. Confirm the amber **Flow direction unavailable** banner shows at the top.
 4. Hover the Calls Vol / Puts Vol KPI cells -> tooltip should appear.
 5. Scroll to **🚨 Unusual Activity** - verify the table populates for any

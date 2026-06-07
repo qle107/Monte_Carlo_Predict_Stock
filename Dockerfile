@@ -1,4 +1,4 @@
-# Dockerfile — mc-trader self-hosted Monte Carlo dashboard
+# Dockerfile — mc-trader API
 #
 # Build:   docker build -t mc-trader .
 # Run:     docker run --rm -p 8000:8000 --env-file .env mc-trader
@@ -10,7 +10,7 @@
 #   • Set API_KEY in .env before running in any shared environment.
 #   • Use paper-trading Alpaca keys only — never live-trading keys.
 
-# ── Stage 1: dependency layer (cache-friendly) ────────────────────────────────
+# Stage 1: dependency layer (cache-friendly)
 FROM python:3.11-slim AS deps
 
 WORKDIR /app
@@ -27,7 +27,7 @@ RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
 
-# ── Stage 2: application image ────────────────────────────────────────────────
+# Stage 2: application image
 FROM python:3.11-slim AS app
 
 WORKDIR /app
@@ -50,7 +50,7 @@ RUN useradd --create-home --shell /bin/bash mctrader \
     && chown -R mctrader:mctrader /app
 USER mctrader
 
-# ── Runtime configuration ─────────────────────────────────────────────────────
+# Runtime configuration
 # These defaults are overridden by --env-file .env at runtime.
 ENV HOST=0.0.0.0 \
     PORT=8000 \

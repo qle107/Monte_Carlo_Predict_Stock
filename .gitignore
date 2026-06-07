@@ -1,6 +1,4 @@
-# ----------------------------
 # Python
-# ----------------------------
 # Byte-compiled / optimized / DLL files
 __pycache__/
 **/__pycache__/
@@ -12,17 +10,13 @@ __pycache__/
 # C extensions
 *.so
 
-# ----------------------------
 # Virtual environments
-# ----------------------------
 .venv/
 venv/
 ENV/
 env/
 
-# ----------------------------
 # Environment & secrets
-# ----------------------------
 .env
 .env.*
 !.env.example
@@ -34,9 +28,7 @@ secrets.json
 x_cookies.json
 *cookies*.json
 
-# ----------------------------
 # Databases (optional)
-# ----------------------------
 # ignore local DB files by default; remove if you want DBs tracked in repo
 *.db
 *.db-shm
@@ -44,23 +36,17 @@ x_cookies.json
 *.sqlite
 *.sqlite3
 
-# ----------------------------
 # Test & lint caches
-# ----------------------------
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
 .coverage
 htmlcov/
 
-# ----------------------------
 # Jupyter
-# ----------------------------
 .ipynb_checkpoints/
 
-# ----------------------------
 # OS / editor
-# ----------------------------
 .DS_Store
 Thumbs.db
 .vscode/
@@ -69,44 +55,16 @@ Thumbs.db
 *.swp
 *.swo
 
-# ----------------------------
 # Logs
-# ----------------------------
 *.log
 logs/
 
-# ----------------------------
 # Packaging / build
-# ----------------------------
 dist/
 build/
 *.egg-info/
 
-# ----------------------------
-# Node / Next.js frontend
-# ----------------------------
-node_modules/
-**/node_modules/
-.next/
-**/.next/
-out/
-**/out/
-.turbo/
-.vercel/
-
-# npm / yarn / pnpm logs & caches
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-
-# TypeScript / Next build artifacts
-*.tsbuildinfo
-next-env.d.ts
-
-# ----------------------------
 # Temp
-# ----------------------------
 *.tmp
 *.temp
 

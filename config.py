@@ -17,14 +17,15 @@ VALID_INTERVALS: list[str] = ["1m", "2m", "5m", "15m", "30m", "1h", "4h", "1d"]
 VALID_MC_MODELS: list[str] = [
     "gaussian",  # GBM with Normal innovations
     "student_t",  # heavy-tailed (df from data kurtosis)
-    "garch",  # GARCH(1,1) volatility clustering
+    "garch",  # GJR-GARCH(1,1) volatility clustering
     "bootstrap",  # historical-return resampling
     "jump",  # Merton jump-diffusion
-    "ensemble",  # adaptive blend: GARCH + bootstrap + jump
+    "fhs",  # filtered historical simulation (GJR-GARCH + empirical residuals)
+    "ensemble",  # adaptive mixture: GARCH + FHS + jump
     "microstructure",  # GARCH + Student-t + volume profile + CVD + Hurst
 ]
 
-# Startup ticker (not read from .env). Change here or via POST /api/config / dashboard.
+# Startup ticker (not read from .env). Change here or via POST /api/config.
 DEFAULT_TICKER = "PLTR"
 
 
@@ -95,6 +96,9 @@ class Config:
         default_factory=lambda: _env_float("GARCH_ALPHA", 0.10, 0.01, 0.49)
     )  # α + β < 1
     garch_beta: float = field(default_factory=lambda: _env_float("GARCH_BETA", 0.85, 0.10, 0.98))
+    garch_gamma: float = field(
+        default_factory=lambda: _env_float("GARCH_GAMMA", 0.05, 0.0, 0.30)
+    )  # GJR leverage term; stationarity: α + γ/2 + β < 1
     mc_clip: float = field(default_factory=lambda: _env_float("MC_CLIP", 0.25, 0.05, 1.0))
     jump_intensity: float = field(default_factory=lambda: _env_float("JUMP_INTENSITY", 0.03, 0.0, 0.30))
     jump_sigma_mult: float = field(default_factory=lambda: _env_float("JUMP_SIGMA_MULT", 3.0, 1.0, 10.0))
@@ -171,11 +175,14 @@ class Config:
 
     def __post_init__(self) -> None:
         """Validate cross-field constraints."""
-        # GARCH stationarity: α + β < 1
-        if self.garch_alpha + self.garch_beta >= 1.0:
-            safe_beta = max(0.10, 0.94 - self.garch_alpha)
+        # GJR-GARCH stationarity: α + γ/2 + β < 1
+        # (γ/2 because the leverage indicator fires on half the shocks
+        #  in expectation under symmetric innovations)
+        if self.garch_alpha + 0.5 * self.garch_gamma + self.garch_beta >= 1.0:
+            safe_beta = max(0.10, 0.94 - self.garch_alpha - 0.5 * self.garch_gamma)
             logger.warning(
-                "config: garch_alpha+garch_beta >= 1 (non-stationary). Clamping garch_beta -> %.3f",
+                "config: garch_alpha+garch_gamma/2+garch_beta >= 1 (non-stationary). "
+                "Clamping garch_beta -> %.3f",
                 safe_beta,
             )
             self.garch_beta = safe_beta
@@ -203,9 +210,4 @@ class Config:
 
 # Thread-safe config singleton
 cfg = Config()
-_cfg_lock = threading.RLock()
-
-
-def _lock_cfg() -> threading.RLock:
-    """Return the config lock for use in api/server.py POST /api/config handler."""
-    return _cfg_lock
+cfg_lock = threading.RLock()

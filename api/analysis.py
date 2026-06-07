@@ -6,36 +6,29 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
+from functools import partial
+
 from config import cfg
 from core import _df_to_candles, analyse
+from core.conformal import warm_start_from_history
+from core.expected_move import expected_move_for_ticker
 from core.fetcher import fetch_candles
 from core.hmm_regime import analyse_hmm
 from core.htf import _htf_confirmation
 from core.trade_setup import trade_setup_from_analysis
 from core.zones import detect_zones
 
-from .state import state
+from . import state
+from .websockets import broadcast_json
 
 logger = logging.getLogger(__name__)
 
 
-async def _broadcast(data: dict):
-    dead = set()
-    for ws in state.clients:
-        try:
-            await ws.send_json(data)
-        except Exception:
-            dead.add(ws)
-    state.clients.difference_update(dead)
-
-
 async def _run_analysis() -> dict:
-    # Skip if another analysis is already running.
     if state.analysis_lock is not None and state.analysis_lock.locked():
         if state.last_result:
             logger.debug("[server] _run_analysis skipped - already in flight, returning cached result")
             return state.last_result
-        # No cached result yet - wait for the in-flight call to finish then return
         async with state.analysis_lock:
             return state.last_result
 
@@ -44,17 +37,16 @@ async def _run_analysis() -> dict:
         try:
             loop = asyncio.get_running_loop()
 
-            # Fetch enough bars to cover both display history and MC analysis window.
             display_bars = max(cfg.lookback, cfg.chart_bars)
             df_full = await loop.run_in_executor(
                 None, fetch_candles, cfg.ticker, cfg.interval, display_bars, cfg.extended
             )
 
-            # Slice to the analysis window (lookback candles) for MC + indicators.
             df = df_full.tail(cfg.lookback).copy()
             df.attrs = df_full.attrs
             try:
-                await _broadcast(
+                await broadcast_json(
+                    state.clients,
                     {
                         "type": "partial",
                         "ticker": cfg.ticker,
@@ -62,16 +54,56 @@ async def _run_analysis() -> dict:
                         "current_price": round(float(df_full["close"].iloc[-1]), 4),
                         "candles": _df_to_candles(df_full),
                         "updated_at": datetime.now(timezone.utc).isoformat(),
-                    }
+                    },
                 )
             except Exception as _pe:
                 logger.debug("partial broadcast failed: %s", _pe)
 
             _returns_for_hmm = df["close"].pct_change().dropna().values.tolist()
+            _spot_now = float(df_full["close"].iloc[-1])
+
+            _band_alpha = 0.20
+            cal = state.calibrator
+            if cal is not None:
+                try:
+                    cov0 = await loop.run_in_executor(
+                        None, cal.coverage, cfg.ticker, cfg.interval, cfg.n_forward
+                    )
+                    if not cov0.get("n_settled"):
+                        n_seed = await loop.run_in_executor(
+                            None,
+                            partial(
+                                warm_start_from_history,
+                                cal,
+                                df_full,
+                                cfg.ticker,
+                                cfg.interval,
+                                cfg.n_forward,
+                                cfg.mc_model,
+                            ),
+                        )
+                        if n_seed:
+                            logger.info(
+                                "conformal warm-start: scored %d historical forecasts for %s %s",
+                                n_seed,
+                                cfg.ticker,
+                                cfg.interval,
+                            )
+                    await loop.run_in_executor(None, cal.settle, cfg.ticker, cfg.interval, _spot_now)
+                    _band_alpha = await loop.run_in_executor(
+                        None, cal.target_alpha, cfg.ticker, cfg.interval, cfg.n_forward
+                    )
+                except Exception as e:
+                    logger.debug("conformal settle/alpha failed: %s", e)
+
             _gather_tasks = [
-                loop.run_in_executor(None, analyse, df, cfg.n_sim, cfg.n_forward, cfg.mc_model),
+                loop.run_in_executor(
+                    None,
+                    partial(analyse, df, cfg.n_sim, cfg.n_forward, cfg.mc_model, band_alpha=_band_alpha),
+                ),
                 loop.run_in_executor(None, detect_zones, df),
                 _htf_confirmation(cfg.ticker, cfg.interval, cfg.extended, loop),
+                loop.run_in_executor(None, expected_move_for_ticker, cfg.ticker, _spot_now),
             ]
             if cfg.hmm_enabled:
                 _gather_tasks.insert(2, loop.run_in_executor(None, analyse_hmm, _returns_for_hmm))
@@ -79,17 +111,21 @@ async def _run_analysis() -> dict:
             raw = await asyncio.gather(*_gather_tasks, return_exceptions=True)
 
             if cfg.hmm_enabled:
-                result_raw, zone_raw, hmm_raw, htf_data = raw
+                result_raw, zone_raw, hmm_raw, htf_data, em_raw = raw
             else:
-                result_raw, zone_raw, htf_data = raw
+                result_raw, zone_raw, htf_data, em_raw = raw
                 hmm_raw = None
 
-            # Unpack analyse result (must succeed)
+            if isinstance(em_raw, BaseException):
+                logger.debug("expected_move failed: %s", em_raw)
+                expected_move = None
+            else:
+                expected_move = em_raw
+
             if isinstance(result_raw, BaseException):
                 raise result_raw
             result = result_raw
 
-            # Unpack zone result
             if isinstance(zone_raw, BaseException):
                 logger.warning("zone detect failed: %s", zone_raw)
                 zones_data = {
@@ -103,18 +139,8 @@ async def _run_analysis() -> dict:
             else:
                 zones_data = zone_raw.to_dict()
 
-            # Volume profile is already in analyse() result.
-            _vp_inner = result.get("volume_profile") if isinstance(result, dict) else None
-            if _vp_inner is None:
-                vp_data = None
-            elif isinstance(_vp_inner, dict):
-                vp_data = _vp_inner
-            elif hasattr(_vp_inner, "to_dict"):
-                vp_data = _vp_inner.to_dict()
-            else:
-                vp_data = None
+            vp_data = result.get("volume_profile")
 
-            # Unpack HMM result
             if hmm_raw is None:
                 hmm_data = None
             elif isinstance(hmm_raw, BaseException):
@@ -123,16 +149,13 @@ async def _run_analysis() -> dict:
             else:
                 hmm_data = hmm_raw.to_dict() if hmm_raw else None
 
-            # Unpack HTF confirmation
             if isinstance(htf_data, BaseException):
                 logger.debug("HTF confirmation failed: %s", htf_data)
                 htf_data = {"available": False, "reason": str(htf_data)}
 
-            # Override candles with full display history
             if len(df_full) > len(df):
                 result["candles"] = _df_to_candles(df_full)
 
-            # Trade setup (runs after gather)
             mc_paths_full = result.pop("_mc_paths_full", None)
             try:
                 trade_setup = trade_setup_from_analysis(
@@ -146,7 +169,6 @@ async def _run_analysis() -> dict:
                 logger.warning("trade_setup failed: %s", e)
                 trade_setup = {"valid": False, "side": "none", "reason": str(e)}
 
-            # HTF alignment (needs both analyse + HTF results)
             if htf_data.get("available"):
                 base_comp = float(result.get("signal", {}).get("composite", 0.0))
                 htf_comp = float(htf_data.get("composite", 0.0))
@@ -166,6 +188,7 @@ async def _run_analysis() -> dict:
                     "extended": cfg.extended,
                     "mc_model": cfg.mc_model,
                     "trade_setup": trade_setup,
+                    "expected_move": expected_move,
                     "zones": zones_data,
                     "volume_profile": vp_data,
                     "hmm": hmm_data,
@@ -182,9 +205,31 @@ async def _run_analysis() -> dict:
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 }
             )
+            if cal is not None:
+                try:
+                    mc_d = result.get("mc", {})
+                    lo, hi = float(mc_d.get("p10_price", 0)), float(mc_d.get("p90_price", 0))
+                    await loop.run_in_executor(
+                        None,
+                        partial(
+                            cal.observe,
+                            cfg.ticker,
+                            cfg.interval,
+                            cfg.n_forward,
+                            result["updated_at"],
+                            result["current_price"],
+                            lo,
+                            hi,
+                        ),
+                    )
+                    result["band_calibration"] = await loop.run_in_executor(
+                        None, cal.coverage, cfg.ticker, cfg.interval, cfg.n_forward
+                    )
+                except Exception as e:
+                    logger.debug("conformal observe failed: %s", e)
+
             state.last_result = result
 
-            # Persist
             if state.store is not None:
                 try:
                     loop = asyncio.get_running_loop()
@@ -218,11 +263,11 @@ async def _run_analysis() -> dict:
 async def _poll_loop():
     logger.info("Poll loop started: %s %s every %ds", cfg.ticker, cfg.interval, cfg.poll_seconds)
     try:
-        await asyncio.sleep(1)  # let fetcher cache warm after config change
+        await asyncio.sleep(1)
         while True:
             result = await _run_analysis()
             if "error" not in result:
-                await _broadcast(result)
+                await broadcast_json(state.clients, result)
             await asyncio.sleep(cfg.poll_seconds)
     except asyncio.CancelledError:
         logger.info("Poll loop cancelled")

@@ -641,7 +641,7 @@ def trade_setup_from_analysis(
     out = to_dict(ts)
 
     # Computed independently of whether a trade is valid, so the
-    # dashboard always has max_high / max_downside / fib to show.
+    # Always include max_high / max_downside / fib in the payload.
     if df is not None and len(df) >= 25 and price > 0:
         try:
             from .levels import compute_price_targets

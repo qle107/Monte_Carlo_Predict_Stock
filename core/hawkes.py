@@ -343,6 +343,36 @@ def analyse_hawkes(
         return _fallback_result(zones, error=str(exc)[:120])
 
 
+def fit_jump_params(returns: Sequence[float]) -> tuple[float, float, float, float] | None:
+    """
+    Lightweight entry point for the Monte Carlo jump model.
+
+    Fits the Hawkes process to large-move events in `returns` (bar-index time
+    units, so all rates are per-bar) and returns
+
+        (mu, alpha, beta, current_lambda)
+
+    or None when there is not enough history / too few events to say anything
+    about clustering.  Heuristic (moment-matched) fits are accepted: they
+    still encode the observed event rate and a conservative branching ratio.
+    """
+    arr = np.asarray(returns, dtype=float)
+    arr = arr[np.isfinite(arr)]
+    if len(arr) < 40:
+        return None
+
+    event_times = _extract_events(arr)
+    if len(event_times) < _MIN_EVENTS:
+        return None
+
+    params = _fit_hawkes(event_times)
+    if params.mu <= 0 or params.beta <= 0 or not (0 <= params.branching_ratio < 1):
+        return None
+
+    lam0 = _compute_lambda(params, event_times, float(len(arr) - 1))
+    return float(params.mu), float(params.alpha), float(params.beta), float(lam0)
+
+
 def _fallback_result(zones, error: str = "insufficient_data") -> HawkesResult:
     """Return a neutral result when fitting fails."""
     zone_reactions = []

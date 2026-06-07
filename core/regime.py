@@ -446,7 +446,3 @@ def detect_regime(df: pd.DataFrame, adx: float = 0.0, obv_slope: float = 0.0) ->
         range_compression=round(float(rc), 3),
         components={k: round(float(v), 3) for k, v in comp.items()},
     )
-
-
-def regime_to_dict(reg: Regime) -> dict:
-    return asdict(reg)

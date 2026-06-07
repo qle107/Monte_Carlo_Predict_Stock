@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Contract Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root{
+    --bg:#0b0e11; --panel:#11161c; --line:#1b232c; --text:#e6edf3;
+    --muted:#7d8b99; --dim:#5a6673; --green:#3fb950; --red:#f0556d;
+    --blue:#58a6ff; --gold:#f2c14e; --purple:#bc6bd9;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);
+    font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:13px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1280px;margin:0 auto;padding:14px 16px 70px}
+  header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+  h1{font-size:17px;font-weight:650;margin:0}
+  h1 .sub{color:var(--muted);font-weight:400;font-size:12px;margin-left:8px}
+  .spacer{flex:1}
+  label.fld{display:flex;flex-direction:column;gap:3px;font-size:10px;color:var(--muted);text-transform:uppercase;}
+  input,select,button{background:#161c23;border:1px solid var(--line);color:var(--text);
+    border-radius:7px;padding:6px 10px;font-size:12px}
+  input:focus,select:focus{outline:none;border-color:#2c5a8f}
+  button{cursor:pointer}
+  button:hover{border-color:#2c3a47}
+  button.primary{background:#1f6feb;border-color:#1f6feb;color:#fff;font-weight:600}
+  button.primary:hover{background:#388bfd}
+  button.watch{border-color:rgba(63,185,80,.5);color:var(--green);font-weight:600}
+  button.watch.on{background:rgba(63,185,80,.15)}
+  .controls{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px}
+  .typebtn{padding:6px 14px;font-weight:700}
+  .typebtn.call.on{background:rgba(63,185,80,.18);color:var(--green);border-color:rgba(63,185,80,.5)}
+  .typebtn.put.on{background:rgba(240,85,109,.15);color:var(--red);border-color:rgba(240,85,109,.5)}
+  .snapshot{display:flex;gap:22px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;padding:12px 16px;margin-bottom:12px;font-size:12px}
+  .snapshot .cell{display:flex;flex-direction:column;gap:2px}
+  .snapshot .k{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px}
+  .snapshot .v{font-size:14px;font-weight:700}
+  .banner{display:none;margin:0 0 12px;padding:9px 13px;border-radius:8px;font-size:12px;
+    background:#21170a;border:1px solid #5a3d12;color:#f2c14e}
+  .banner.show{display:block}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+  .panel h2{font-size:13px;font-weight:700;margin:0 0 4px}
+  .panel .sub{font-size:11px;color:var(--muted);margin-bottom:10px}
+  .chartbox{position:relative;height:300px}
+  .chartbox.vol{height:140px}
+  .legend{display:flex;gap:16px;font-size:11px;color:var(--muted);margin-top:8px;flex-wrap:wrap}
+  .legend .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+  .empty{padding:40px;text-align:center;color:var(--muted)}
+  .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px;background:var(--dim)}
+  .dot.live{background:var(--green);box-shadow:0 0 7px var(--green)}
+  .foot{color:var(--dim);font-size:11px;line-height:1.6;margin-top:6px}
+  code{background:#161c23;padding:1px 5px;border-radius:4px;color:#a9c7e8}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Contract Tracker <span class="sub">premium history &amp; live buy/sell flow</span></h1>
+    <div class="spacer"></div>
+    <span><span class="dot" id="live-dot"></span><span id="status" style="color:var(--muted);font-size:12px">idle</span></span>
+  </header>
+
+  <div class="controls">
+    <label class="fld">Ticker
+      <input id="c-ticker" type="text" placeholder="AAPL" style="width:90px;text-transform:uppercase" />
+    </label>
+    <label class="fld">Expiry
+      <select id="c-expiry" style="min-width:130px"><option value="">enter ticker</option></select>
+    </label>
+    <div class="fld" style="gap:3px"><span>Type</span>
+      <div style="display:flex;gap:4px">
+        <button class="typebtn call on" id="c-call" onclick="setType('call')">CALL</button>
+        <button class="typebtn put" id="c-put" onclick="setType('put')">PUT</button>
+      </div>
+    </div>
+    <label class="fld">Strike
+      <select id="c-strike" style="min-width:100px"><option value="">pick expiry</option></select>
+    </label>
+    <label class="fld">Range
+      <select id="c-range">
+        <option value="1d">1 day</option>
+        <option value="3d">3 days</option>
+        <option value="5d">5 days</option>
+        <option value="7d" selected>7 days</option>
+        <option value="1mo">1 month</option>
+      </select>
+    </label>
+    <label class="fld">Bucket
+      <select id="c-bucket">
+        <option value="5m">5 min</option>
+        <option value="15m">15 min</option>
+        <option value="30m" selected>30 min</option>
+        <option value="1h">1 hour</option>
+      </select>
+    </label>
+    <button class="primary" id="c-load" onclick="loadContract()">Load</button>
+    <button class="watch" id="c-watch" onclick="toggleWatch()" style="display:none">▶ Watch live</button>
+  </div>
+
+  <div class="banner" id="banner"></div>
+
+  <div class="snapshot" id="snapshot" style="display:none"></div>
+
+  <div class="panel" id="chart-panel" style="display:none">
+    <h2 id="chart-title">Premium history</h2>
+    <div class="sub" id="chart-sub"></div>
+    <div class="chartbox"><canvas id="price-chart"></canvas></div>
+    <div class="chartbox vol"><canvas id="vol-chart"></canvas></div>
+    <div class="legend">
+      <span><span class="sw" style="background:#3fb950"></span>Buy volume (ask-side)</span>
+      <span><span class="sw" style="background:#f0556d"></span>Sell volume (bid-side)</span>
+      <span><span class="sw" style="background:#7d8b99"></span>Mid / unclassified</span>
+      <span><span class="sw" style="background:#58a6ff"></span>Contract price</span>
+    </div>
+  </div>
+
+  <div class="empty" id="empty">Pick a contract and press <b>Load</b>.</div>
+
+  <div class="foot">
+    Backfilled buckets use a tick-rule buy/sell estimate; buckets marked <code>live</code> use observed
+    ask/bid-side classification from the watcher (<code>/api/options/contract/watch</code>).
+    Data via yfinance - may be delayed.
+  </div>
+</div>
+
+<script>
+const API = location.protocol === 'file:' ? 'http://localhost:8000' : '';
+let _type = 'call';
+let _tracked = false;
+let _priceChart = null, _volChart = null;
+let _expiriesFor = '';
+
+const $ = (id) => document.getElementById(id);
+const setStatus = (s, live) => {
+  $('status').textContent = s;
+  $('live-dot').classList.toggle('live', !!live);
+};
+const banner = (msg) => {
+  const b = $('banner');
+  if (!msg) { b.classList.remove('show'); b.innerHTML = ''; return; }
+  b.innerHTML = msg; b.classList.add('show');
+};
+
+function setType(t) {
+  _type = t;
+  $('c-call').classList.toggle('on', t === 'call');
+  $('c-put').classList.toggle('on', t === 'put');
+  fillStrikes(); // re-pick strikes for the side
+}
+
+let _chain = null;
+
+async function loadExpiries() {
+  const t = $('c-ticker').value.toUpperCase().trim();
+  if (!t || t === _expiriesFor) return;
+  _expiriesFor = t;
+  const sel = $('c-expiry');
+  sel.innerHTML = '<option value="">loading…</option>';
+  try {
+    const res = await fetch(`${API}/api/options/expiries?ticker=${encodeURIComponent(t)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.status);
+    const exps = data.expiries || [];
+    sel.innerHTML = exps.length
+      ? exps.map((e) => `<option value="${e}">${e}</option>`).join('')
+      : '<option value="">no expiries</option>';
+    if (exps.length) await loadChain();
+  } catch (e) {
+    sel.innerHTML = '<option value="">failed</option>';
+    banner('Could not load expiries: ' + e.message);
+  }
+}
+
+async function loadChain() {
+  const t = $('c-ticker').value.toUpperCase().trim();
+  const exp = $('c-expiry').value;
+  if (!t || !exp) return;
+  const sel = $('c-strike');
+  sel.innerHTML = '<option value="">loading…</option>';
+  try {
+    const res = await fetch(`${API}/api/options/chain?ticker=${encodeURIComponent(t)}&expiry=${encodeURIComponent(exp)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.status);
+    _chain = data;
+    fillStrikes();
+  } catch (e) {
+    sel.innerHTML = '<option value="">failed</option>';
+    banner('Could not load chain: ' + e.message);
+  }
+}
+
+function fillStrikes(preselect) {
+  const sel = $('c-strike');
+  if (!_chain) return;
+  const rows = (_type === 'call' ? _chain.calls : _chain.puts) || [];
+  const spot = _chain.spot || 0;
+  if (!rows.length) { sel.innerHTML = '<option value="">no strikes</option>'; return; }
+  let nearest = 0, bestD = Infinity;
+  sel.innerHTML = rows.map((r, i) => {
+    const d = Math.abs(r.strike - spot);
+    if (d < bestD) { bestD = d; nearest = i; }
+    const tag = r.strike === spot ? ' (ATM)' : '';
+    return `<option value="${r.strike}">$${r.strike}${tag}</option>`;
+  }).join('');
+  if (preselect != null) {
+    sel.value = String(preselect);
+    if (sel.selectedIndex < 0) sel.selectedIndex = nearest;
+  } else {
+    sel.selectedIndex = nearest;
+  }
+}
+
+function contractParams() {
+  return {
+    ticker: $('c-ticker').value.toUpperCase().trim(),
+    expiry: $('c-expiry').value,
+    strike: parseFloat($('c-strike').value),
+    option_type: _type,
+  };
+}
+
+async function loadContract() {
+  const p = contractParams();
+  if (!p.ticker || !p.expiry || !isFinite(p.strike)) { banner('Pick ticker, expiry, and strike first.'); return; }
+  banner('');
+  setStatus('loading…');
+  const q = new URLSearchParams({
+    ticker: p.ticker, expiry: p.expiry, strike: p.strike, option_type: p.option_type,
+    range: $('c-range').value, bucket: $('c-bucket').value,
+  });
+  try {
+    const res = await fetch(`${API}/api/options/contract?` + q.toString());
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.status);
+    render(data);
+    setStatus('loaded ' + new Date().toLocaleTimeString(), data.tracked);
+  } catch (e) {
+    setStatus('error');
+    banner('Contract fetch failed: ' + e.message);
+  }
+}
+
+function render(d) {
+  $('empty').style.display = 'none';
+  _tracked = !!d.tracked;
+  const wbtn = $('c-watch');
+  wbtn.style.display = '';
+  wbtn.classList.toggle('on', _tracked);
+  wbtn.textContent = _tracked ? '■ Stop watching' : '▶ Watch live';
+
+  // Snapshot strip
+  const s = d.snapshot || {};
+  const cells = [
+    ['Contract', `${d.ticker} ${d.expiry} $${d.strike} ${d.option_type.toUpperCase()}`],
+    ['Spot', s.spot != null ? '$' + s.spot : '-'],
+    ['Mid', s.mid != null ? '$' + s.mid : '-'],
+    ['Bid / Ask', (s.bid != null || s.ask != null) ? `$${s.bid ?? '-'} / $${s.ask ?? '-'}` : '-'],
+    ['Last', s.last != null ? '$' + s.last : (s.last_price != null ? '$' + s.last_price : '-')],
+    ['Volume', s.volume != null ? s.volume.toLocaleString() : '-'],
+    ['Open Int', s.open_interest != null ? s.open_interest.toLocaleString() : (s.oi != null ? s.oi.toLocaleString() : '-')],
+    ['IV', s.implied_vol != null ? s.implied_vol + '%' : (s.iv_pct != null ? s.iv_pct + '%' : '-')],
+    ['OCC', d.occ_symbol || '-'],
+  ];
+  $('snapshot').innerHTML = cells.map(([k, v]) =>
+    `<div class="cell"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
+  $('snapshot').style.display = 'flex';
+
+  // Bars
+  const bars = d.bars || [];
+  if (!bars.length) {
+    $('chart-panel').style.display = 'none';
+    const hint = d.bars_hint || '';
+    if (hint === 'rate_limited') {
+      banner('Yahoo is <b>rate-limiting</b> requests - wait a minute and reload. Ease off scans while tracking contracts.');
+    } else if (hint === 'no_data') {
+      banner('No trade history in this window - the contract may be illiquid. Try a longer range (1 month).');
+    } else if (hint) {
+      banner('No bars: ' + hint);
+    } else {
+      banner('Not enough premium history to chart.');
+    }
+    return;
+  }
+
+  $('chart-panel').style.display = '';
+  $('chart-title').textContent = `Premium history - ${d.ticker} ${d.expiry} $${d.strike} ${d.option_type.toUpperCase()}`;
+  const liveBuckets = bars.filter((b) => b.source === 'live').length;
+  $('chart-sub').textContent =
+    `${bars.length} × ${d.bucket} buckets over ${d.range}` +
+    (liveBuckets ? ` · ${liveBuckets} live-classified` : '') +
+    (d.tracked ? ' · watcher running' : '');
+
+  const labels = bars.map((b) => {
+    const t = new Date(b.ts);
+    return t.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' }) + ' ' +
+           t.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  });
+
+  if (_priceChart) _priceChart.destroy();
+  _priceChart = new Chart($('price-chart'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Close',
+        data: bars.map((b) => b.close),
+        borderColor: '#58a6ff', borderWidth: 1.8, pointRadius: 0, tension: 0,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            afterBody: (items) => {
+              const b = bars[items[0].dataIndex];
+              const lines = [
+                `O ${b.open}  H ${b.high}  L ${b.low}  C ${b.close}`,
+                `Volume ${b.volume ?? 0}`,
+              ];
+              if (b.buy_vol != null) lines.push(`Buy ${b.buy_vol} · Sell ${b.sell_vol} · Mid ${b.mid_vol ?? 0}${b.source === 'live' ? ' (live)' : ' (est.)'}`);
+              if (b.premium != null) lines.push(`Premium $${Number(b.premium).toLocaleString()}`);
+              return lines;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { color: '#5a6673', maxTicksLimit: 10 }, grid: { color: 'rgba(255,255,255,.04)' } },
+        y: { ticks: { color: '#7d8b99', callback: (v) => '$' + v }, grid: { color: 'rgba(255,255,255,.05)' } },
+      },
+    },
+  });
+
+  if (_volChart) _volChart.destroy();
+  _volChart = new Chart($('vol-chart'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Buy', data: bars.map((b) => b.buy_vol ?? 0), backgroundColor: '#3fb950', stack: 'v' },
+        { label: 'Sell', data: bars.map((b) => b.sell_vol ?? 0), backgroundColor: '#f0556d', stack: 'v' },
+        { label: 'Mid', data: bars.map((b) => b.mid_vol ?? Math.max((b.volume ?? 0) - (b.buy_vol ?? 0) - (b.sell_vol ?? 0), 0)), backgroundColor: '#3a444f', stack: 'v' },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { display: false, stacked: true },
+        y: { stacked: true, ticks: { color: '#5a6673', maxTicksLimit: 4 }, grid: { color: 'rgba(255,255,255,.04)' } },
+      },
+    },
+  });
+}
+
+async function toggleWatch() {
+  const p = contractParams();
+  if (!p.ticker || !p.expiry || !isFinite(p.strike)) return;
+  const url = _tracked ? '/api/options/contract/unwatch' : '/api/options/contract/watch';
+  try {
+    const res = await fetch(API + url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(p),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || res.status);
+    _tracked = !_tracked;
+    const wbtn = $('c-watch');
+    wbtn.classList.toggle('on', _tracked);
+    wbtn.textContent = _tracked ? '■ Stop watching' : '▶ Watch live';
+    setStatus(_tracked ? 'watching live' : 'watch stopped', _tracked);
+  } catch (e) {
+    banner((_tracked ? 'Unwatch' : 'Watch') + ' failed: ' + e.message);
+  }
+}
+
+/* wire-up */
+$('c-ticker').addEventListener('change', loadExpiries);
+$('c-ticker').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadExpiries(); });
+$('c-expiry').addEventListener('change', loadChain);
+
+/* deep link: /contract?ticker=AAPL&expiry=2026-06-26&strike=210&type=call */
+(async function init() {
+  const q = new URLSearchParams(location.search);
+  const t = (q.get('ticker') || '').toUpperCase();
+  if (!t) return;
+  $('c-ticker').value = t;
+  await loadExpiries();
+  const exp = q.get('expiry');
+  if (exp) {
+    $('c-expiry').value = exp;
+    if ($('c-expiry').value === exp) await loadChain();
+  }
+  const ty = (q.get('type') || '').toLowerCase();
+  if (ty === 'put' || ty === 'call') setType(ty);
+  const k = parseFloat(q.get('strike'));
+  if (isFinite(k)) fillStrikes(k);
+  if ($('c-expiry').value && $('c-strike').value) loadContract();
+})();
+</script>
+<script src="/static/js/nav.js"></script>
+</body>
+</html>

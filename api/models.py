@@ -185,6 +185,53 @@ class ScanRequest(BaseModel):
         return v
 
 
+class ContractWatchRequest(BaseModel):
+    """One option contract to live-track (POST /api/options/contract/watch)."""
+
+    ticker: str
+    expiry: str  # YYYY-MM-DD
+    strike: float
+    option_type: str  # "call" | "put"
+    poll_seconds: int | None = None
+
+    @field_validator("ticker")
+    @classmethod
+    def valid_ticker(cls, v):
+        v = v.upper().strip()
+        if not _TICKER_RE.match(v):
+            raise ValueError("ticker must be 1-10 chars, A-Z 0-9 . -")
+        return v
+
+    @field_validator("expiry")
+    @classmethod
+    def valid_expiry(cls, v):
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", v or ""):
+            raise ValueError("expiry must be YYYY-MM-DD")
+        return v
+
+    @field_validator("strike")
+    @classmethod
+    def valid_strike(cls, v):
+        if not (0 < v < 1_000_000):
+            raise ValueError("strike out of range")
+        return v
+
+    @field_validator("option_type")
+    @classmethod
+    def valid_type(cls, v):
+        vv = (v or "").lower().strip()
+        if vv not in ("call", "put", "c", "p"):
+            raise ValueError("option_type must be call or put")
+        return "call" if vv.startswith("c") else "put"
+
+    @field_validator("poll_seconds")
+    @classmethod
+    def valid_poll_seconds(cls, v):
+        if v is not None and not (10 <= v <= 600):
+            raise ValueError("poll_seconds must be 10-600")
+        return v
+
+
 class BacktestRequest(BaseModel):
     """Optional overrides for POST /api/backtest."""
 

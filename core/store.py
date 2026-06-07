@@ -9,6 +9,8 @@ import threading
 from contextlib import contextmanager, suppress
 from datetime import datetime, timedelta, timezone
 
+from .db import sqlite_connect
+
 logger = logging.getLogger(__name__)
 
 _SCHEMA = """
@@ -54,11 +56,7 @@ class SignalStore:
         self._init_schema()
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, timeout=10.0, isolation_level=None)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA synchronous=NORMAL;")
-        return conn
+        return sqlite_connect(self.db_path)
 
     def _init_schema(self):
         with self._write_lock, self._connect() as conn:
@@ -250,6 +248,3 @@ class SignalStore:
             "avg_prob_up_on_buys": round(sum(buy_probs) / len(buy_probs), 2) if buy_probs else None,
             "avg_prob_up_on_sells": round(sum(sell_probs) / len(sell_probs), 2) if sell_probs else None,
         }
-
-    def close(self) -> None:
-        pass  # per-call connections; nothing to close globally
