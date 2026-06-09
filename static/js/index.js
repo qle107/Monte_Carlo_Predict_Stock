@@ -4,6 +4,7 @@ window.__mc_trader_modular__ = {
     'utils.js',
     'ws.js',
     'chart.js',
+    'config-panel.js',
     'scanner.js',
     'tabs/options.js',
     'tabs/market-structure.js',
