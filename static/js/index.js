@@ -1,6 +1,7 @@
 // Front-end module manifest.
 window.__mc_trader_modular__ = {
   extracted: [
+    'utils.js',
     'scanner.js',
     'tabs/options.js',
     'tabs/market-structure.js',

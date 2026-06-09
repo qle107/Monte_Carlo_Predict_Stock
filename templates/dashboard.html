@@ -2567,6 +2567,7 @@
 <!-- index.js runs first; tab modules monkey-patch the inline render fns once
      DOMContentLoaded fires (i.e. after the inline <script> blocks below run). -->
 <script src="/static/js/nav.js"></script>
+<script src="/static/js/utils.js"></script>
 <script src="/static/js/index.js"></script>
 <script src="/static/js/scanner.js"></script>
 <script src="/static/js/tabs/options.js"></script>
@@ -2764,29 +2765,6 @@ if (document.readyState === 'loading') {
 
 let _sentLoading    = false;
 let _lastSentTicker = '';   // tracks last successfully-fetched ticker for reload detection
-
-function _fmtVol(n) {
-  if (n == null || isNaN(n)) return '-';
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000)     return (n / 1_000).toFixed(1) + 'K';
-  return n.toLocaleString();
-}
-
-// Format a dollar amount with compact suffix: $1.2M, $450K, $320
-function _fmtDollar(n) {
-  if (n == null || isNaN(n)) return '-';
-  if (n >= 1_000_000_000) return '$' + (n / 1_000_000_000).toFixed(2) + 'B';
-  if (n >= 1_000_000)     return '$' + (n / 1_000_000).toFixed(2) + 'M';
-  if (n >= 1_000)         return '$' + (n / 1_000).toFixed(1) + 'K';
-  return '$' + n.toFixed(0);
-}
-
-function _scoreColor(s) {
-  if (s >  0.1) return 'var(--green)';
-  if (s < -0.1) return 'var(--red)';
-  return 'var(--muted)';
-}
-function _scoreStr(s) { return (s >= 0 ? '+' : '') + s.toFixed(3); }
 
 async function runSentiment(forceRefresh, opts) {
   opts = opts || {};
@@ -3962,23 +3940,6 @@ function _renderGlobalSentiment(data) {
 
   log(`Market Pulse -> ${mood.toUpperCase()} (${(score>=0?'+':'')+score.toFixed(3)}) | ${data.post_count} posts | Cramer market: ${cm.cramer_signal} -> ${cm.inverse_signal}`, 'var(--purple)');
 }
-
-function log(msg, color) {
-  const el=document.getElementById('log');
-  if (!el) return;
-  const t=new Date().toLocaleTimeString();
-  const c=color||'var(--blue)';
-  // Prepend new entry
-  const line=document.createElement('div');
-  line.style.cssText='border-bottom:1px solid rgba(255,255,255,.04);padding:3px 0;word-break:break-word;';
-  line.innerHTML=`<span style="color:${c};font-weight:600;">[${t}]</span> ${msg}`;
-  el.insertBefore(line, el.firstChild);
-  // Cap at 60 entries so it doesn't grow forever
-  while (el.children.length > 60) el.removeChild(el.lastChild);
-}
-function fmt(n,d=2)   { return typeof n==='number' && isFinite(n) ? n.toFixed(d) : String(n); }
-function fmtPct(n,d=2){ return (n>=0?'+':'') + fmt(n,d) + '%'; }
-function colorOf(n)   { return n>0?'var(--green)' : n<0?'var(--red)' : 'var(--muted)'; }
 
 function showWarning(text) {
   document.getElementById('warning-banner').classList.add('show');
@@ -5318,17 +5279,17 @@ function _buildLwcChart(d) {
   window._lwcRO.observe(el);
 }
 
-// Convert an ISO-8601 candle timestamp from the backend to unix seconds.
-// (LWC needs integer seconds.) Hoisted to module scope so the incremental
-// path can reuse the exact same conversion.
-function _toLwcSec(iso) { return Math.floor(new Date(iso).getTime() / 1000); }
-
-// Helper: compute the inter-bar spacing in seconds. Falls back to 15 min
-// when only one bar is present (which only happens on cold-start data).
+// Helper: compute the inter-bar spacing in seconds. Slim poll frames carry
+// only the last bar, so cache the step from the last full payload and fall
+// back to it (NOT a hardcoded 900s - that would draw the MC projection with
+// 15m spacing on a 4h/1d chart after the first incremental poll).
+let _lastStepSec = 900;
 function _candleStepSec(candles) {
-  if (candles.length < 2) return 900;
+  if (!candles || candles.length < 2) return _lastStepSec;
   const n = candles.length;
-  return _toLwcSec(candles[n - 1].t) - _toLwcSec(candles[n - 2].t);
+  const step = _toLwcSec(candles[n - 1].t) - _toLwcSec(candles[n - 2].t);
+  if (step > 0) _lastStepSec = step;
+  return _lastStepSec;
 }
 
 // Build a forward-projected MC band series anchored on `lastTs`.
@@ -6362,16 +6323,6 @@ function _renderOptionsFlow(of, spot) {
   }).join('');
 
   _renderGexChart(of.gex_profile || [], spot, of.gamma_flip, of.max_pain, of.call_wall, of.put_wall);
-}
-
-function _fmtCompact(n) {
-  if (!n && n !== 0) return '-';
-  const abs = Math.abs(n);
-  const sign = n < 0 ? '-' : '';
-  if (abs >= 1e9) return sign + (abs/1e9).toFixed(1) + 'B';
-  if (abs >= 1e6) return sign + (abs/1e6).toFixed(1) + 'M';
-  if (abs >= 1e3) return sign + (abs/1e3).toFixed(1) + 'K';
-  return sign + abs.toFixed(0);
 }
 
 function _renderGexChart(profile, spot, gammaFlip, maxPain, callWall, putWall) {
