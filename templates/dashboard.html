@@ -318,12 +318,8 @@
     <div class="field">
       <label>MC model</label>
       <select id="s-model">
-        <option value="gaussian">Gaussian (classic GBM)</option>
-        <option value="student_t">Student-t (heavy tails)</option>
         <option value="garch">GARCH (vol clustering)</option>
         <option value="bootstrap">Bootstrap (real returns)</option>
-        <option value="jump">Jump-diffusion (Hawkes gaps)</option>
-        <option value="fhs">FHS (GARCH + real shocks)</option>
         <option value="ensemble">Ensemble (GARCH+FHS+Jump) </option>
         <option value="microstructure" selected>Microstructure (VP + CVD + Hurst) </option>
       </select>
@@ -1178,7 +1174,7 @@
               Market Structure Analysis
             </div>
             <div class="scan-sub" style="margin-top:3px;">
-              Volume Profile, Price Activity (Hawkes), Market Regime (HMM) - Options GEX &amp; Max Pain moved to the Options tab
+              Volume Profile, Price Activity (Hawkes) - Options GEX &amp; Max Pain moved to the Options tab
             </div>
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -1208,19 +1204,8 @@
             <span style="font-size:12px;color:var(--muted);" id="ms-banner-meta"></span>
           </div>
 
-          <!-- Row 1: HMM + Hawkes summary cards -->
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
-
-            <!-- HMM Regime card -->
-            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;">
-              <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px;">Market Regime</div>
-              <div style="font-size:10px;color:var(--muted);margin-bottom:10px;">What the price is currently doing</div>
-              <div id="ms-hmm-state" style="font-size:18px;font-weight:700;margin-bottom:4px;">-</div>
-              <div id="ms-hmm-state-desc" style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.4;"></div>
-              <div style="font-size:10px;color:var(--muted);margin-bottom:6px;">Probability of each regime:</div>
-              <div id="ms-hmm-bars" style="display:flex;flex-direction:column;gap:6px;"></div>
-              <div id="ms-hmm-method" style="font-size:10px;color:var(--muted);margin-top:8px;display:none;"></div>
-            </div>
+          <!-- Row 1: Hawkes summary card -->
+          <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:14px;">
 
             <!-- Hawkes Excitation card -->
             <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;">
@@ -1259,7 +1244,7 @@
 
           <!-- Row 4: Blended zone reaction table -->
           <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;">
-            <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.5px;text-transform:uppercase;margin-bottom:10px;">Zone Reaction Probabilities (HMM + Hawkes blended)</div>
+            <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.5px;text-transform:uppercase;margin-bottom:10px;">Zone Reaction Probabilities (heuristic priors, not fitted probabilities)</div>
             <div id="ms-zone-table-wrap">
               <table id="ms-zone-table" style="width:100%;border-collapse:collapse;font-size:12px;">
                 <thead>
@@ -6246,7 +6231,7 @@ async function runMarketStructure(opts) {
       results.style.display = 'block';
       status.textContent = `Updated ${new Date(data.updated_at).toLocaleTimeString()} - ${ticker} @ ${data.interval}`;
     }
-    log(`Market Structure: ${ticker} - regime=${data.hmm?.current_state || '?'} | max_pain=$${data.options_flow?.max_pain?.toFixed(2) || '?'}`, 'var(--purple)');
+    log(`Market Structure: ${ticker} - activity=${data.hawkes?.excitement_label || '?'} | max_pain=$${data.options_flow?.max_pain?.toFixed(2) || '?'}`, 'var(--purple)');
 
   } catch(e) {
     if (e.name === 'AbortError') throw e;
@@ -6280,69 +6265,10 @@ function _renderMarketStructure(d) {
   if (bannerTicker) bannerTicker.textContent = (d.ticker || '-').toUpperCase();
   if (bannerMeta)   bannerMeta.textContent   = `${d.interval || ''}, Updated ${new Date(d.updated_at).toLocaleTimeString()}`;
 
-  _renderHMM(d.hmm);
   _renderHawkes(d.hawkes);
   _renderOptionsFlow(d.options_flow, d.current_price);
   _renderVolumeProfile(d.volume_profile, d.current_price);
   _renderBlendedZones(d.blended_zones);
-}
-
-function _renderHMM(hmm) {
-  if (!hmm) return;
-  const stateEl  = document.getElementById('ms-hmm-state');
-  const descEl   = document.getElementById('ms-hmm-state-desc');
-  const barsEl   = document.getElementById('ms-hmm-bars');
-  const methodEl = document.getElementById('ms-hmm-method');
-
-  // Colors and icons per regime
-  const colors = { trending:'var(--amber)', ranging:'var(--green)', volatile:'var(--red)', unknown:'var(--muted)' };
-  const icons  = { trending:'', ranging:'', volatile:'', unknown:'' };
-
-  // Human-friendly regime names and what they mean for the trader
-  const friendlyNames = {
-    trending: 'Trending',
-    ranging:  'Ranging',
-    volatile: 'Volatile',
-    unknown:  'Unclear',
-  };
-  const descriptions = {
-    trending: 'Price is moving steadily in one direction. Momentum strategies tend to work here.',
-    ranging:  'Price is bouncing between a ceiling and a floor. Good for fading extremes and level-based entries.',
-    volatile: 'Price is making sharp, unpredictable jumps in both directions. Higher risk - reduce size or wait.',
-    unknown:  'Not enough data to classify the current regime reliably.',
-  };
-  // Bar labels (short, for the probability bar row)
-  const barLabels = {
-    trending: 'Trending',
-    ranging:  '↔ Ranging',
-    volatile: 'Volatile',
-    unknown:  'Unclear',
-  };
-
-  const state = hmm.current_state || 'unknown';
-  const col   = colors[state] || 'var(--muted)';
-
-  stateEl.textContent = (icons[state] || '') + ' ' + (friendlyNames[state] || state.toUpperCase());
-  stateEl.style.color = col;
-
-  if (descEl) { descEl.textContent = descriptions[state] || ''; descEl.style.color = col; }
-
-  barsEl.innerHTML = '';
-  (hmm.state_probs || []).forEach(s => {
-    const pct = Math.round((s.probability || 0) * 100);
-    const c   = colors[s.label] || 'var(--muted)';
-    barsEl.innerHTML += `
-      <div style="display:flex;align-items:center;gap:8px;font-size:11px;">
-        <span style="width:80px;color:${c};font-weight:600;">${barLabels[s.label] || s.label}</span>
-        <div style="flex:1;height:6px;background:var(--surface);border-radius:3px;overflow:hidden;">
-          <div style="width:${pct}%;height:100%;background:${c};border-radius:3px;transition:width .5s;"></div>
-        </div>
-        <span style="width:32px;text-align:right;color:${c};font-weight:600;">${pct}%</span>
-      </div>`;
-  });
-
-  // Keep method info hidden (technical detail)
-  if (methodEl) methodEl.style.display = 'none';
 }
 
 function _renderHawkes(hk) {
@@ -6396,7 +6322,7 @@ function _renderOptionsFlow(of, spot) {
 
   if (of.error) {
     errEl.style.display = 'block';
-    errEl.textContent = `Options data unavailable: ${of.error}. Only Volume Profile, HMM & Hawkes are available.`;
+    errEl.textContent = `Options data unavailable: ${of.error}. Volume Profile and Hawkes are still available.`;
     levelsEl.innerHTML = '';
     // Still update GEX chart area
     _renderGexChart([]);
@@ -6650,12 +6576,11 @@ function _renderBlendedZones(zones) {
 }
 
 // When a new WS message arrives with the same ticker, quietly refresh
-// the HMM and Volume Profile cards without a full re-fetch.
+// the Volume Profile card without a full re-fetch.
 function _updateMarketStructureFromBroadcast(d) {
   if (document.getElementById('market-structure-panel')?.style.display === 'none') return;
   // Only update if the broadcast is for the same ticker currently shown in MS
   if (_msTicker && d.ticker && d.ticker.toUpperCase() !== _msTicker.toUpperCase()) return;
-  if (d.hmm)            _renderHMM(d.hmm);
   if (d.volume_profile) _renderVolumeProfile(d.volume_profile, d.current_price);
 }
 

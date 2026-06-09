@@ -74,7 +74,7 @@ ignore = [
 "core/analysis/regime.py"      = ["E741"]
 "core/analysis/volume_profile.py" = ["E741"]
 "core/analysis/hawkes.py"      = ["E741"]
-"core/analysis/hmm_regime.py"  = ["E741"]
+"core/data/fetcher.py"         = ["E741"]
 
 [tool.ruff.format]
 quote-style           = "double"

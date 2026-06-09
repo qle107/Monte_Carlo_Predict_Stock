@@ -1,4 +1,4 @@
-"""Volume profile, options flow, HMM, and Hawkes analysis."""
+"""Volume profile, options flow, and Hawkes analysis."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ from core.data.fetcher import fetch_candles
 from core.options.options_flow import fetch_options_flow
 
 from .hawkes import analyse_hawkes
-from .hmm_regime import analyse_hmm, blend_zone_probability
 from .volume_profile import compute_volume_profile
 from .zones import detect_zones
 
@@ -19,8 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 async def analyse_market_structure(symbol: str, loop) -> dict:
-    """Run volume profile, options flow, HMM, and Hawkes in parallel."""
-    HMM_MIN_BARS = 40  # matches core.hmm_regime.MIN_BARS
+    """Run volume profile, options flow, and Hawkes in parallel."""
     HAWKES_MIN_BARS = 20  # matches core.hawkes.analyse_hawkes
     try:
         logger.debug("[ms] data-fetch start  symbol=%s interval=%s", symbol, cfg.interval)
@@ -44,18 +42,16 @@ async def analyse_market_structure(symbol: str, loop) -> dict:
             loop.run_in_executor(None, compute_volume_profile, df),
             loop.run_in_executor(None, detect_zones, df),
             loop.run_in_executor(None, fetch_options_flow, symbol, spot),
-            loop.run_in_executor(None, analyse_hmm, log_returns),
         ]
-        vp_raw, zone_raw, of_raw, hmm_raw = await asyncio.gather(
+        vp_raw, zone_raw, of_raw = await asyncio.gather(
             *_ms_tasks,
             return_exceptions=True,
         )
         logger.debug(
-            "[ms] model-fit done   vp=%s zones=%s of=%s hmm=%s",
+            "[ms] model-fit done   vp=%s zones=%s of=%s",
             type(vp_raw).__name__,
             type(zone_raw).__name__,
             type(of_raw).__name__,
-            type(hmm_raw).__name__,
         )
 
         if isinstance(vp_raw, BaseException):
@@ -86,8 +82,6 @@ async def analyse_market_structure(symbol: str, loop) -> dict:
             ]
             if not zone_list:
                 zones_data["state"] = "no_zones"
-                # Zone detection needs at least zone_pivot_window*2+1 bars to
-                # find any swing pivots. Surface that to the user.
                 zones_data["min_bars_required"] = int(cfg.zone_pivot_window) * 2 + 1
                 zones_data["bars_available"] = n_bars
             else:
@@ -98,26 +92,6 @@ async def analyse_market_structure(symbol: str, loop) -> dict:
         else:
             of_dict = of_raw.to_dict()
             of_dict.setdefault("state", "error" if of_dict.get("error") else "ok")
-
-        if isinstance(hmm_raw, BaseException):
-            logger.warning("[ms] HMM raised: %s", hmm_raw)
-            hmm_result = None
-            hmm_dict = {"state": "error", "error": str(hmm_raw)[:120]}
-        else:
-            hmm_result = hmm_raw
-            hmm_dict = hmm_raw.to_dict()
-            # Surface the insufficient-data path with a clear contract for the UI.
-            if hmm_raw.error == "too_few_bars" or hmm_raw.fit_method == "none":
-                hmm_dict["state"] = "insufficient_data"
-                hmm_dict["min_bars_required"] = HMM_MIN_BARS
-                hmm_dict["bars_available"] = n_returns
-                hmm_dict.setdefault(
-                    "error_reason",
-                    f"HMM needs at least {HMM_MIN_BARS} return bars; only {n_returns} available. "
-                    f"Switch to a longer timeframe or wait for more candles.",
-                )
-            else:
-                hmm_dict["state"] = "ok"
 
         if zone_list and n_returns >= HAWKES_MIN_BARS:
             try:
@@ -147,8 +121,6 @@ async def analyse_market_structure(symbol: str, loop) -> dict:
                 ),
             }
 
-        # Now also produces rows when HMM is missing - falls back to a 40/30/30
-        # base so the table never goes empty just because Baum-Welch under-ran.
         blended_zones = []
         for z in zone_list:
             hk_probs = None
@@ -161,19 +133,12 @@ async def analyse_market_structure(symbol: str, loop) -> dict:
                             "consolidate": hr.consolidate_prob,
                         }
                         break
-            if hmm_result is not None:
-                blended = blend_zone_probability(
-                    hmm=hmm_result,
-                    hawkes_probs=hk_probs,
-                    zone_strength=z.get("strength", 0.5),
-                )
-            elif hk_probs is not None:
+            if hk_probs is not None:
                 blended = hk_probs
+                blend_source = "hawkes"
             else:
-                # Neither HMM nor Hawkes - fall back to neutral priors so the
-                # zone row at least renders something. Marked so the UI can
-                # caveat the row.
                 blended = {"bounce": 0.40, "break": 0.30, "consolidate": 0.30}
+                blend_source = "fallback"
             blended_zones.append(
                 {
                     "level": round(z["level"], 4),
@@ -182,22 +147,13 @@ async def analyse_market_structure(symbol: str, loop) -> dict:
                     "bounce_prob": round(blended["bounce"], 4),
                     "break_prob": round(blended["break"], 4),
                     "consolidate_prob": round(blended["consolidate"], 4),
-                    "blend_source": (
-                        "hmm+hawkes"
-                        if hmm_result is not None and hk_probs is not None
-                        else "hmm"
-                        if hmm_result is not None
-                        else "hawkes"
-                        if hk_probs is not None
-                        else "fallback"
-                    ),
+                    "blend_source": blend_source,
                 }
             )
 
         logger.debug(
-            "[ms] render-ready     zones=%d hmm_state=%s hawkes_state=%s",
+            "[ms] render-ready     zones=%d hawkes_state=%s",
             len(blended_zones),
-            hmm_dict.get("state"),
             hawkes_dict.get("state"),
         )
 
@@ -209,7 +165,6 @@ async def analyse_market_structure(symbol: str, loop) -> dict:
             "volume_profile": vp_dict,
             "options_flow": of_dict,
             "hawkes": hawkes_dict,
-            "hmm": hmm_dict,
             "blended_zones": blended_zones,
             "zones": zones_data,
             "updated_at": datetime.now(timezone.utc).isoformat(),

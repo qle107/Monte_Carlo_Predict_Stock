@@ -18,6 +18,7 @@ from .. import state
 from ..analysis import _poll_loop, _run_analysis, broadcast_analysis
 from ..deps import limiter, require_api_key
 from ..models import BacktestRequest, ConfigUpdate
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["signal"])
@@ -138,7 +139,7 @@ async def api_backtest(request: Request, req: BacktestRequest, api_key: str | No
 @router.get("/api/market-structure")
 @limiter.limit("10/minute")
 async def api_market_structure(request: Request, ticker: str | None = None):
-    """Volume profile, options flow, Hawkes, and HMM analysis."""
+    """Volume profile, options flow, and Hawkes analysis."""
     symbol = (ticker or cfg.ticker).upper().strip()
     loop = asyncio.get_running_loop()
 
