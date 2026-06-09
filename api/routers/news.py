@@ -8,11 +8,11 @@ import logging
 from fastapi import APIRouter, HTTPException
 
 from config import cfg
-from core.fear_greed import fetch_fear_greed
-from core.insider import fetch_insider_activity
-from core.macro import fetch_macro_indicators
-from core.news_aggregator import fetch_news
-from core.sentiment import _cramer_for_sector, fetch_global_market_sentiment, get_sentiment, get_ticker_sector
+from core.news.fear_greed import fetch_fear_greed
+from core.news.insider import fetch_insider_activity
+from core.news.macro import fetch_macro_indicators
+from core.news.news_aggregator import fetch_news
+from core.sentiment import cramer_for_sector, fetch_global_market_sentiment, get_sentiment, get_ticker_sector
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ async def api_sector_cramer(ticker: str | None = None, sector: str | None = None
             "source_label": "Sector Cramer Signal",
             "reason": "unknown sector",
         }
-    result = await _cramer_for_sector(resolved_sector)
+    result = await cramer_for_sector(resolved_sector)
     result["sector"] = resolved_sector
     return result
 

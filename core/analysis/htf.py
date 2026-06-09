@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 
-from .fetcher import fetch_candles
+from core.data.fetcher import fetch_candles
+
 from .indicators import compute_indicators
 from .regime import detect_regime
 from .signal import compute_signal
@@ -23,7 +24,7 @@ _HTF_MAP = {
 }
 
 
-async def _htf_confirmation(ticker: str, base_interval: str, extended: bool, loop) -> dict:
+async def htf_confirmation(ticker: str, base_interval: str, extended: bool, loop) -> dict:
     """Fetch higher timeframe regime + signal snapshot."""
     htf = _HTF_MAP.get(base_interval)
     if not htf or htf == base_interval:

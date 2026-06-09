@@ -223,7 +223,7 @@ class Structure:
         Piecewise-linear payoff: extrema occur at S=0, the strikes, or S->inf.
         """
         ks = self.strikes()
-        test_pts = [0.0] + ks + [max(ks) * 5 + 10.0]
+        test_pts = [0.0, *ks, max(ks) * 5 + 10.0]
         pnls = [float(self.pnl(np.array([s]))[0]) for s in test_pts]
         max_loss = -min(pnls)  # largest loss as a positive number
         if self._call_slope_at_inf() > 0:
@@ -316,9 +316,9 @@ def evaluate_structure(
     # the strike). For a vertical we report it for the long (primary) leg.
     long_leg = next((lg for lg in struct.legs if lg.qty > 0), struct.legs[0])
     if long_leg.type == "call":
-        prob_itm = float(np.dot(w, (S_T > long_leg.strike).astype(float)))
+        prob_itm = float(np.dot(w, (long_leg.strike < S_T).astype(float)))
     else:
-        prob_itm = float(np.dot(w, (S_T < long_leg.strike).astype(float)))
+        prob_itm = float(np.dot(w, (long_leg.strike > S_T).astype(float)))
 
     max_gain, max_loss = struct.bounds()
     cap = struct.capital_at_risk()

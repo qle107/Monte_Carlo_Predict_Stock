@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from core.montecarlo import _optimal_block_length, _simulate_bootstrap
+from core.analysis.montecarlo import _optimal_block_length, _simulate_bootstrap
 
 rng = np.random.default_rng(47)
 N = 400

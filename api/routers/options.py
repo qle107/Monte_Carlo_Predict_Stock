@@ -9,7 +9,9 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
-from core.contract_tracker import (
+from core.analysis.expected_move import expected_move_for_ticker
+from core.analysis.forecast import forecast_for_ticker
+from core.options.contract_tracker import (
     VALID_BUCKETS,
     VALID_RANGES,
     chain_for_expiry,
@@ -19,16 +21,14 @@ from core.contract_tracker import (
     watch,
     watched,
 )
-from core.expected_move import expected_move_for_ticker
-from core.forecast import forecast_for_ticker
-from core.options_flow import (
+from core.options.options_flow import (
     cancel_unusual_scan,
     fetch_options_flow,
     scan_unusual_options,
     scan_volume_spikes,
 )
-from core.pop_scanner import scan as pop_scan
-from core.scanner import get_watchlist
+from core.scanners.pop_scanner import scan as pop_scan
+from core.scanners.scanner import get_watchlist
 
 from ..deps import limiter, require_api_key
 from ..models import ContractWatchRequest
@@ -316,7 +316,7 @@ async def api_options_contract(
     expiry: str,
     strike: float,
     option_type: str,
-    range: str = "7d",  # noqa: A002 - matches query param name
+    range: str = "7d",  # matches query param name
     bucket: str = "30m",
 ):
     """Premium history + live snapshot for one contract.

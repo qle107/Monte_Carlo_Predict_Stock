@@ -7,9 +7,9 @@ import logging
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from config import cfg
-from core.scanner import WATCHLISTS, get_watchlist, scan_tickers
-from core.trade_setup import trade_setup_from_scan
-from core.zone_scanner import zone_scan_tickers
+from core.analysis.trade_setup import trade_setup_from_scan
+from core.scanners.scanner import WATCHLISTS, get_watchlist, scan_tickers
+from core.scanners.zone_scanner import zone_scan_tickers
 
 from ..deps import limiter, require_api_key
 from ..models import ScanRequest

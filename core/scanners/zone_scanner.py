@@ -11,14 +11,13 @@ import numpy as np
 import pandas as pd
 
 from config import cfg
-
-from .fetcher import fetch_candles
-from .indicators import compute_indicators
-from .regime import detect_regime
-from .signal import compute_signal
-from .trade_setup import compute_trade_setup
-from .trade_setup import to_dict as ts_to_dict
-from .zones import Zone, detect_zones
+from core.analysis.indicators import compute_indicators
+from core.analysis.regime import detect_regime
+from core.analysis.signal import compute_signal
+from core.analysis.trade_setup import compute_trade_setup
+from core.analysis.trade_setup import to_dict as ts_to_dict
+from core.analysis.zones import Zone, detect_zones
+from core.data.fetcher import fetch_candles
 
 logger = logging.getLogger(__name__)
 

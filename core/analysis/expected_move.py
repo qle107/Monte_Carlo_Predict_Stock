@@ -218,7 +218,10 @@ def compute_expected_move(
     for label, days in (horizons or DEFAULT_HORIZONS).items():
         sd = daily_vol * math.sqrt(days)
         drift = -0.5 * sd * sd  # martingale anchor: E[S_T] = spot
-        band = lambda m: (anchor * math.exp(drift - m * sd), anchor * math.exp(drift + m * sd))
+        band = lambda m, drift=drift, sd=sd: (  # bind loop vars (B023)
+            anchor * math.exp(drift - m * sd),
+            anchor * math.exp(drift + m * sd),
+        )
         s1_low, s1_high = band(m1)
         s2_low, s2_high = band(m2)
         out_horizons[label] = {
@@ -276,7 +279,7 @@ def expected_move_for_ticker(
 ) -> dict | None:
     """Fetch trailing daily candles and compute expected-move bands."""
     try:
-        from .fetcher import fetch_candles
+        from core.data.fetcher import fetch_candles
 
         df = fetch_candles(ticker, "1d", window + 10, False)
         return compute_expected_move(

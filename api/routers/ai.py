@@ -10,10 +10,10 @@ import re
 from fastapi import APIRouter, HTTPException, Request
 
 from config import cfg
-from core.ai_analyst import build_prompt, run_ai_analysis
+from core.ai.ai_analyst import build_prompt, run_ai_analysis
 
-from ..deps import limiter
 from .. import state
+from ..deps import limiter
 
 logger = logging.getLogger(__name__)
 

@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from core.montecarlo import _calibrate_garch_mle, _simulate_ensemble, _simulate_fhs
+from core.analysis.montecarlo import _calibrate_garch_mle, _simulate_ensemble, _simulate_fhs
 
 rng = np.random.default_rng(11)
 SIGMA = 0.02

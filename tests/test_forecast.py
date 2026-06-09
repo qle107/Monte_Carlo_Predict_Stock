@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 import numpy as np
 
-from core.forecast import (
+from core.analysis.forecast import (
     _MAX_MONTHLY_TOTAL,
     _MONTH,
     compute_forecast,

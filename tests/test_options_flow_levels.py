@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 import pandas as pd
 
-from core.options_flow import (
+from core.options.options_flow import (
     _compute_gex_profile,
     _compute_max_pain,
     _contracts_from_chains,
@@ -102,7 +102,7 @@ def main():
     print(f"net_gex      = {net:,.0f}  (with 0.01 factor; old code was 100x larger)")
     bar_400 = next(b for b in bars if b.strike == 400)
     # Hand-check one bar: scaled GEX must be exactly 1% of gamma*OI*100*S^2.
-    from core.options_flow import _GEX_SCALE, _bs_gamma
+    from core.options.options_flow import _GEX_SCALE, _bs_gamma
 
     g = _bs_gamma(SPOT, 400, 7 / 365.0, 0.51) * 16000 + _bs_gamma(SPOT, 400, 78 / 365.0, 0.50) * 4000
     expected_400 = g * SPOT * SPOT * _GEX_SCALE

@@ -9,8 +9,8 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from core.db import sqlite_connect
-from core.yf_client import is_rate_limit, safe_float, safe_int, yf_call
+from core.data.db import sqlite_connect
+from core.data.yf_client import is_rate_limit, safe_float, safe_int, yf_call
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ def build_occ_symbol(ticker: str, expiry: str, strike: float, option_type: str) 
     t = ticker.upper().strip().replace("-", "")
     d = datetime.strptime(expiry, "%Y-%m-%d")
     cp = "C" if option_type.lower().startswith("c") else "P"
-    return f"{t}{d:%y%m%d}{cp}{int(round(strike * 1000)):08d}"
+    return f"{t}{d:%y%m%d}{cp}{round(strike * 1000):08d}"
 
 
 # Chain lookups (for the contract picker UI)
@@ -208,7 +208,7 @@ def fetch_contract_bars(
         if close <= 0:
             continue
         frac = _estimate_bar_split(close, prev_close, high, low)
-        buy = int(round(vol * frac))
+        buy = round(vol * frac)
         opn = safe_float(row.get("Open"), close)
         # OHLC4 as the average fill estimate for the bucket
         avg_fill = (opn + high + low + close) / 4.0

@@ -2,8 +2,8 @@
 
 import numpy as np
 
-from core.hurst import dfa
-from core.montecarlo import _compute_regime_state, _simulate_ensemble, _simulate_jump
+from core.analysis.hurst import dfa
+from core.analysis.montecarlo import _compute_regime_state, _simulate_ensemble, _simulate_jump
 
 rng = np.random.default_rng(42)
 SIGMA = 0.02

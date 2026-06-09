@@ -6,7 +6,8 @@ from datetime import datetime, timedelta, timezone
 
 import numpy as np
 
-from core.conformal import ALPHA_TARGET, BandCalibrator
+from core.analysis.conformal import ALPHA_TARGET, BandCalibrator
+from core.analysis.montecarlo import _build_mc_result
 
 rng = np.random.default_rng(43)
 
@@ -23,7 +24,7 @@ TICKER, IV, H = "TEST", "1h", 5  # maturity = 5 hours
 def run_cycle(n, miss_rate, start, alpha_probe):
     """Issue n bands; a fraction `miss_rate` will realise outside the band."""
     t = start
-    for i in range(n):
+    for _i in range(n):
         spot = 100.0
         lo, hi = 95.0, 105.0
         cal.observe(TICKER, IV, H, t.isoformat(), spot, lo, hi)
@@ -77,7 +78,6 @@ print()
 print("=" * 60)
 print("5) MC engine consumes band_alpha")
 print("=" * 60)
-from core.montecarlo import _build_mc_result
 
 paths = 100.0 * np.exp(np.cumsum(rng.standard_normal((20000, 6)) * 0.02, axis=1))
 paths = np.hstack([np.full((20000, 1), 100.0), paths])

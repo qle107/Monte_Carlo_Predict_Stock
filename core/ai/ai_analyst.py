@@ -56,7 +56,7 @@ async def _best_effort(name: str, coro, timeout: float) -> tuple[str, Any]:
     """Run one data-source coroutine; return (name, data|None)."""
     try:
         return name, await asyncio.wait_for(coro, timeout=timeout)
-    except Exception as e:  # noqa: BLE001 - data sources are best-effort
+    except Exception as e:  # data sources are best-effort
         logger.warning("[ai_analyst] %s unavailable: %s", name, e)
         return name, {"_error": str(e)[:300]}
 
@@ -66,10 +66,10 @@ async def gather_context(ticker: str, last_result: dict | None) -> dict:
     loop = asyncio.get_running_loop()
     t = ticker.upper().strip()
 
-    from core.fear_greed import fetch_fear_greed
-    from core.macro import fetch_macro_indicators
-    from core.news_aggregator import fetch_news
-    from core.options_flow import fetch_options_flow, scan_unusual_options
+    from core.news.fear_greed import fetch_fear_greed
+    from core.news.macro import fetch_macro_indicators
+    from core.news.news_aggregator import fetch_news
+    from core.options.options_flow import fetch_options_flow, scan_unusual_options
     from core.sentiment import get_sentiment
 
     async def _gex():
@@ -356,7 +356,7 @@ async def _call_anthropic(payload_json: str, model: str) -> tuple[str, str]:
             # Unknown model -> try next candidate; anything else -> raise
             try:
                 err = resp.json().get("error", {})
-            except Exception:  # noqa: BLE001
+            except Exception:
                 err = {}
             msg = str(err.get("message", resp.text[:300]))
             last_err = f"{resp.status_code}: {msg}"

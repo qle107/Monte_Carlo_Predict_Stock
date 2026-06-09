@@ -8,7 +8,7 @@ from contextlib import suppress
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from core import news_stream
+from core.news import news_stream
 
 from . import state
 

@@ -6,7 +6,7 @@ import tempfile
 import numpy as np
 import pandas as pd
 
-from core.conformal import BandCalibrator, warm_start_from_history
+from core.analysis.conformal import BandCalibrator, warm_start_from_history
 
 rng = np.random.default_rng(53)
 

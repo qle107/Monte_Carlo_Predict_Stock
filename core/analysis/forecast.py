@@ -174,7 +174,7 @@ def forecast_for_ticker(
 ) -> dict | None:
     """Fetch trailing daily candles and compute the drift forecast."""
     try:
-        from .fetcher import fetch_candles
+        from core.data.fetcher import fetch_candles
 
         df = fetch_candles(ticker, "1d", window, False)
         return compute_forecast(

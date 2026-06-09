@@ -10,15 +10,16 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from config import VALID_INTERVALS, VALID_MC_MODELS, cfg, cfg_lock
-from core.backtest import walk_forward
-from core.fetcher import fetch_candles
-from core.market_structure import analyse_market_structure
+from core.analysis.backtest import walk_forward
+from core.analysis.market_structure import analyse_market_structure
+from core.data.fetcher import fetch_candles
 
 from .. import state
 from ..analysis import _poll_loop, _run_analysis
-from ..websockets import broadcast_json
 from ..deps import limiter, require_api_key
 from ..models import BacktestRequest, ConfigUpdate
+from ..websockets import broadcast_json
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["signal"])

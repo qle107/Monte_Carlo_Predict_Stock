@@ -10,8 +10,8 @@ import logging
 from fastapi import APIRouter, Header, Request
 from fastapi.responses import StreamingResponse
 
-from ..deps import limiter, require_api_key
 from .. import state
+from ..deps import limiter, require_api_key
 
 logger = logging.getLogger(__name__)
 

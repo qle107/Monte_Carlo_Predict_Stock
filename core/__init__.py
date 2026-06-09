@@ -6,12 +6,12 @@ from dataclasses import asdict
 
 import pandas as pd
 
-from .indicators import compute_indicators
-from .montecarlo import compute_cvd_from_ohlc
-from .montecarlo import run as run_mc
-from .regime import detect_regime
-from .signal import compute_signal
-from .volume_profile import compute_volume_profile
+from core.analysis.indicators import compute_indicators
+from core.analysis.montecarlo import compute_cvd_from_ohlc
+from core.analysis.montecarlo import run as run_mc
+from core.analysis.regime import detect_regime
+from core.analysis.signal import compute_signal
+from core.analysis.volume_profile import compute_volume_profile
 
 
 def _df_to_candles(df: pd.DataFrame) -> list:

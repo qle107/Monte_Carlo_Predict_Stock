@@ -8,7 +8,7 @@ import threading
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
-from .db import sqlite_connect
+from core.data.db import sqlite_connect
 
 logger = logging.getLogger(__name__)
 
@@ -293,10 +293,10 @@ def warm_start_from_history(
             return 0
 
         # Local imports avoid a circular dependency (montecarlo never imports us)
-        from core.indicators import compute_indicators
-        from core.montecarlo import run as run_mc
-        from core.regime import detect_regime
-        from core.signal import compute_signal
+        from core.analysis.indicators import compute_indicators
+        from core.analysis.montecarlo import run as run_mc
+        from core.analysis.regime import detect_regime
+        from core.analysis.signal import compute_signal
 
         closes = df["close"].to_numpy(dtype=float)
         n = len(df)

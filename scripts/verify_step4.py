@@ -2,8 +2,8 @@
 
 import numpy as np
 
-from core.hawkes import fit_jump_params
-from core.montecarlo import _fit_hawkes_cached, _simulate_jump
+from core.analysis.hawkes import fit_jump_params
+from core.analysis.montecarlo import _fit_hawkes_cached, _simulate_jump
 
 rng = np.random.default_rng(23)
 SIGMA = 0.02

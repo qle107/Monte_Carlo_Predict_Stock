@@ -38,4 +38,4 @@ async def contract():
 
 @router.get("/portfolio", response_class=HTMLResponse)
 async def portfolio():
-    return _serve(ROOT_DIR / "portfolio_tracker.html")
+    return _serve(ROOT_DIR / "templates" / "portfolio_tracker.html")

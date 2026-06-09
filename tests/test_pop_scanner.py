@@ -22,12 +22,12 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 import numpy as np
 
-from core.pop_scanner import (
+from core.scanners.pop_scanner import (
+    _ZGRID,
+    _ZW,
     CONTRACT_MULTIPLIER,
     Leg,
     Structure,
-    _ZGRID,
-    _ZW,
     evaluate_structure,
     evaluate_structure_mc,
     expected_call_payoff,
@@ -226,7 +226,7 @@ def test_singles_only_and_bear_exclusion():
 
 def test_top_by_kelly_sorted():
     out = scan(_demo_chain(), T=T, r=R, my_sigma=0.55, target_price=112.0, top_n=5)
-    assert "top_by_kelly" in out and out["top_by_kelly"]
+    assert out.get("top_by_kelly")
     ks = [r["kelly_pct"] for r in out["top_by_kelly"]]
     assert ks == sorted(ks, reverse=True)
     for r in out["top_by_kelly"]:

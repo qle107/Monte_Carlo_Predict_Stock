@@ -12,14 +12,14 @@ import threading
 import time
 from dataclasses import dataclass
 
-from core.sectors import HIGH_VOLUME_ETFS, sector_for
-from core.yf_client import is_rate_limit, safe_float, safe_int, yf_call
+from core.data.sectors import HIGH_VOLUME_ETFS, sector_for
+from core.data.yf_client import is_rate_limit, safe_float, safe_int, yf_call
 
 __all__ = [
+    "HIGH_VOLUME_ETFS",
     "GEXBar",
     "OptionsFlow",
     "UnusualOption",
-    "HIGH_VOLUME_ETFS",
     "fetch_options_flow",
     "scan_unusual_options",
     "scan_volume_spikes",
@@ -175,7 +175,7 @@ _GEX_SCALE = 100.0 * 0.01
 
 
 def _contracts_from_chains(
-    chains: list[tuple[str, float, "object", "object"]],
+    chains: list[tuple[str, float, object, object]],
 ) -> list[dict]:
     """
     Flatten (expiry, T, calls_df, puts_df) chains into per-contract dicts:
@@ -522,7 +522,7 @@ class UnusualOption:
     spot: float
     days_to_expiry: float
     percent_change: float = 0.0  # option contract % price change today
-    sector: str = "Other"  # sector label from core.sectors
+    sector: str = "Other"  # sector label from core.data.sectors
     trade_style: str = "block"  # "sweep" | "block" (snapshot approximation)
     exec_side: str = "mid"  # "ask" | "bid" | "mid" (lit-execution lean estimate)
 

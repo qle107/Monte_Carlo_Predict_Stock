@@ -3,7 +3,7 @@
 import numpy as np
 
 from config import cfg
-from core.montecarlo import _calibrate_garch_mle, _simulate_garch
+from core.analysis.montecarlo import _calibrate_garch_mle, _simulate_garch
 
 rng = np.random.default_rng(7)
 SIGMA = 0.02
@@ -42,7 +42,7 @@ print("=" * 60)
 print("3) MLE recovers a known gamma")
 print("=" * 60)
 # Simulate a GJR(1,1) series with known parameters
-true = dict(omega=2e-6, alpha=0.04, gamma=0.12, beta=0.82)
+true = {"omega": 2e-6, "alpha": 0.04, "gamma": 0.12, "beta": 0.82}
 n = 3000
 s2 = true["omega"] / (1 - true["alpha"] - 0.5 * true["gamma"] - true["beta"])
 e_prev = 0.0
@@ -52,7 +52,7 @@ for i in range(n):
     e_prev = np.sqrt(s2) * rng.standard_normal()
     r[i] = e_prev
 omega_f, alpha_f, gamma_f, beta_f = _calibrate_garch_mle(r)
-print(f"  true : omega=2.0e-06 alpha=0.040 gamma=0.120 beta=0.820")
+print("  true : omega=2.0e-06 alpha=0.040 gamma=0.120 beta=0.820")
 print(f"  fitted: omega={omega_f:.1e} alpha={alpha_f:.3f} gamma={gamma_f:.3f} beta={beta_f:.3f}")
 assert gamma_f > 0.0, "gamma must be detected as positive"
 assert alpha_f + 0.5 * gamma_f + beta_f < 0.999, "stationarity violated"

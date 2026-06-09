@@ -6,8 +6,8 @@ import asyncio
 
 from fastapi import WebSocket
 
-from core.conformal import BandCalibrator
-from core.store import SignalStore
+from core.analysis.conformal import BandCalibrator
+from core.data.store import SignalStore
 
 clients: set[WebSocket] = set()
 last_result: dict = {}
