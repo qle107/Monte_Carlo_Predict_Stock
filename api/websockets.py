@@ -36,7 +36,7 @@ async def ws_endpoint(ws: WebSocket):
     logger.debug("WS client connected (%d total)", len(state.clients))
     if state.last_result:
         with suppress(Exception):
-            await ws.send_json(state.last_result)
+            await ws.send_json(state.payload_for_clients(state.last_result, full_candles=True))
     try:
         while True:
             await ws.receive_text()

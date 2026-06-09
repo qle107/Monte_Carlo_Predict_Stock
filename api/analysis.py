@@ -11,7 +11,6 @@ from config import cfg
 from core import _df_to_candles, analyse
 from core.analysis.conformal import warm_start_from_history
 from core.analysis.expected_move import expected_move_for_ticker
-from core.analysis.hmm_regime import analyse_hmm
 from core.analysis.htf import htf_confirmation
 from core.analysis.trade_setup import trade_setup_from_analysis
 from core.analysis.zones import detect_zones
@@ -36,16 +35,17 @@ async def _fetch_and_broadcast_partial(loop) -> tuple:
     df = df_full.tail(cfg.lookback).copy()
     df.attrs = df_full.attrs
     try:
+        partial = {
+            "type": "partial",
+            "ticker": cfg.ticker,
+            "interval": cfg.interval,
+            "current_price": round(float(df_full["close"].iloc[-1]), 4),
+            "candles": _df_to_candles(df_full),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
         await broadcast_json(
             state.clients,
-            {
-                "type": "partial",
-                "ticker": cfg.ticker,
-                "interval": cfg.interval,
-                "current_price": round(float(df_full["close"].iloc[-1]), 4),
-                "candles": _df_to_candles(df_full),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            },
+            state.payload_for_clients(partial, full_candles=state.needs_full_candles),
         )
     except Exception as _pe:
         logger.debug("partial broadcast failed: %s", _pe)
@@ -88,10 +88,10 @@ async def _calibrate_bands(loop, cal, df_full, spot_now: float) -> float:
     return band_alpha
 
 
-async def _gather_analyses(loop, df, band_alpha: float, returns_for_hmm: list, spot_now: float) -> tuple:
-    """Run MC analysis, zones, HTF, expected move (and HMM if enabled) concurrently.
+async def _gather_analyses(loop, df, band_alpha: float, spot_now: float) -> tuple:
+    """Run MC analysis, zones, HTF, and expected move concurrently.
 
-    Returns (result, zones_data, hmm_data, htf_data, expected_move).
+    Returns (result, zones_data, htf_data, expected_move).
     Raises if the main MC analysis failed.
     """
     gather_tasks = [
@@ -103,16 +103,9 @@ async def _gather_analyses(loop, df, band_alpha: float, returns_for_hmm: list, s
         htf_confirmation(cfg.ticker, cfg.interval, cfg.extended, loop),
         loop.run_in_executor(None, expected_move_for_ticker, cfg.ticker, spot_now),
     ]
-    if cfg.hmm_enabled:
-        gather_tasks.insert(2, loop.run_in_executor(None, analyse_hmm, returns_for_hmm))
 
     raw = await asyncio.gather(*gather_tasks, return_exceptions=True)
-
-    if cfg.hmm_enabled:
-        result_raw, zone_raw, hmm_raw, htf_data, em_raw = raw
-    else:
-        result_raw, zone_raw, htf_data, em_raw = raw
-        hmm_raw = None
+    result_raw, zone_raw, htf_data, em_raw = raw
 
     if isinstance(em_raw, BaseException):
         logger.debug("expected_move failed: %s", em_raw)
@@ -137,22 +130,14 @@ async def _gather_analyses(loop, df, band_alpha: float, returns_for_hmm: list, s
     else:
         zones_data = zone_raw.to_dict()
 
-    if hmm_raw is None:
-        hmm_data = None
-    elif isinstance(hmm_raw, BaseException):
-        logger.debug("hmm in _run_analysis failed: %s", hmm_raw)
-        hmm_data = None
-    else:
-        hmm_data = hmm_raw.to_dict() if hmm_raw else None
-
     if isinstance(htf_data, BaseException):
         logger.debug("HTF confirmation failed: %s", htf_data)
         htf_data = {"available": False, "reason": str(htf_data)}
 
-    return result, zones_data, hmm_data, htf_data, expected_move
+    return result, zones_data, htf_data, expected_move
 
 
-def _assemble_result(result, df, df_full, zones_data, hmm_data, htf_data, expected_move) -> dict:
+def _assemble_result(result, df, df_full, zones_data, htf_data, expected_move) -> dict:
     """Attach trade setup, HTF alignment, and config metadata to the MC result."""
     vp_data = result.get("volume_profile")
 
@@ -194,7 +179,7 @@ def _assemble_result(result, df, df_full, zones_data, hmm_data, htf_data, expect
             "expected_move": expected_move,
             "zones": zones_data,
             "volume_profile": vp_data,
-            "hmm": hmm_data,
+            "hmm": None,  # HMM removed from the main pipeline (kept in Market Structure tab)
             "htf": htf_data,
             "config": {
                 "n_sim": cfg.n_sim,
@@ -253,17 +238,16 @@ async def _run_analysis() -> dict:
 
             df_full, df = await _fetch_and_broadcast_partial(loop)
 
-            returns_for_hmm = df["close"].pct_change().dropna().values.tolist()
             spot_now = float(df_full["close"].iloc[-1])
 
             cal = state.calibrator
             band_alpha = await _calibrate_bands(loop, cal, df_full, spot_now)
 
-            result, zones_data, hmm_data, htf_data, expected_move = await _gather_analyses(
-                loop, df, band_alpha, returns_for_hmm, spot_now
+            result, zones_data, htf_data, expected_move = await _gather_analyses(
+                loop, df, band_alpha, spot_now
             )
 
-            result = _assemble_result(result, df, df_full, zones_data, hmm_data, htf_data, expected_move)
+            result = _assemble_result(result, df, df_full, zones_data, htf_data, expected_move)
 
             await _record_calibration(loop, cal, result)
 
@@ -298,6 +282,13 @@ async def _run_analysis() -> dict:
             return {"error": str(e)}
 
 
+async def broadcast_analysis(clients, result: dict, *, full_candles: bool) -> None:
+    """Broadcast analysis payload; slim candle history on routine poll ticks."""
+    if full_candles:
+        state.needs_full_candles = False
+    await broadcast_json(clients, state.payload_for_clients(result, full_candles=full_candles))
+
+
 async def _poll_loop():
     logger.info("Poll loop started: %s %s every %ds", cfg.ticker, cfg.interval, cfg.poll_seconds)
     try:
@@ -305,7 +296,7 @@ async def _poll_loop():
         while True:
             result = await _run_analysis()
             if "error" not in result:
-                await broadcast_json(state.clients, result)
+                await broadcast_analysis(state.clients, result, full_candles=state.needs_full_candles)
             await asyncio.sleep(cfg.poll_seconds)
     except asyncio.CancelledError:
         logger.info("Poll loop cancelled")

@@ -15,11 +15,9 @@ from core.analysis.market_structure import analyse_market_structure
 from core.data.fetcher import fetch_candles
 
 from .. import state
-from ..analysis import _poll_loop, _run_analysis
+from ..analysis import _poll_loop, _run_analysis, broadcast_analysis
 from ..deps import limiter, require_api_key
 from ..models import BacktestRequest, ConfigUpdate
-from ..websockets import broadcast_json
-
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["signal"])
@@ -31,7 +29,7 @@ async def get_signal(request: Request):
     """Trigger fresh analysis with current config and return result."""
     result = await _run_analysis()
     if "error" not in result:
-        await broadcast_json(state.clients, result)
+        await broadcast_analysis(state.clients, result, full_candles=True)
     return result
 
 
@@ -57,6 +55,8 @@ async def update_config(request: Request, update: ConfigUpdate, api_key: str | N
             if hasattr(cfg, key):
                 setattr(cfg, key, value)
                 changed.append(f"{key}={value}")
+    if any(k in payload for k in ("ticker", "interval", "chart_bars", "lookback")):
+        state.needs_full_candles = True
 
     if not changed:
         return {"status": "noop", "changed": [], "config": await get_config()}
@@ -72,7 +72,7 @@ async def update_config(request: Request, update: ConfigUpdate, api_key: str | N
     # Run analysis before restarting poll loop so fetcher cache is warm.
     result = await _run_analysis()
     if "error" not in result:
-        await broadcast_json(state.clients, result)
+        await broadcast_analysis(state.clients, result, full_candles=True)
 
     # Restart poll loop after analysis completes.
     state.poll_task = asyncio.create_task(_poll_loop())
