@@ -3,6 +3,7 @@ window.__mc_trader_modular__ = {
   extracted: [
     'utils.js',
     'ws.js',
+    'chart.js',
     'scanner.js',
     'tabs/options.js',
     'tabs/market-structure.js',
