@@ -560,7 +560,3 @@
   }
 
 })();
-
-if (window.__mc_trader_modular__) {
-  window.__mc_trader_modular__.extracted.push('tabs/unusual-options.js');
-}

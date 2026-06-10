@@ -15,14 +15,10 @@ logger = logging.getLogger(__name__)
 VALID_INTERVALS: list[str] = ["1m", "2m", "5m", "15m", "30m", "1h", "4h", "1d"]
 
 VALID_MC_MODELS: list[str] = [
-    "gaussian",  # GBM with Normal innovations
-    "student_t",  # heavy-tailed (df from data kurtosis)
-    "garch",  # GJR-GARCH(1,1) volatility clustering
-    "bootstrap",  # historical-return resampling
-    "jump",  # Merton jump-diffusion
-    "fhs",  # filtered historical simulation (GJR-GARCH + empirical residuals)
-    "ensemble",  # adaptive mixture: GARCH + FHS + jump
-    "microstructure",  # GARCH + Student-t + volume profile + CVD + Hurst
+    "garch",
+    "bootstrap",
+    "ensemble",
+    "microstructure",
 ]
 
 # Startup ticker (not read from .env). Change here or via POST /api/config.
@@ -166,9 +162,6 @@ class Config:
     regime_hurst_lags: int = field(default_factory=lambda: _env_int("REGIME_HURST_LAGS", 20, 5, 100))
     regime_donchian_n: int = field(default_factory=lambda: _env_int("REGIME_DONCHIAN_N", 20, 5, 200))
     regime_pivot_wing: int = field(default_factory=lambda: _env_int("REGIME_PIVOT_WING", 3, 1, 20))
-
-    hmm_enabled: bool = field(default_factory=lambda: _env_bool("HMM_ENABLED", False))
-    hawkes_enabled: bool = field(default_factory=lambda: _env_bool("HAWKES_ENABLED", False))
 
     # Security
     api_key: str = field(default_factory=lambda: os.getenv("API_KEY", ""))

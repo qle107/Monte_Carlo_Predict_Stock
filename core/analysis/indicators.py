@@ -336,6 +336,14 @@ def _vwap_distance(df: pd.DataFrame, n_bars: int = 26) -> float:
     if len(df) < 5:
         return 0.0
     try:
+        # Session VWAP is meaningless on >= 4h bars (the "session" would span
+        # weeks). Return 0 so the vwap sub-score is neutral at high timeframes.
+        try:
+            step_s = (df.index[-1] - df.index[-2]).total_seconds()
+            if step_s >= 14400:
+                return 0.0
+        except Exception:
+            pass
         n = min(len(df), n_bars)  # ~ one trading day at 15m
         sub = df.tail(n)
         tp = (sub["high"] + sub["low"] + sub["close"]).to_numpy(float) / 3.0

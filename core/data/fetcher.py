@@ -229,6 +229,7 @@ def _yfinance(ticker: str, interval: str, n: int, extended: bool) -> pd.DataFram
         end=end,
         interval=interval,
         prepost=extended,
+        repair=True,  # fix Yahoo 100x unit mixups / zero-price glitch bars
     )
     if df.empty:
         raise ValueError(f"yfinance: no data for {ticker}")
@@ -327,6 +328,67 @@ def _polygon(ticker: str, interval: str, n: int, extended: bool) -> pd.DataFrame
     return df.tail(n)
 
 
+def _sanitize_ohlc(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Remove or repair corrupt candles (bad ticks from data providers).
+
+    Three passes:
+      1. Drop rows with non-finite or non-positive open/close.
+      2. Drop isolated price-scale glitches (e.g. 100x / 0.01x unit mixups):
+         bars whose close is >2x or <0.5x the local rolling-median close.
+      3. Clamp wick spikes: a high/low that extends beyond the candle body by
+         more than 10x the median bar range is a bad print, not a real trade -
+         clamp it back to the body edge.
+
+    Without this, a single bad bar poisons the chart y-axis, ATR, realised
+    vol, volume profile (price_lo/price_hi span), zones, and Fib targets.
+    """
+    if df is None or len(df) < 3:
+        return df
+
+    cols = ("open", "high", "low", "close")
+    o, h, l, c = (df[col].to_numpy(float) for col in cols)
+
+    keep = np.isfinite(o) & np.isfinite(h) & np.isfinite(l) & np.isfinite(c) & (o > 0) & (c > 0)
+    if not keep.all():
+        df = df[keep]
+        if len(df) < 3:
+            return df
+        o, h, l, c = (df[col].to_numpy(float) for col in cols)
+
+    # Pass 2: isolated unit-scale glitches vs the local median close
+    med = pd.Series(c).rolling(11, center=True, min_periods=3).median().to_numpy()
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ratio = np.where(med > 0, c / med, 1.0)
+    glitch = (ratio > 2.0) | (ratio < 0.5)
+    if glitch.any():
+        logger.warning("[fetcher] dropped %d price-scale glitch bar(s)", int(glitch.sum()))
+        df = df[~glitch]
+        if len(df) < 3:
+            return df
+        o, h, l, c = (df[col].to_numpy(float) for col in cols)
+
+    # Pass 3: spike wicks
+    body_hi = np.maximum(o, c)
+    body_lo = np.minimum(o, c)
+    rng = h - l
+    rng_valid = rng[np.isfinite(rng) & (rng >= 0)]
+    med_rng = float(np.median(rng_valid)) if rng_valid.size else 0.0
+    if med_rng > 0:
+        lim = 10.0 * med_rng
+        bad_hi = (h - body_hi) > lim
+        bad_lo = ((body_lo - l) > lim) | (l <= 0)
+        if bad_hi.any() or bad_lo.any():
+            logger.warning(
+                "[fetcher] clamped %d spike wick(s)", int(bad_hi.sum() + bad_lo.sum())
+            )
+            df = df.copy()
+            df["high"] = np.where(bad_hi, body_hi, h)
+            df["low"] = np.where(bad_lo, body_lo, l)
+
+    return df
+
+
 def fetch_candles(
     ticker: str,
     interval: str = "15m",
@@ -405,6 +467,10 @@ def fetch_candles(
                 df = df[np.isfinite(pd.to_numeric(df["close"], errors="coerce"))]
                 if len(df) < 2:
                     raise ValueError("All close prices are invalid after filtering")
+
+                df = _sanitize_ohlc(df)
+                if df is None or len(df) < 2:
+                    raise ValueError("All candles rejected by OHLC sanitation")
 
                 session = _session_label(df)
                 logger.info(

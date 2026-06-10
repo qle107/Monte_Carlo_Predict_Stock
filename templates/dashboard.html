@@ -492,6 +492,11 @@
            POP &amp; EV Scanner
           <span class="tab-badge" id="tab-pop-badge" style="background:rgba(88,166,255,.15);color:var(--blue);">MODEL</span>
         </button>
+        <!-- GEX heatmap tab -->
+        <button class="scanner-tab" id="tab-gex" onclick="switchScannerTab('gex')">
+          GEX Heatmap
+          <span class="tab-badge" id="tab-gex-badge" style="background:rgba(63,185,80,.15);color:var(--green);">GAMMA</span>
+        </button>
         <!-- AI Analyst tab -->
         <button class="scanner-tab" id="tab-ai" onclick="switchScannerTab('ai')">
           ✨ AI Analyst
@@ -1244,7 +1249,7 @@
 
           <!-- Row 4: Blended zone reaction table -->
           <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;">
-            <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.5px;text-transform:uppercase;margin-bottom:10px;">Zone Reaction Probabilities (heuristic priors, not fitted probabilities)</div>
+            <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.5px;text-transform:uppercase;margin-bottom:10px;">Zone Reaction Probabilities</div>
             <div id="ms-zone-table-wrap">
               <table id="ms-zone-table" style="width:100%;border-collapse:collapse;font-size:12px;">
                 <thead>
@@ -1706,6 +1711,68 @@
           </div>
         </div>
       </div><!-- /pop-scan-panel -->
+
+      <div id="gex-panel" style="display:none; padding:16px 20px 24px;">
+
+        <div class="scan-toolbar">
+          <div>
+            <div class="scan-title">
+              <span class="scan-title-dot" style="background:var(--green);"></span>
+              <span id="gex-heatmap-title">GEX Heatmap</span>
+              <span class="src-tag" title="Net gamma exposure per strike and expiration, computed from open interest and implied volatility (Black-Scholes). Endpoint: /api/options/gex_heatmap">yfinance</span>
+            </div>
+            <div class="scan-sub" style="margin-top:3px;">
+              Net dealer gamma exposure ($ delta per 1% move) per strike &times; expiration. Calls positive, puts negative.
+            </div>
+          </div>
+
+          <div style="margin-left:auto; display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+            <label style="display:flex;flex-direction:column;font-size:10px;color:var(--muted);gap:3px;">
+              TICKER
+              <input id="gex-ticker" type="text" placeholder="e.g. MRVL" maxlength="10"
+                onkeydown="if(event.key==='Enter')runGexHeatmap()"
+                style="width:90px;padding:5px 8px;background:var(--bg2,#161b22);color:var(--text);
+                       border:1px solid rgba(139,148,158,.3);border-radius:5px;font-size:12px;text-transform:uppercase;">
+            </label>
+            <button id="gex-run-btn" onclick="runGexHeatmap()"
+              style="padding:7px 14px;background:var(--green);color:#0d1117;border:none;border-radius:6px;
+                     font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;">
+              <span class="spinner" id="gex-spin" style="display:none;"></span>
+              <span>Load</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Summary stats strip -->
+        <div id="gex-results" style="display:none;">
+          <div style="display:flex;flex-wrap:wrap;gap:18px;background:rgba(255,255,255,.03);
+               border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:10px 14px;margin:10px 0;font-size:12px;">
+            <div><span style="color:var(--muted);font-size:10px;">SPOT</span><br><span id="gex-stat-spot" style="font-weight:700;font-size:14px;">-</span></div>
+            <div><span style="color:var(--muted);font-size:10px;">GAMMA FLIP</span><br><span id="gex-stat-flip" style="font-weight:700;font-size:14px;color:var(--amber);">-</span></div>
+            <div><span style="color:var(--muted);font-size:10px;">TOTAL NET GEX</span><br><span id="gex-stat-net" style="font-weight:700;font-size:14px;">-</span></div>
+            <div><span style="color:var(--muted);font-size:10px;">MAX +GEX</span><br><span id="gex-stat-maxpos" style="font-weight:700;font-size:14px;">-</span></div>
+            <div><span style="color:var(--muted);font-size:10px;">MAX -GEX</span><br><span id="gex-stat-maxneg" style="font-weight:700;font-size:14px;">-</span></div>
+            <div title="Contiguous band of net-negative GEX strikes below spot (near-term expiries). Dealers are short gamma here, so hedging amplifies a sell-off through this range.">
+              <span style="color:var(--muted);font-size:10px;">ACCEL ZONE</span><br><span id="gex-stat-accel" style="font-weight:700;font-size:14px;color:#0077be;">-</span></div>
+          </div>
+
+          <!-- Heatmap grid -->
+          <div id="gex-table-wrap" style="overflow:auto;max-height:560px;border:1px solid rgba(255,255,255,.07);border-radius:8px;"></div>
+          <div style="font-size:10px;color:var(--muted);margin-top:6px;">
+            OI-based GEX from delayed yfinance chains (OI updates once daily). Green = positive (vol-damping), red = negative (vol-amplifying). Strike outlined in amber &asymp; spot. Ocean-blue cell = highest absolute net GEX (most impactful level). Accel zone stat = negative-GEX band below spot. Summary stats use expiries &le;90 DTE.
+          </div>
+        </div>
+
+        <!-- States -->
+        <div id="gex-loading" style="display:none;text-align:center;padding:30px;color:var(--muted);font-size:13px;">
+          Fetching all option chains... (one request per expiry, can take up to a minute on first load)
+        </div>
+        <div id="gex-error" style="display:none;padding:14px;color:#f85149;font-size:12px;
+             background:rgba(248,81,73,.08);border:1px solid rgba(248,81,73,.3);border-radius:6px;margin:6px 0;"></div>
+        <div id="gex-empty" style="display:block;text-align:center;padding:30px;color:var(--muted);font-size:13px;">
+          Enter a ticker and click <strong>Load</strong> to build the GEX heatmap.
+        </div>
+      </div><!-- /gex-panel -->
 
       <div id="ai-analyst-panel" style="display:none; padding:16px 20px 24px;">
 
@@ -2564,14 +2631,11 @@
   </div>
 </div>
 
-<!-- index.js runs first; tab modules monkey-patch the inline render fns once
-     DOMContentLoaded fires (i.e. after the inline <script> blocks below run). -->
 <script src="/static/js/nav.js"></script>
 <script src="/static/js/utils.js"></script>
 <script src="/static/js/ws.js"></script>
 <script src="/static/js/chart.js"></script>
 <script src="/static/js/config-panel.js"></script>
-<script src="/static/js/index.js"></script>
 <script src="/static/js/scanner.js"></script>
 <script src="/static/js/tabs/macro.js"></script>
 <script src="/static/js/tabs/news.js"></script>
@@ -2580,6 +2644,7 @@
 <script src="/static/js/tabs/options.js"></script>
 <script src="/static/js/tabs/unusual-options.js"></script>
 <script src="/static/js/tabs/pop_scanner.js"></script>
+<script src="/static/js/tabs/gex.js"></script>
 <script src="/static/js/tabs/ai_analyst.js"></script>
 <script src="/static/js/tabs/market-structure.js"></script>
 <script src="/static/js/tabs/sentiment.js"></script>

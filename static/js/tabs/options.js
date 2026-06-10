@@ -111,7 +111,7 @@
     tbody.innerHTML = rows.map(c => {
       const typeColor = c.type === 'call' ? 'var(--green)' : 'var(--red)';
       const typeIcon  = c.type === 'call' ? 'Call' : 'Put';
-      const itmStr    = c.in_money ? ' ✅' : '';
+      const itmStr    = c.in_money ? ' ITM' : '';
       const ratioColor =
         c.vol_oi >= 5 ? 'var(--amber)' :
         c.vol_oi >= 3 ? 'var(--blue)'  :
@@ -174,9 +174,4 @@
 
   window.setUnusualFilter      = setUnusualFilter;
   window.renderUnusualActivity = renderUnusualActivity;
-
-  // Update the index.js marker so the dashboard's "what's loaded" flag is accurate.
-  if (window.__mc_trader_modular__) {
-    window.__mc_trader_modular__.extracted.push('tabs/options.js');
-  }
 })();

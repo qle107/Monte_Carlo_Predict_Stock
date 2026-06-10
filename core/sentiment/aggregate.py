@@ -9,9 +9,21 @@ import time
 from collections import Counter
 from datetime import datetime, timezone
 
-from .cramer import fetch_cramer_sentiment
 from .options_activity import _options_flow_sync, _score_options_activity
 from .social import fetch_stocktwits_sentiment
+
+_CRAMER_UNAVAILABLE = {
+    "available": False,
+    "article_count": 0,
+    "cramer_signal": "unknown",
+    "inverse_signal": "WAIT",
+    "inverse_score": 0.0,
+    "confidence": "low",
+    "buy_signals": 0,
+    "sell_signals": 0,
+    "type_breakdown": {},
+    "articles": [],
+}
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +54,7 @@ async def get_sentiment(ticker: str, force_refresh: bool = False) -> dict:
     Fetch and aggregate all sentiment sources for `ticker`.
     Returns a JSON-serialisable dict.
 
-    Sources:
-      - X (Twitter) - per-ticker social posts (requires X_USERNAME + X_PASSWORD in .env)
-      - Inverse Cramer - Google News RSS, Cramer signal inverted
-      - Options flow  - yfinance call/put volume & OI
+    Sources: StockTwits social posts and yfinance options flow.
 
     Results are cached for _SENTIMENT_TTL seconds (default 5 min) per ticker.
     Pass force_refresh=True to bypass the cache.
@@ -59,10 +68,10 @@ async def get_sentiment(ticker: str, force_refresh: bool = False) -> dict:
     loop = asyncio.get_running_loop()
 
     x_task = asyncio.create_task(fetch_stocktwits_sentiment(ticker))
-    cramer_task = asyncio.create_task(fetch_cramer_sentiment(ticker))
     options_coro = loop.run_in_executor(None, _options_flow_sync, ticker)
 
-    x_data, cramer, options = await asyncio.gather(x_task, cramer_task, options_coro, return_exceptions=True)
+    x_data, options = await asyncio.gather(x_task, options_coro, return_exceptions=True)
+    cramer = dict(_CRAMER_UNAVAILABLE)
 
     if isinstance(x_data, Exception):
         logger.warning("StockTwits sentiment exception: %s", x_data)
@@ -79,28 +88,14 @@ async def get_sentiment(ticker: str, force_refresh: bool = False) -> dict:
             "type_breakdown": {},
             "top_posts": [],
         }
-    if isinstance(cramer, Exception):
-        logger.warning("Cramer exception: %s", cramer)
-        cramer = {
-            "available": False,
-            "article_count": 0,
-            "cramer_signal": "unknown",
-            "inverse_signal": "WAIT",
-            "inverse_score": 0.0,
-            "confidence": "low",
-            "buy_signals": 0,
-            "sell_signals": 0,
-            "type_breakdown": {},
-            "articles": [],
-        }
     if isinstance(options, Exception):
         logger.warning("Options exception: %s", options)
         options = {"available": False, "reason": str(options)}
 
     # Weights:
     #   Options activity : 2.0  - real money = strongest signal
-    #   Inverse Cramer   : 1.5  - high-conviction contrarian
-    #   X / social posts : 1.0  - social mood
+    #   Social posts     : 1.0  - social mood
+    # (cramer branch below is inert - always available:False)
     scores, weights = [], []
 
     if x_data.get("available") and x_data.get("post_count", 0) > 0:

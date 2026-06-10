@@ -335,6 +335,3 @@ async function loadZoneTicker(ticker) {
   await applySettings();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
-if (window.__mc_trader_modular__) {
-  window.__mc_trader_modular__.extracted.push('tabs/zone-scanner.js');
-}

@@ -10,6 +10,7 @@ function switchScannerTab(tab) {
     news:               document.getElementById('news-panel'),
     'unusual-opts':     document.getElementById('unusual-opts-panel'),
     pop:                document.getElementById('pop-scan-panel'),
+    gex:                document.getElementById('gex-panel'),
     ai:                 document.getElementById('ai-analyst-panel'),
   };
   const tabs = {
@@ -21,6 +22,7 @@ function switchScannerTab(tab) {
     news:               document.getElementById('tab-news'),
     'unusual-opts':     document.getElementById('tab-unusual-opts'),
     pop:                document.getElementById('tab-pop'),
+    gex:                document.getElementById('tab-gex'),
     ai:                 document.getElementById('tab-ai'),
   };
   const styles = {
@@ -32,6 +34,7 @@ function switchScannerTab(tab) {
     news:               { color: 'var(--amber)',  bg: 'rgba(210,153,34,.06)',  border: 'var(--amber)' },
     'unusual-opts':     { color: '#f85149',       bg: 'rgba(248,81,73,.06)',   border: '#f85149' },
     pop:                { color: 'var(--blue)',   bg: 'rgba(88,166,255,.06)',  border: 'var(--blue)' },
+    gex:                { color: 'var(--green)',  bg: 'rgba(63,185,80,.06)',   border: 'var(--green)' },
     ai:                 { color: 'var(--purple)', bg: 'rgba(188,140,255,.06)', border: 'var(--purple)' },
   };
 
@@ -84,6 +87,10 @@ function switchScannerTab(tab) {
     if (typeof window.popScannerOnOpen === 'function') {
       try { window.popScannerOnOpen(currentVal); } catch (e) { console.warn(e); }
     }
+  }
+  // When the GEX heatmap opens, prefill the global ticker and auto-load if it changed.
+  if (tab === 'gex' && typeof window.gexOnOpen === 'function') {
+    try { gexOnOpen((currentConfig.ticker || '').toUpperCase().trim()); } catch (e) { console.warn(e); }
   }
   // When the AI Analyst opens, sync the ticker badge and check configuration.
   if (tab === 'ai' && typeof window.aiAnalystOnOpen === 'function') {
@@ -150,8 +157,4 @@ async function runOptionsPanel() {
     _optsAbortController = null;
     _setOptsFetchingUI(false);
   }
-}
-
-if (window.__mc_trader_modular__) {
-  window.__mc_trader_modular__.extracted.push('tabs/scanner-tabs.js');
 }

@@ -332,8 +332,12 @@ def detect_regime(df: pd.DataFrame, adx: float = 0.0, obv_slope: float = 0.0) ->
     r2_mid, slope_mid = _r2_and_slope(closes, don_n)
     r2_long, slope_long = _r2_and_slope(closes, min(don_n * 2 + 10, len(closes)))
 
-    log_close = np.log(np.clip(closes, 1e-9, None))
-    hurst = _hurst(log_close, max_lag=min(cfg.regime_hurst_lags, len(closes) // 4))
+    # DFA must be fed the STATIONARY series (log-returns): dfa() integrates
+    # (cumsums) its input internally. Feeding log PRICES double-integrates,
+    # which pushes alpha to ~1.5 (clipped to 1.0) for any random walk - the
+    # regime then always reads "high persistence (Hurst 1.00)".
+    log_rets = np.diff(np.log(np.clip(closes, 1e-9, None)))
+    hurst = _hurst(log_rets, max_lag=min(cfg.regime_hurst_lags, len(closes) // 4))
 
     don_pos, don_hi, don_lo, brk_up, brk_dn = _donchian(df, n=don_n)
     hh, hl, lh, ll = _hh_hl_counts(df, lookback=cfg.regime_pivot_wing, last_pivots=6)

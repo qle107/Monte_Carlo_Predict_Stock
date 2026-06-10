@@ -1,4 +1,4 @@
-"""Regression tests for the 2026-06-10 review fixes (REVIEW.md)."""
+"""Regression tests for OHLC sanitization, DFA, and bootstrap simulation."""
 
 from __future__ import annotations
 

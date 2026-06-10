@@ -552,8 +552,4 @@ function _clearMeasureOverlay() {
 
   window.buildCharts = buildCharts;
   window.toggleMeasureTool = toggleMeasureTool;
-
-  if (window.__mc_trader_modular__) {
-    window.__mc_trader_modular__.extracted.push('chart.js');
-  }
 })();

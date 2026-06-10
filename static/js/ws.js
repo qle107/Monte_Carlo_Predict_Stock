@@ -105,8 +105,4 @@
   window._handlePartialUpdate = _handlePartialUpdate;
   window._dismissSkeleton = _dismissSkeleton;
   window.connect = connect;
-
-  if (window.__mc_trader_modular__) {
-    window.__mc_trader_modular__.extracted.push('ws.js');
-  }
 })();

@@ -118,6 +118,3 @@ document.addEventListener('DOMContentLoaded', () => {
   // Small delay to let the WS connect first, then fetch macro in background.
   setTimeout(() => fetchMacroData(false), 800);
 });
-if (window.__mc_trader_modular__) {
-  window.__mc_trader_modular__.extracted.push('tabs/macro.js');
-}

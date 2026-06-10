@@ -21,6 +21,7 @@ from core.options.contract_tracker import (
     watch,
     watched,
 )
+from core.options.gex_heatmap import fetch_gex_heatmap
 from core.options.options_flow import (
     cancel_unusual_scan,
     fetch_options_flow,
@@ -273,6 +274,26 @@ async def api_options_gex(request: Request, ticker: str):
     except Exception as e:
         logger.exception("GEX fetch failed")
         raise HTTPException(status_code=500, detail=f"gex fetch failed: {e}")  # noqa: B904
+
+
+@router.get("/api/options/gex_heatmap")
+@limiter.limit("10/minute")
+async def api_options_gex_heatmap(request: Request, ticker: str):
+    """Net GEX per strike x expiration (heatmap grid, all listed expiries)."""
+    t = (ticker or "").upper().strip()
+    if not _TICKER_RE.match(t):
+        raise HTTPException(status_code=400, detail="invalid ticker")
+    try:
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, fetch_gex_heatmap, t)
+        if result.get("error"):
+            raise HTTPException(status_code=502, detail=f"gex heatmap failed: {result['error']}")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("GEX heatmap failed")
+        raise HTTPException(status_code=500, detail=f"gex heatmap failed: {e}")  # noqa: B904
 
 
 @router.get("/api/options/expiries")

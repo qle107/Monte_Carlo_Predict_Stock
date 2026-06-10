@@ -20,8 +20,6 @@
   }
 
   function _ticker() {
-    // Prefer the live global config (`let currentConfig` in the dashboard
-    // inline script - a global lexical binding, not window.currentConfig).
     let t = '';
     try {
       if (typeof currentConfig === 'object' && currentConfig && currentConfig.ticker) {

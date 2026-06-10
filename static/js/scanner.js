@@ -1,12 +1,6 @@
 
 // Scanner logic
 
-// Global state: _scanData, _scanSortKey, _scanSortAsc, _scanFilter, _scanFakeProgress
-// Public functions (used via inline onclick in dashboard.html):
-//   runScanner, setScanSort, filterScan, renderScanTable, loadTicker
-// Depends on globals defined later in main app JS:
-//   currentConfig, applySettings, log
-
 let _scanData    = [];
 let _scanSortKey = 'score';
 let _scanSortAsc = false;

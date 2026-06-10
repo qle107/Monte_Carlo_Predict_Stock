@@ -66,8 +66,4 @@
   window._scoreStr = _scoreStr;
   window._toLwcSec = _toLwcSec;
   window.$ = $;
-
-  if (window.__mc_trader_modular__) {
-    window.__mc_trader_modular__.extracted.push('utils.js');
-  }
 })();

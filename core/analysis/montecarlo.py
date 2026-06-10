@@ -449,15 +449,18 @@ def _simulate_bootstrap(rng, n_sim, n_steps, recent_returns: Sequence[float], dr
     b = _optimal_block_length(centred)  # Politis-White automatic selection
     p = 1.0 / b  # prob of starting a new block (geometric mean length b)
 
-    out = np.empty((n_sim, n_steps), dtype=float)
-    for s in range(n_sim):
-        idx = int(rng.integers(0, N))
-        for t in range(n_steps):
-            if t > 0 and rng.random() < p:
-                idx = int(rng.integers(0, N))
-            else:
-                idx = (idx + 1) % N
-            out[s, t] = centred[idx]
+    # Vectorised block-index construction (replaces an O(n_sim x n_steps)
+    # Python loop, ~100k iterations at n_sim=10000). A block starts at t=0
+    # and wherever U < p; within a block the index advances +1 (mod N) from
+    # the block's uniform random start - identical in distribution.
+    t_idx = np.arange(n_steps)
+    restart = rng.random((n_sim, n_steps)) < p
+    restart[:, 0] = True
+    starts = rng.integers(0, N, size=(n_sim, n_steps))
+    last_restart = np.maximum.accumulate(np.where(restart, t_idx[None, :], 0), axis=1)
+    start_for_t = np.take_along_axis(starts, last_restart, axis=1)
+    idx = (start_for_t + (t_idx[None, :] - last_restart)) % N
+    out = centred[idx]
 
     # Itô correction: subtract ½σ² per step (σ² = var of rescaled centred)
     return (drift - 0.5 * sigma**2) + out
@@ -1539,8 +1542,9 @@ def _build_mc_result(
     # np.round operates on the whole array in one C call; .tolist() is fast.
     median_path = np.round(median_path_arr, 4).tolist()
 
-    # Subsample 100 paths for the chart payload - vectorised round + tolist
-    chart_idx = rng.choice(n_sim, size=min(100, n_sim), replace=False)
+    # Subsample 50 paths for the chart payload (visually indistinguishable
+    # from 100, halves this part of the websocket frame)
+    chart_idx = rng.choice(n_sim, size=min(50, n_sim), replace=False)
     paths_sample = np.round(paths[chart_idx], 4).tolist()
 
     # Microstructure diagnostics (None for non-microstructure models)

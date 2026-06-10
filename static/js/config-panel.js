@@ -256,8 +256,4 @@ async function _restoreSavedSettings() {
   window.reloadData = reloadData;
   window._saveSettings = _saveSettings;
   window._restoreSavedSettings = _restoreSavedSettings;
-
-  if (window.__mc_trader_modular__) {
-    window.__mc_trader_modular__.extracted.push('config-panel.js');
-  }
 })();

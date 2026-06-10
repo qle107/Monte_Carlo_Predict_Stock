@@ -179,7 +179,7 @@ def _assemble_result(result, df, df_full, zones_data, htf_data, expected_move) -
             "expected_move": expected_move,
             "zones": zones_data,
             "volume_profile": vp_data,
-            "hmm": None,  # HMM removed from the main pipeline (kept in Market Structure tab)
+            "hmm": None,
             "htf": htf_data,
             "config": {
                 "n_sim": cfg.n_sim,

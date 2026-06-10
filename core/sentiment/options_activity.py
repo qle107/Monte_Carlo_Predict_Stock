@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 
 import yfinance as yf
 
+from core.data.yf_client import yf_call
+
 logger = logging.getLogger(__name__)
 
 # Options flow  (yfinance - blocking -> run in executor)
@@ -89,7 +91,7 @@ def _options_flow_sync(ticker: str) -> dict:
     """
     try:
         t = yf.Ticker(ticker)
-        expirations = t.options
+        expirations = yf_call(lambda: t.options)
         if not expirations:
             return {"available": False, "reason": "no options data"}
 
@@ -106,7 +108,7 @@ def _options_flow_sync(ticker: str) -> dict:
 
         for exp in expirations[:n_exp]:
             try:
-                chain = t.option_chain(exp)
+                chain = yf_call(t.option_chain, exp)
                 cv = int(chain.calls["volume"].fillna(0).sum())
                 pv = int(chain.puts["volume"].fillna(0).sum())
                 co = int(chain.calls["openInterest"].fillna(0).sum())
@@ -183,7 +185,7 @@ def _options_flow_sync(ticker: str) -> dict:
             if exp in scanned_for_unusual:
                 continue
             try:
-                chain = t.option_chain(exp)
+                chain = yf_call(t.option_chain, exp)
                 unusual_activity.extend(_scan_unusual_activity(chain.calls, chain.puts, exp, today_date))
             except Exception:
                 pass
@@ -215,7 +217,7 @@ def _options_flow_sync(ticker: str) -> dict:
 
         # Get current spot price for ATM/OTM classification downstream
         try:
-            info = t.fast_info
+            info = yf_call(lambda: t.fast_info)
             spot_price = float(
                 getattr(info, "last_price", None) or getattr(info, "regular_market_price", None) or 0.0
             )

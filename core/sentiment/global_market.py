@@ -1,8 +1,7 @@
-"""Market-wide sentiment from Reddit hot posts, Google News, X, and Cramer coverage."""
+"""Market-wide sentiment from Reddit hot posts and Google News headlines."""
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 import threading
@@ -12,9 +11,7 @@ from datetime import datetime, timezone
 
 import httpx
 
-from .cramer import _extract_cramer_picks, _fetch_article_text, _score_cramer_text
 from .scoring import _classify_sentiment_type, _detect_option_bias, _score_text
-from .x import _get_twikit_client, _twikit_reset
 
 logger = logging.getLogger(__name__)
 
@@ -256,75 +253,6 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
             except Exception as exc:
                 logger.debug("Global RSS %s failed: %s", q, exc)
 
-    _GLOBAL_X_QUERIES = [
-        "($SPY OR $QQQ OR $SPX) -filter:retweets lang:en",
-        "(stock market OR wall street) -filter:retweets lang:en",
-    ]
-    try:
-        import random as _rand
-
-        x_client = await _get_twikit_client()
-        if x_client is not None:
-            for xq in _GLOBAL_X_QUERIES:
-                try:
-                    await asyncio.sleep(_rand.uniform(0.5, 1.2))
-                    xresults = await x_client.search_tweet(xq, product="Top", count=30)
-                    xtweets = list(xresults) if xresults else []
-                    for tw in xtweets:
-                        text = getattr(tw, "text", "") or ""
-                        likes = int(getattr(tw, "favorite_count", 0) or 0)
-                        retweets = int(getattr(tw, "retweet_count", 0) or 0)
-
-                        score = _score_text(text)
-                        calls, puts = _detect_option_bias(text)
-                        sent_type = _classify_sentiment_type(text)
-                        call_total += calls
-                        put_total += puts
-                        if score > 0.1:
-                            total_bull += 1
-                        elif score < -0.1:
-                            total_bear += 1
-
-                        for m in _TICKER_RE.findall(text.upper()):
-                            if m not in _TICKER_BLACKLIST and 2 <= len(m) <= 5:
-                                ticker_counter[m] += 1
-
-                        tl_lower = text.lower()
-                        for theme, kws in _MARKET_THEMES.items():
-                            if any(kw in tl_lower for kw in kws):
-                                theme_counter[theme] += 1
-
-                        tweet_id = getattr(tw, "id", "")
-                        user = getattr(tw, "user", None)
-                        screen_name = getattr(user, "screen_name", "") if user else ""
-                        tweet_url = (
-                            f"https://x.com/{screen_name}/status/{tweet_id}"
-                            if screen_name and tweet_id
-                            else ""
-                        )
-                        all_posts.append(
-                            {
-                                "title": text[:150],
-                                "url": tweet_url,
-                                "subreddit": "𝕏 X",
-                                "score": round(score, 3),
-                                "upvotes": likes + retweets,  # proxy for engagement
-                                "sentiment_type": sent_type,
-                                "call_mentions": calls,
-                                "put_mentions": puts,
-                            }
-                        )
-                    if xtweets:
-                        break  # one successful query is enough
-                except Exception as exc:
-                    logger.debug("Global X query failed: %s", exc)
-                    _twikit_reset()
-    except Exception as exc:
-        logger.debug("Global X block failed: %s", exc)
-
-    # Default Cramer-market block. BUGFIX (Phase 2): this default was previously
-    # initialised inside the X-block's `except`, so the happy path with zero
-    # Cramer articles raised NameError. It now always exists.
     cramer_market = {
         "cramer_signal": "unknown",
         "inverse_signal": "WAIT",
@@ -333,123 +261,6 @@ async def fetch_global_market_sentiment(force_refresh: bool = False) -> dict:
         "articles": [],
         "picks": [],
     }
-    try:
-        import xml.etree.ElementTree as ET2
-        from email.utils import parsedate_to_datetime as p2dt
-
-        cramer_buy = cramer_sell = 0
-        cramer_raw_items: list[dict] = []
-        mkt_urls = [
-            "https://news.google.com/rss/search?q=%22Jim+Cramer%22+stock&hl=en-US&gl=US&ceid=US:en",
-            "https://news.google.com/rss/search?q=%22Mad+Money%22+CNBC+stock&hl=en-US&gl=US&ceid=US:en",
-            "https://news.google.com/rss/search?q=Cramer+CNBC+buy+sell&hl=en-US&gl=US&ceid=US:en",
-        ]
-        async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as c2:
-            # Gather RSS items
-            for u in mkt_urls:
-                try:
-                    r = await c2.get(u, headers=headers_rss)
-                    if r.status_code != 200:
-                        continue
-                    root2 = ET2.fromstring(r.text)
-                    for item in root2.findall(".//item")[:20]:
-                        title = item.findtext("title", "") or ""
-                        link = item.findtext("link", "") or ""
-                        pub = item.findtext("pubDate", "") or ""
-                        desc = item.findtext("description", "") or ""
-                        tl = f"{title} {desc}".lower()
-                        if "cramer" not in tl and "mad money" not in tl:
-                            continue
-                        try:
-                            pub_str = p2dt(pub).strftime("%Y-%m-%d")
-                        except Exception:
-                            pub_str = pub[:10] if pub else ""
-                        cramer_raw_items.append({"title": title, "url": link, "date": pub_str, "desc": desc})
-                    if cramer_raw_items:
-                        break
-                except Exception as exc:
-                    logger.debug("Global Cramer RSS: %s", exc)
-
-            # Fetch full article bodies for top 5 items
-            g_fetch_tasks = [_fetch_article_text(it["url"], c2) for it in cramer_raw_items[:5]]
-            g_bodies = await asyncio.gather(*g_fetch_tasks, return_exceptions=True)
-
-        # Process items - score + extract picks
-        global_picks_map: dict[str, dict] = {}
-        cramer_arts: list[dict] = []
-        g_strength = {"bullish": 3, "bearish": 3, "neutral": 2, "unknown": 1}
-
-        for it, body in zip(cramer_raw_items[:5], g_bodies, strict=False):
-            body_text = body if isinstance(body, str) else ""
-            combined = f"{it['title']} {it['desc']} {body_text}"
-            b, s = _score_cramer_text(combined)
-            cramer_buy += b
-            cramer_sell += s
-            bias = "bullish" if b > s else "bearish" if s > b else "neutral"
-            art_picks = _extract_cramer_picks(combined)
-            for pk in art_picks:
-                t = pk["ticker"]
-                if t not in global_picks_map or (
-                    g_strength[pk["stance"]] > g_strength[global_picks_map[t]["stance"]]
-                ):
-                    global_picks_map[t] = pk
-            cramer_arts.append(
-                {
-                    "title": it["title"],
-                    "url": it["url"],
-                    "date": it["date"],
-                    "cramer_bias": bias,
-                    "picks": art_picks,
-                }
-            )
-
-        for it in cramer_raw_items[5:]:
-            combined = f"{it['title']} {it['desc']}"
-            b, s = _score_cramer_text(combined)
-            cramer_buy += b
-            cramer_sell += s
-            bias = "bullish" if b > s else "bearish" if s > b else "neutral"
-            art_picks = _extract_cramer_picks(combined)
-            for pk in art_picks:
-                t = pk["ticker"]
-                if t not in global_picks_map or (
-                    g_strength[pk["stance"]] > g_strength[global_picks_map[t]["stance"]]
-                ):
-                    global_picks_map[t] = pk
-            cramer_arts.append(
-                {
-                    "title": it["title"],
-                    "url": it["url"],
-                    "date": it["date"],
-                    "cramer_bias": bias,
-                    "picks": art_picks,
-                }
-            )
-
-        nc = len(cramer_arts)
-        if nc > 0:
-            if cramer_buy > cramer_sell * 1.4:
-                sig = "bullish"
-            elif cramer_sell > cramer_buy * 1.4:
-                sig = "bearish"
-            else:
-                sig = "mixed"
-            inv = "SELL" if sig == "bullish" else "BUY" if sig == "bearish" else "WAIT"
-            sstr = abs(cramer_buy - cramer_sell) / max(cramer_buy + cramer_sell, 1)
-            conf = "high" if nc >= 5 and sstr >= 0.5 else "medium" if nc >= 2 and sstr >= 0.25 else "low"
-            all_global_picks = sorted(
-                global_picks_map.values(), key=lambda x: g_strength[x["stance"]], reverse=True
-            )
-            cramer_market = {
-                "cramer_signal": sig,
-                "inverse_signal": inv,
-                "confidence": conf,
-                "article_count": nc,
-                "articles": cramer_arts[:5],
-                "picks": all_global_picks[:25],  # full pick list with stances
-            }
-    except Exception as exc:
-        logger.debug("Global Cramer block failed: %s", exc)
 
     n_posts = len(all_posts)
     total_sent = total_bull + total_bear or 1

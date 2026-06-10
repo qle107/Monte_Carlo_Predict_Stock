@@ -157,7 +157,3 @@ function renderNewsFeed() {
       </div>`;
   }).join('');
 }
-
-if (window.__mc_trader_modular__) {
-  window.__mc_trader_modular__.extracted.push('tabs/news.js');
-}

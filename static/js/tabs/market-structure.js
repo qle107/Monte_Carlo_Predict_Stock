@@ -197,8 +197,4 @@
   } else {
     _install();
   }
-
-  if (window.__mc_trader_modular__) {
-    window.__mc_trader_modular__.extracted.push('tabs/market-structure.js');
-  }
 })();
