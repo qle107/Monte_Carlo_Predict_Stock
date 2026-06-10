@@ -69,12 +69,41 @@ async def gather_context(ticker: str, last_result: dict | None) -> dict:
     from core.news.fear_greed import fetch_fear_greed
     from core.news.macro import fetch_macro_indicators
     from core.news.news_aggregator import fetch_news
+    from core.options.gex_heatmap import fetch_gex_heatmap
     from core.options.options_flow import fetch_options_flow, scan_unusual_options
     from core.sentiment import get_sentiment
 
     async def _gex():
         flow = await loop.run_in_executor(None, fetch_options_flow, t)
         return flow.to_dict() if hasattr(flow, "to_dict") else flow
+
+    async def _gex_heatmap():
+        data = await loop.run_in_executor(None, fetch_gex_heatmap, t)
+        if data.get("error"):
+            return {"_error": data["error"]}
+        # Trim the grid to fit the prompt budget: 15 strikes nearest spot,
+        # near-term expiries only. Summary stats are kept in full.
+        spot = data.get("spot") or 0.0
+        n_exp = 8
+        rows = sorted(data.get("rows", []), key=lambda r: abs(r["strike"] - spot))[:15]
+        rows.sort(key=lambda r: r["strike"], reverse=True)
+        return {
+            "spot": data.get("spot"),
+            "gamma_flip": data.get("gamma_flip"),
+            "net_gex_near_term": data.get("net_gex"),
+            "max_pos_gex": data.get("max_pos"),
+            "max_neg_gex": data.get("max_neg"),
+            "acceleration_zone": data.get("accel_zone"),
+            "expiries": data.get("expiries", [])[:n_exp],
+            "grid_note": (
+                "Net GEX per strike x expiration ($ dealer delta per 1% move, calls +, "
+                "puts -). Grid trimmed to 15 strikes nearest spot x first "
+                f"{n_exp} expiries; each row's cells align with `expiries`. "
+                "acceleration_zone = contiguous negative-GEX band below spot where "
+                "dealer hedging amplifies declines."
+            ),
+            "grid": [{"strike": r["strike"], "cells": r["cells"][:n_exp]} for r in rows],
+        }
 
     async def _unusual():
         return await loop.run_in_executor(
@@ -97,6 +126,7 @@ async def gather_context(ticker: str, last_result: dict | None) -> dict:
 
     tasks = [
         _best_effort("options_gex", _gex(), 20.0),
+        _best_effort("gex_heatmap", _gex_heatmap(), 60.0),
         _best_effort("unusual_options", _unusual(), 30.0),
         _best_effort("news", fetch_news(t, 15), 15.0),
         _best_effort("sentiment", get_sentiment(t), 15.0),
@@ -123,7 +153,8 @@ _SYSTEM_PROMPT = """You are a quantitative options analyst.
 You receive a JSON payload from a stock analysis API for one ticker:
 Monte Carlo simulation results, technical indicators, market regime, trade-setup gates,
 supply/demand zones, expected move (IV vs RV), options gamma exposure (GEX), max pain,
-call/put walls, unusual options flow (sweeps/blocks), news headlines, social sentiment,
+call/put walls, a GEX heatmap (net gamma per strike x expiration, gamma flip, max +/-GEX,
+acceleration zone), unusual options flow (sweeps/blocks), news headlines, social sentiment,
 CNN Fear & Greed, and macro indicators. Some sections may contain "_error" - ignore those.
 
 Your job:
@@ -164,7 +195,8 @@ _CHAT_PROMPT_INTRO = """You are a quantitative options analyst.
 Below is a JSON payload from a stock analysis API for one ticker:
 Monte Carlo simulation results, technical indicators, market regime, trade-setup gates,
 supply/demand zones, expected move (IV vs RV), options gamma exposure (GEX), max pain,
-call/put walls, unusual options flow (sweeps/blocks), news headlines, social sentiment,
+call/put walls, a GEX heatmap (net gamma per strike x expiration, gamma flip, max +/-GEX,
+acceleration zone), unusual options flow (sweeps/blocks), news headlines, social sentiment,
 CNN Fear & Greed, and macro indicators. Sections containing "_error" were unavailable - ignore them.
 
 Your job:

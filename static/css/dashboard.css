@@ -420,6 +420,14 @@ header h1 { font-size: 15px; font-weight: 600; }
 
 .news-empty { text-align: center; padding: 32px 20px; color: var(--muted); font-size: 13px; }
 
+/* GEX heatmap grid scrollbars */
+#gex-table-wrap { scrollbar-width: thin; scrollbar-color: rgba(63, 185, 80, .35) rgba(255, 255, 255, .04); }
+#gex-table-wrap::-webkit-scrollbar { width: 9px; height: 9px; }
+#gex-table-wrap::-webkit-scrollbar-track { background: rgba(255, 255, 255, .04); border-radius: 5px; }
+#gex-table-wrap::-webkit-scrollbar-thumb { background: rgba(63, 185, 80, .35); border-radius: 5px; border: 2px solid #0b0e13; }
+#gex-table-wrap::-webkit-scrollbar-thumb:hover { background: rgba(63, 185, 80, .6); }
+#gex-table-wrap::-webkit-scrollbar-corner { background: transparent; }
+
 @keyframes shimmer {
   0%   { background-position: -600px 0; }
   100% { background-position:  600px 0; }
