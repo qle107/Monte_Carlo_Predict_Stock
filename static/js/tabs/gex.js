@@ -10,10 +10,16 @@ function gexOnOpen(globalTicker) {
   if (tkr && tkr !== _gexLastTicker && !_gexLoading) runGexHeatmap();
 }
 
+function _gexIntensity(v, maxAbs) {
+  return maxAbs ? Math.sqrt(Math.min(Math.abs(v) / maxAbs, 1)) : 0;
+}
+
 function _gexCellColor(v, maxAbs) {
   if (v == null || !maxAbs) return 'transparent';
-  const a = 0.10 + 0.80 * Math.sqrt(Math.min(Math.abs(v) / maxAbs, 1));
-  return v >= 0 ? `rgba(46,160,67,${a.toFixed(3)})` : `rgba(218,54,51,${a.toFixed(3)})`;
+  const i = _gexIntensity(v, maxAbs);
+  if (i > 0.85) return v >= 0 ? '#00c437' : '#e8222d';  // hottest cells pop bright
+  const a = 0.16 + 0.74 * i;
+  return v >= 0 ? `rgba(35,134,54,${a.toFixed(3)})` : `rgba(155,38,38,${a.toFixed(3)})`;
 }
 
 function _gexExpLabel(iso) {
@@ -98,28 +104,30 @@ function _renderGexHeatmap(data) {
     if (v != null && Math.abs(v) > anchorV) { anchorV = Math.abs(v); anchorI = i; anchorJ = j; }
   }));
 
-  const thStyle = 'position:sticky;top:0;background:#0d1117;padding:6px 8px;font-size:10px;color:var(--muted);' +
-                  'border-bottom:1px solid rgba(255,255,255,.14);z-index:2;text-align:center;white-space:nowrap;';
-  let html = '<table style="width:100%;border-collapse:collapse;font-size:11px;">';
+  const thStyle = 'position:sticky;top:0;background:#0b0e13;padding:7px 10px;font-size:10px;color:var(--muted);' +
+                  'letter-spacing:.6px;font-weight:600;z-index:2;text-align:center;white-space:nowrap;';
+  let html = '<table style="width:100%;border-collapse:separate;border-spacing:2px;font-size:11px;' +
+             "font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,'Courier New',monospace;\">";
   html += `<thead><tr><th style="${thStyle}text-align:right;position:sticky;left:0;z-index:3;width:1%;">STRIKE</th>`;
   data.expiries.forEach(e => { html += `<th style="${thStyle}" title="${e}">${_gexExpLabel(e)}</th>`; });
   html += '</tr></thead><tbody>';
 
   data.rows.forEach((row, i) => {
     const isSpot = i === spotRow;
-    const strikeStyle = 'text-align:right;padding:3px 8px;font-weight:600;position:sticky;left:0;background:#0d1117;z-index:1;white-space:nowrap;width:1%;' +
-      (isSpot ? 'color:var(--amber);border:1px solid var(--amber);border-radius:3px;' : 'color:var(--muted);');
+    const strikeStyle = 'text-align:right;padding:2px 10px;font-weight:600;position:sticky;left:0;background:#0b0e13;z-index:1;white-space:nowrap;width:1%;' +
+      (isSpot ? 'color:var(--amber);outline:1px solid var(--amber);outline-offset:-1px;' : 'color:var(--muted);');
     html += `<tr><td style="${strikeStyle}" ${isSpot ? `title="spot $${fmt(spot)}"` : ''}>${fmt(row.strike, row.strike % 1 ? 1 : 0)}</td>`;
     row.cells.forEach((v, j) => {
       if (v == null) {
-        html += '<td style="padding:3px 6px;"></td>';
+        html += '<td style="padding:2px 6px;"></td>';
       } else {
         const isAnchor = i === anchorI && j === anchorJ;
+        const inten = _gexIntensity(v, maxAbs);
         const bg = isAnchor ? OCEAN : _gexCellColor(v, maxAbs);
-        const txtColor = isAnchor ? '#fff' : (Math.abs(v) / maxAbs > 0.04 ? '#e6edf3' : 'var(--muted)');
+        const txtColor = isAnchor ? '#fff' : (inten > 0.85 ? '#06130a' : (inten > 0.04 ? '#dbe4ec' : 'var(--muted)'));
         html += `<td title="${data.expiries[j]}  strike ${row.strike}  GEX ${_fmtCompact(v)}${isAnchor ? '  (highest absolute GEX - most impactful level)' : ''}"` +
-                ` style="padding:3px 6px;text-align:center;background:${bg};color:${txtColor};` +
-                `font-weight:${isAnchor || Math.abs(v) === maxAbs ? 700 : 400};white-space:nowrap;">${_fmtCompact(v)}</td>`;
+                ` style="padding:2px 6px;text-align:center;background:${bg};color:${txtColor};` +
+                `font-weight:${isAnchor || inten > 0.85 ? 700 : 400};white-space:nowrap;">${_fmtCompact(v)}</td>`;
       }
     });
     html += '</tr>';
